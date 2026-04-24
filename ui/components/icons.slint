@@ -1,0 +1,88 @@
+import { Theme } from "../theme.slint";
+
+export component Icon inherits Image {
+    in property <string> name: "";
+    in property <brush> tint: Theme.text_dim;
+    in property <length> icon_size: 14px;
+
+    width: root.icon_size;
+    height: root.icon_size;
+    colorize: root.tint;
+    image-fit: contain;
+    source:
+        root.name == "folder" ? @image-url("../assets/icons/folder.svg") :
+        root.name == "film" ? @image-url("../assets/icons/film.svg") :
+        root.name == "music" ? @image-url("../assets/icons/music.svg") :
+        root.name == "image" ? @image-url("../assets/icons/image.svg") :
+        root.name == "document" ? @image-url("../assets/icons/document.svg") :
+        root.name == "play" ? @image-url("../assets/icons/play.svg") :
+        root.name == "download" ? @image-url("../assets/icons/download.svg") :
+        root.name == "trash" ? @image-url("../assets/icons/trash.svg") :
+        root.name == "share" ? @image-url("../assets/icons/share.svg") :
+        root.name == "link" ? @image-url("../assets/icons/link.svg") :
+        root.name == "search" ? @image-url("../assets/icons/search.svg") :
+        root.name == "grid" ? @image-url("../assets/icons/grid.svg") :
+        root.name == "list" ? @image-url("../assets/icons/list.svg") :
+        root.name == "chevron-left" ? @image-url("../assets/icons/chevron-left.svg") :
+        root.name == "chevron-right" ? @image-url("../assets/icons/chevron-right.svg") :
+        root.name == "chevron-down" ? @image-url("../assets/icons/chevron-down.svg") :
+        root.name == "refresh" ? @image-url("../assets/icons/refresh.svg") :
+        root.name == "logout" ? @image-url("../assets/icons/logout.svg") :
+        root.name == "settings" ? @image-url("../assets/icons/settings.svg") :
+        root.name == "home" ? @image-url("../assets/icons/home.svg") :
+        root.name == "metadata" ? @image-url("../assets/icons/metadata.svg") :
+        root.name == "media" ? @image-url("../assets/icons/media.svg") :
+        root.name == "copy" ? @image-url("../assets/icons/copy.svg") :
+        root.name == "external" ? @image-url("../assets/icons/external.svg") :
+        root.name == "check" ? @image-url("../assets/icons/check.svg") :
+        root.name == "close" ? @image-url("../assets/icons/close.svg") :
+        root.name == "more" ? @image-url("../assets/icons/more.svg") :
+        root.name == "sort" ? @image-url("../assets/icons/sort.svg") :
+        root.name == "arrow-up" ? @image-url("../assets/icons/arrow-up.svg") :
+        @image-url("../assets/icons/document.svg");
+}
+
+export component LogoMark inherits Rectangle {
+    width: 24px;
+    height: 24px;
+    background: transparent;
+
+    Rectangle {
+        x: 2px;
+        y: 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 5px;
+        background: Theme.accent;
+        opacity: 0.42;
+    }
+
+    Rectangle {
+        x: 3px;
+        y: 6px;
+        width: 14px;
+        height: 12px;
+        border-width: 1px;
+        border-color: Theme.accent;
+        border-radius: 2px;
+        background: transparent;
+    }
+
+    Rectangle {
+        x: 17px;
+        y: 7px;
+        width: 4px;
+        height: 10px;
+        border-radius: 2px;
+        background: Theme.warning;
+    }
+
+    Path {
+        x: 7px;
+        y: 8px;
+        width: 7px;
+        height: 8px;
+        fill: #0a0a10;
+        commands: "M0 0 L7 4 L0 8 Z";
+    }
+}

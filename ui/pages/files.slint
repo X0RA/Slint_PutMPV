@@ -1,0 +1,786 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { FileItem, PathSegment } from "../types.slint";
+import { Icon } from "../components/icons.slint";
+import { ButtonChip, SearchField, DetailValueRow, IconButton } from "../components/primitives.slint";
+
+component BreadcrumbButton inherits Rectangle {
+    in property <string> label;
+    in property <string> icon_name: "";
+    in property <bool> active: false;
+    callback clicked();
+
+    height: 26px;
+    border-radius: 6px;
+    border-width: active ? 1px : 0px;
+    border-color: Theme.accent_border;
+    background: active ? Theme.accent_soft : transparent;
+    width: min(text-label.preferred-width + (icon_name == "" ? 18px : 32px), 220px);
+
+    if (root.icon_name != "") : icon := Icon {
+        x: 8px;
+        y: (parent.height - self.height) / 2;
+        name: root.icon_name;
+        icon_size: 12px;
+        tint: root.active ? Theme.accent_hi : Theme.text_dim;
+    }
+
+    text-label := Text {
+        x: root.icon_name == "" ? 9px : 25px;
+        y: 0px;
+        width: root.width - (root.icon_name == "" ? 18px : 33px);
+        height: root.height;
+        text: root.label;
+        color: root.active ? Theme.accent_hi : Theme.text_dim;
+        font-size: 12.5px;
+        font-weight: root.active ? 500 : 400;
+        font-family: Theme.ui_font;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    touch := TouchArea {
+        enabled: !root.active;
+        clicked => { root.clicked(); }
+    }
+}
+
+component MenuEntry inherits Rectangle {
+    in property <string> icon_name;
+    in property <string> label;
+    in property <string> shortcut: "";
+    in property <bool> danger: false;
+    callback clicked();
+
+    height: 34px;
+    border-radius: 6px;
+    background: touch.has-hover ? (danger ? #f8717114 : Theme.surface_hi) : transparent;
+
+    Icon {
+        x: 9px;
+        y: 10px;
+        name: root.icon_name;
+        icon_size: 13px;
+        tint: root.danger ? Theme.danger : Theme.text_dim;
+    }
+
+    Text {
+        x: 31px;
+        y: 8px;
+        text: root.label;
+        color: root.danger ? Theme.danger : Theme.text;
+        font-size: 12.5px;
+        font-family: Theme.ui_font;
+    }
+
+    if (root.shortcut != "") : shortcut-text := Text {
+        x: parent.width - self.preferred-width - 10px;
+        y: 10px;
+        text: root.shortcut;
+        color: Theme.text_mute;
+        font-size: 10.5px;
+        font-family: Theme.mono_font;
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component KebabMenu inherits Rectangle {
+    in property <bool> is_folder: false;
+    in property <bool> is_media: false;
+    in property <int> item_id: -1;
+    callback action(name: string, id: int);
+    callback close();
+
+    width: 220px;
+    height: is_folder ? 180px : (is_media ? 216px : 180px);
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.border_hi;
+    background: #1a1a24;
+
+    Rectangle {
+        y: 44px;
+        width: parent.width;
+        height: 1px;
+        background: root.is_media ? Theme.border : transparent;
+    }
+
+    Rectangle {
+        y: root.is_media ? 136px : 100px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    Rectangle {
+        y: parent.height - 44px;
+        width: parent.width;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    VerticalLayout {
+        padding: 4px;
+        spacing: 2px;
+
+        if (root.is_media) : media-group := VerticalLayout {
+            spacing: 2px;
+            MenuEntry { icon_name: "play"; label: "Play"; shortcut: "ENTER"; clicked => { root.action("play", root.item_id); } }
+            MenuEntry { icon_name: "media"; label: "Play in MPV"; clicked => { root.action("play-mpv", root.item_id); } }
+        }
+
+        if (root.is_folder) : folder-group := VerticalLayout {
+            spacing: 2px;
+            MenuEntry { icon_name: "folder"; label: "Open folder"; shortcut: "ENTER"; clicked => { root.action("open-folder", root.item_id); } }
+        }
+
+        MenuEntry { icon_name: "download"; label: "Download"; shortcut: "CMD+D"; clicked => { root.action("download", root.item_id); } }
+        MenuEntry { icon_name: "share"; label: "Copy share link"; clicked => { root.action("share", root.item_id); } }
+        MenuEntry { icon_name: "refresh"; label: "Rename"; clicked => { root.action("rename", root.item_id); } }
+        MenuEntry { icon_name: "folder"; label: "Move to…"; clicked => { root.action("move", root.item_id); } }
+        MenuEntry { icon_name: "metadata"; label: root.is_folder ? "Fetch metadata" : "Identify file"; clicked => { root.action("metadata", root.item_id); } }
+        MenuEntry { icon_name: "image"; label: "Mark as watched"; clicked => { root.action("watched", root.item_id); } }
+        MenuEntry { icon_name: "trash"; label: "Delete…"; shortcut: "DEL"; danger: true; clicked => { root.action("delete", root.item_id); } }
+    }
+}
+
+component GridCard inherits Rectangle {
+    in property <FileItem> item;
+    in property <bool> selected: false;
+    callback clicked();
+    callback menu_requested(id: int, item_type: string, is_media: bool, x: length, y: length);
+
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: selected ? Theme.accent_border : (touch.has-hover ? Theme.border_hi : Theme.border);
+    background: selected ? Theme.surface_hi : Theme.surface;
+
+    Rectangle {
+        x: 14px;
+        y: 14px;
+        width: 32px;
+        height: 32px;
+        border-radius: 7px;
+        border-width: 1px;
+        border-color: item.item_type == "folder" ? Theme.accent_border : Theme.border;
+        background: item.item_type == "folder" ? Theme.accent_soft : #ffffff0a;
+
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            name: item.item_type == "folder" ? "folder" : (item.kind == "movie" || item.kind == "tv" ? "film" : (item.kind == "music" ? "music" : (item.kind == "image" ? "image" : "document")));
+            icon_size: 15px;
+            tint: item.item_type == "folder" ? Theme.accent : Theme.text_dim;
+        }
+    }
+
+    title-text := Text {
+        x: 56px;
+        y: 14px;
+        width: parent.width - 86px;
+        height: 36px;
+        text: item.name;
+        wrap: word-wrap;
+        color: Theme.text;
+        font-size: 12.5px;
+        font-weight: 500;
+        font-family: Theme.ui_font;
+        overflow: elide;
+    }
+
+    Text {
+        x: 56px;
+        y: 56px;
+        width: parent.width - 76px;
+        text: item.grid_meta;
+        color: Theme.text_mute;
+        font-size: 10.5px;
+        font-family: Theme.ui_font;
+    }
+
+    menu-button := Rectangle {
+        x: parent.width - 28px;
+        y: 12px;
+        width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        background: menu-touch.has-hover ? Theme.surface_hi : transparent;
+
+        Icon {
+            x: 3px;
+            y: 3px;
+            name: "more";
+            icon_size: 14px;
+            tint: Theme.text_mute;
+        }
+
+        menu-touch := TouchArea {
+            clicked => {
+                root.menu_requested(
+                    root.item.id,
+                    root.item.item_type,
+                    root.item.is_media,
+                    min(self.absolute-position.x - root.absolute-position.x - 194px + self.width, root.width - 226px),
+                    self.absolute-position.y - root.absolute-position.y + self.height + 6px
+                );
+            }
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component DetailPanel inherits Rectangle {
+    in property <FileItem> item;
+    callback close();
+
+    property <length> actions_height: root.item.is_media ? 92px : 50px;
+
+    background: Theme.surface;
+    clip: true;
+
+    Text {
+        x: 20px;
+        y: 20px;
+        text: "FILE · DETAILS";
+        color: Theme.text_mute;
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 1.2px;
+        font-family: Theme.ui_font;
+    }
+
+    close-button := IconButton {
+        x: parent.width - self.width - 16px;
+        y: 20px - (self.height - 13px) / 2;
+        icon_name: "close";
+        tint: Theme.text_mute;
+        clicked => { root.close(); }
+    }
+
+    scroll := ScrollView {
+        x: 0px;
+        y: 44px;
+        width: parent.width;
+        height: parent.height - self.y - root.actions_height - 16px;
+
+        VerticalLayout {
+            padding-left: 20px;
+            padding-right: 20px;
+            padding-top: 4px;
+            padding-bottom: 8px;
+            spacing: 10px;
+
+            preview := Rectangle {
+                height: (root.width - 40px) * 10 / 16;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: Theme.border;
+                background: Theme.bg;
+
+                Icon {
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2 - 10px;
+                    name: item.kind == "movie" || item.kind == "tv" ? "film" : (item.kind == "music" ? "music" : (item.kind == "image" ? "image" : "document"));
+                    icon_size: 44px;
+                    tint: Theme.text_dim;
+                }
+
+                if (root.item.is_media) : play-chip := Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    x: parent.width - self.width - 10px;
+                    y: parent.height - self.height - 10px;
+                    border-radius: 18px;
+                    background: Theme.accent;
+
+                    Icon {
+                        x: 11px;
+                        y: 11px;
+                        name: "play";
+                        icon_size: 14px;
+                        tint: Theme.bg;
+                    }
+                }
+            }
+
+            Text {
+                text: item.name;
+                wrap: word-wrap;
+                color: Theme.text;
+                font-size: 14px;
+                font-weight: 600;
+                font-family: Theme.ui_font;
+            }
+
+            Text {
+                text: item.detail_size + " · " + item.list_updated;
+                color: Theme.text_mute;
+                font-size: 11.5px;
+                font-family: Theme.ui_font;
+            }
+
+            Rectangle { height: 8px; }
+
+            DetailValueRow { label: "Size"; value: item.detail_size; mono: true; }
+            DetailValueRow { label: "Kind"; value: item.detail_kind; }
+            if (item.detail_extra_a_label != "") : extra-a := DetailValueRow { label: item.detail_extra_a_label; value: item.detail_extra_a_value; mono: true; }
+            if (item.detail_extra_b_label != "") : extra-b := DetailValueRow { label: item.detail_extra_b_label; value: item.detail_extra_b_value; mono: true; }
+            DetailValueRow { label: "Location"; value: item.location; }
+        }
+    }
+
+    actions := Rectangle {
+        x: 16px;
+        y: parent.height - root.actions_height + 4px;
+        width: parent.width - 32px;
+        height: root.actions_height - 16px;
+        background: transparent;
+
+        if (root.item.is_media) : primary := ButtonChip {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: 38px;
+            label: "Play";
+            icon_name: "play";
+            primary: true;
+        }
+
+        ButtonChip {
+            x: 0px;
+            y: root.item.is_media ? 46px : 0px;
+            width: (parent.width - 6px) / 2;
+            height: 34px;
+            label: "Download";
+            icon_name: "download";
+        }
+
+        ButtonChip {
+            x: (parent.width + 6px) / 2;
+            y: root.item.is_media ? 46px : 0px;
+            width: (parent.width - 6px) / 2;
+            height: 34px;
+            label: "Share link";
+            icon_name: "share";
+        }
+    }
+}
+
+export component FilesPage inherits Rectangle {
+    in property <[FileItem]> items;
+    in property <[PathSegment]> path_segments;
+    in property <bool> has_parent;
+    in property <int> folder_count;
+    in property <int> file_count;
+    in property <string> total_label;
+    in property <bool> detail_open;
+    in property <FileItem> detail_item;
+    in-out property <string> query;
+    in-out property <int> mode;
+    in-out property <int> sort_index;
+    callback open_item(id: int, item_type: string);
+    callback go_up();
+    callback go_root();
+    callback go_to_path(index: int);
+    callback set_sort(index: int);
+    callback set_mode(index: int);
+    callback query_changed();
+    callback close_detail();
+    callback menu_action(action: string, id: int);
+
+    background: Theme.bg;
+
+    private property <length> page_padding: self.width >= 980px ? 32px : 20px;
+    private property <bool> detail_docked: self.width >= 1220px;
+    private property <length> header_height: 168px;
+    private property <length> content_width: self.width - page_padding * 2 - (detail_open && detail_docked ? 352px : 0px);
+    private property <int> grid_columns: content_width >= 1080px ? 4 : (content_width >= 760px ? 3 : 2);
+    private property <length> grid_gap: 10px;
+    private property <length> grid_card_height: 88px;
+    private property <length> grid_card_width: (content_width - grid_gap * (grid_columns - 1)) / grid_columns;
+    private property <int> grid_rows: Math.ceil(items.length / max(grid_columns, 1));
+    private property <bool> menu_open: false;
+    private property <length> menu_x: 0px;
+    private property <length> menu_y: 0px;
+    private property <int> menu_item_id: -1;
+    private property <string> menu_item_type: "";
+    private property <bool> menu_item_is_media: false;
+
+    title-text := Text {
+        x: page_padding;
+        y: 24px;
+        text: "Your Files";
+        color: Theme.text;
+        font-size: 26px;
+        font-weight: 600;
+        font-family: Theme.ui_font;
+    }
+
+    IconButton {
+        x: page_padding + title-text.preferred-width + 10px;
+        y: title-text.y + (title-text.preferred-height - self.height) / 2;
+        icon_name: "refresh";
+        tint: Theme.text_mute;
+    }
+
+    breadcrumb-row := Rectangle {
+        x: page_padding;
+        y: 62px;
+        width: parent.width - page_padding * 2;
+        height: 28px;
+        background: transparent;
+        clip: true;
+
+        HorizontalLayout {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            alignment: start;
+            spacing: 4px;
+
+            BreadcrumbButton {
+                label: "Home";
+                icon_name: "home";
+                clicked => { root.go_root(); }
+            }
+
+            for segment[index] in root.path_segments : HorizontalLayout {
+                spacing: 4px;
+                alignment: center;
+
+                Icon {
+                    name: "chevron-right";
+                    icon_size: 11px;
+                    tint: Theme.text_mute;
+                    width: 11px;
+                }
+
+                BreadcrumbButton {
+                    label: segment.name;
+                    active: index == root.path_segments.length - 1;
+                    clicked => { root.go_to_path(index); }
+                }
+            }
+        }
+    }
+
+    counts-block := Rectangle {
+        width: 150px;
+        height: 42px;
+        x: max(page_padding, parent.width - page_padding - self.width);
+        y: 24px;
+        background: transparent;
+        opacity: root.width < 980px ? 0 : 1;
+
+        Text {
+            width: parent.width;
+            text: folder_count + " fld / " + file_count + " fil";
+            color: Theme.text;
+            font-size: 20px;
+            font-family: Theme.ui_font;
+            horizontal-alignment: right;
+        }
+
+        Text {
+            y: 28px;
+            width: parent.width;
+            text: total_label;
+            color: Theme.text_mute;
+            font-size: 11px;
+            font-family: Theme.mono_font;
+            horizontal-alignment: right;
+        }
+    }
+
+    toolbar := Rectangle {
+        x: page_padding;
+        y: 108px;
+        width: parent.width - page_padding * 2;
+        height: 40px;
+        background: transparent;
+
+        mode-segment := Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 160px;
+            height: 34px;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.border;
+            background: Theme.surface;
+
+            ButtonChip {
+                x: 3px;
+                y: 3px;
+                width: 74px;
+                height: 26px;
+                label: "List";
+                icon_name: "list";
+                active: root.mode == 1;
+                clicked => { root.set_mode(1); }
+            }
+
+            ButtonChip {
+                x: 81px;
+                y: 3px;
+                width: 74px;
+                height: 26px;
+                label: "Grid";
+                icon_name: "grid";
+                active: root.mode == 0;
+                clicked => { root.set_mode(0); }
+            }
+        }
+
+        sort-segment := Rectangle {
+            x: 170px;
+            y: 0px;
+            width: 296px;
+            height: 34px;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.border;
+            background: Theme.surface;
+
+            ButtonChip { x: 3px; y: 3px; width: 70px; height: 26px; label: "Name"; active: root.sort_index == 1; clicked => { root.set_sort(1); } }
+            ButtonChip { x: 76px; y: 3px; width: 70px; height: 26px; label: "Size"; active: root.sort_index == 2; clicked => { root.set_sort(2); } }
+            ButtonChip { x: 149px; y: 3px; width: 70px; height: 26px; label: "Created"; active: root.sort_index == 3; clicked => { root.set_sort(3); } }
+            ButtonChip { x: 222px; y: 3px; width: 71px; height: 26px; label: "Updated"; active: root.sort_index == 0; clicked => { root.set_sort(0); } }
+        }
+
+        descending-chip := ButtonChip { x: 476px; y: 1px; height: 32px; label: "Descending"; icon_name: "sort"; }
+
+        SearchField {
+            x: descending-chip.x + descending-chip.width + 12px;
+            y: 0px;
+            height: 34px;
+            width: max(120px, parent.width - self.x);
+            text <=> root.query;
+            placeholder: "Search files or folders";
+            shortcut: "CMD+K";
+            edited => { root.query_changed(); }
+        }
+    }
+
+    content-area := Rectangle {
+        x: page_padding;
+        y: header_height;
+        width: content_width;
+        height: parent.height - header_height;
+        background: transparent;
+
+        if (root.mode == 0) : grid-view := ScrollView {
+            width: parent.width;
+            height: parent.height;
+            viewport-width: self.visible-width;
+            viewport-height: max(self.visible-height, root.grid_rows * root.grid_card_height + max(0px, (root.grid_rows - 1) * root.grid_gap));
+
+            for item[index] in root.items : GridCard {
+                width: root.grid_card_width;
+                height: root.grid_card_height;
+                x: Math.mod(index, root.grid_columns) * (root.grid_card_width + root.grid_gap);
+                y: Math.floor(index / max(root.grid_columns, 1)) * (root.grid_card_height + root.grid_gap);
+                item: item;
+                selected: root.detail_open && root.detail_item.id == item.id;
+                clicked => { root.open_item(item.id, item.item_type); }
+                menu_requested(id, item_type, is_media, x, y) => {
+                    root.menu_item_id = id;
+                    root.menu_item_type = item_type;
+                    root.menu_item_is_media = is_media;
+                    root.menu_x = x;
+                    root.menu_y = min(y, root.height - 228px);
+                    root.menu_open = true;
+                }
+            }
+        }
+
+        if (root.mode == 1) : list-view := ScrollView {
+            width: parent.width;
+            height: parent.height;
+            viewport-width: self.visible-width;
+            viewport-height: max(self.visible-height, 44px + root.items.length * 44px);
+
+            Rectangle {
+                width: parent.width;
+                height: 44px;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: Theme.border;
+                background: Theme.surface;
+
+                Text { x: 16px; y: 15px; text: "NAME"; color: Theme.text_mute; font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; font-family: Theme.ui_font; }
+                Text { x: parent.width - 344px; y: 15px; text: "KIND"; color: Theme.text_mute; font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; font-family: Theme.ui_font; }
+                Text { x: parent.width - 220px; y: 15px; text: "SIZE"; color: Theme.text_mute; font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; font-family: Theme.ui_font; }
+                Text { x: parent.width - 126px; y: 15px; text: "UPDATED"; color: Theme.text_mute; font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; font-family: Theme.ui_font; }
+            }
+
+            for item[index] in root.items : Rectangle {
+                y: 44px + index * 44px;
+                width: parent.width;
+                height: 44px;
+                background: root.detail_open && root.detail_item.id == item.id ? Theme.accent_soft : (Math.mod(index, 2) == 0 ? #ffffff04 : Theme.bg);
+                border-width: 1px;
+                border-color: Theme.border;
+
+                row-touch := TouchArea {
+                    clicked => { root.open_item(item.id, item.item_type); }
+                }
+
+                Icon {
+                    x: 14px;
+                    y: 15px;
+                    name: item.item_type == "folder" ? "folder" : (item.kind == "movie" || item.kind == "tv" ? "film" : (item.kind == "music" ? "music" : (item.kind == "image" ? "image" : "document")));
+                    icon_size: 14px;
+                    tint: item.item_type == "folder" ? Theme.accent : Theme.text_dim;
+                }
+
+                Text {
+                    x: 36px;
+                    y: 12px;
+                    width: parent.width - 384px;
+                    text: item.name;
+                    color: Theme.text;
+                    font-size: 12.5px;
+                    font-family: Theme.ui_font;
+                    overflow: elide;
+                }
+
+                Text {
+                    x: parent.width - 344px;
+                    y: 12px;
+                    text: item.list_kind;
+                    color: Theme.text_dim;
+                    font-size: 11.5px;
+                    font-family: Theme.ui_font;
+                }
+
+                Text {
+                    x: parent.width - 220px;
+                    y: 12px;
+                    width: 84px;
+                    text: item.list_size;
+                    color: Theme.text_dim;
+                    font-size: 11px;
+                    font-family: Theme.mono_font;
+                }
+
+                Text {
+                    x: parent.width - 126px;
+                    y: 12px;
+                    text: item.list_updated;
+                    color: Theme.text_dim;
+                    font-size: 11.5px;
+                    font-family: Theme.ui_font;
+                }
+
+                menu-button := Rectangle {
+                    x: parent.width - 32px;
+                    y: 11px;
+                    width: 20px;
+                    height: 20px;
+                    border-radius: 4px;
+                    background: menu-touch.has-hover ? Theme.surface_hi : transparent;
+
+                    Icon { x: 3px; y: 3px; name: "more"; icon_size: 14px; tint: Theme.text_mute; }
+
+                    menu-touch := TouchArea {
+                        clicked => {
+                            root.menu_item_id = item.id;
+                            root.menu_item_type = item.item_type;
+                            root.menu_item_is_media = item.is_media;
+                            root.menu_x = min(self.absolute-position.x - root.absolute-position.x - 194px + self.width, root.width - 226px);
+                            root.menu_y = min(self.absolute-position.y - root.absolute-position.y + self.height + 6px, root.height - 228px);
+                            root.menu_open = true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (root.detail_open && root.detail_docked) : docked-detail := Rectangle {
+        x: root.width - 340px;
+        y: root.header_height;
+        width: 340px;
+        height: root.height - root.header_height;
+        background: Theme.surface;
+
+        Rectangle {
+            width: 1px;
+            height: parent.height;
+            background: Theme.border;
+        }
+
+        DetailPanel {
+            width: parent.width;
+            height: parent.height;
+            item: root.detail_item;
+            close => { root.close_detail(); }
+        }
+    }
+
+    if (root.detail_open && !root.detail_docked) : overlay-detail := Rectangle {
+        x: 0px;
+        y: root.header_height;
+        width: root.width;
+        height: root.height - root.header_height;
+        background: #00000066;
+
+        TouchArea {
+            clicked => { root.close_detail(); }
+        }
+
+        Rectangle {
+            x: parent.width - min(340px, parent.width * 0.88);
+            y: 0px;
+            width: min(340px, parent.width * 0.88);
+            height: parent.height;
+            background: Theme.surface;
+
+            Rectangle {
+                width: 1px;
+                height: parent.height;
+                background: Theme.border;
+            }
+
+            DetailPanel {
+                width: parent.width;
+                height: parent.height;
+                item: root.detail_item;
+                close => { root.close_detail(); }
+            }
+        }
+    }
+
+    if (root.menu_open) : menu-overlay := Rectangle {
+        x: 0px;
+        y: root.header_height;
+        width: root.width;
+        height: root.height - root.header_height;
+        background: transparent;
+
+        TouchArea {
+            clicked => { root.menu_open = false; }
+        }
+
+        KebabMenu {
+            x: root.menu_x;
+            y: root.menu_y - root.header_height;
+            is_folder: root.menu_item_type == "folder";
+            is_media: root.menu_item_is_media;
+            item_id: root.menu_item_id;
+            action(name, id) => {
+                root.menu_open = false;
+                root.menu_action(name, id);
+            }
+            close => { root.menu_open = false; }
+        }
+    }
+}

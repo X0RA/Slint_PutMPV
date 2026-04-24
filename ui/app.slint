@@ -1,20 +1,196 @@
-import { VerticalBox } from "std-widgets.slint";
+import { Theme } from "./theme.slint";
+import { TopNavButton, ButtonChip } from "./components/primitives.slint";
+import { LogoMark } from "./components/icons.slint";
+import { SplashPage } from "./pages/splash.slint";
+import { CodePage } from "./pages/code.slint";
+import { FilesPage } from "./pages/files.slint";
+import { MetadataPage } from "./pages/metadata.slint";
+import { SettingsPage } from "./pages/settings.slint";
+import { MediaPage } from "./pages/media.slint";
+import { FileItem, MetadataItem, PathSegment } from "./types.slint";
 
 export component AppWindow inherits Window {
     title: "PutMPV";
-    width: 480px;
-    height: 320px;
+    preferred-width: 1100px;
+    preferred-height: 760px;
+    min-width: 880px;
+    min-height: 680px;
+    no-frame: true;
+    resize-border-width: 8px;
+    background: Theme.bg;
+    default-font-family: Theme.ui_font;
+    default-font-size: 13px;
 
-    VerticalBox {
-        padding: 24px;
-        spacing: 12px;
+    in-out property <int> view: 0;
+    in-out property <string> device_code: "HVXZ-4K9P";
+    in-out property <string> device_expires: "10:00";
+    in-out property <string> files_query;
+    in-out property <int> files_mode: 0;
+    in-out property <int> files_sort: 0;
+    in-out property <[FileItem]> visible_items;
+    in-out property <[PathSegment]> path_segments;
+    in-out property <bool> has_parent: false;
+    in-out property <int> folder_count: 0;
+    in-out property <int> file_count: 0;
+    in-out property <string> total_label: "TOTAL · 1.84 TB";
+    in-out property <bool> detail_open: false;
+    in-out property <FileItem> detail_item;
+    in-out property <[MetadataItem]> metadata_items;
+    in-out property <string> metadata_query;
+    in-out property <int> metadata_filter: 0;
+    in-out property <bool> metadata_hide_matched: false;
+    in-out property <int> metadata_total_count: 0;
+    in-out property <int> metadata_selected_count: 0;
+    in-out property <int> metadata_unmatched_count: 0;
+    in-out property <int> metadata_tv_count: 0;
+    in-out property <int> metadata_movie_count: 0;
+    in-out property <int> settings_section: 0;
+
+    callback sign_in();
+    callback code_back();
+    callback code_open_link();
+    callback code_continue();
+    callback files_open_item(id: int, item_type: string);
+    callback files_go_up();
+    callback files_go_root();
+    callback files_go_to_path(index: int);
+    callback files_sort_changed(index: int);
+    callback files_mode_changed(index: int);
+    callback files_query_changed();
+    callback files_close_detail();
+    callback files_menu_action(action: string, id: int);
+    callback metadata_toggle_item(id: int);
+    callback metadata_toggle_expand(id: int);
+    callback metadata_select_unmatched();
+    callback metadata_clear_selection();
+    callback metadata_criteria_changed();
+
+    title-bar := Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: Theme.title_bar_height;
+        background: Theme.bg;
+
+        LogoMark {
+            x: 18px;
+            y: 14px;
+        }
 
         Text {
-            text: "Hello, world!";
-            font-size: 28px;
+            x: 50px;
+            y: 17px;
+            text: "PutMPV";
+            color: Theme.text;
+            font-size: 13px;
             font-weight: 600;
-            horizontal-alignment: center;
-            vertical-alignment: center;
+            font-family: Theme.ui_font;
         }
+
+        if (root.view >= 2) : top-nav := HorizontalLayout {
+            x: parent.width - self.width - 18px;
+            y: 9px;
+            width: self.preferred-width;
+            height: 34px;
+            spacing: 6px;
+            alignment: end;
+
+            TopNavButton { label: "Files"; icon_name: "folder"; active: root.view == 2; clicked => { root.view = 2; } }
+            TopNavButton { label: "Media"; icon_name: "media"; active: root.view == 3; clicked => { root.view = 3; } }
+            TopNavButton { label: "Metadata"; icon_name: "metadata"; active: root.view == 4; clicked => { root.view = 4; } }
+            TopNavButton { label: "Settings"; icon_name: "settings"; active: root.view == 5; clicked => { root.view = 5; } }
+            Rectangle { width: 13px; Rectangle { x: 6px; y: (parent.height - self.height) / 2; width: 1px; height: 20px; background: Theme.border; } }
+            ButtonChip { label: "Logout"; icon_name: "logout"; clicked => { root.view = 0; } }
+        }
+
+        Rectangle {
+            y: parent.height - 1px;
+            width: parent.width;
+            height: 1px;
+            background: Theme.border;
+        }
+    }
+
+    if (root.view == 0) : splash := SplashPage {
+        x: 0px;
+        y: Theme.title_bar_height;
+        width: parent.width;
+        height: parent.height - Theme.title_bar_height;
+        sign_in => { root.sign_in(); }
+    }
+
+    if (root.view == 1) : code := CodePage {
+        x: 0px;
+        y: Theme.title_bar_height;
+        width: parent.width;
+        height: parent.height - Theme.title_bar_height;
+        code: root.device_code;
+        expires: root.device_expires;
+        back => { root.code_back(); }
+        open_link => { root.code_open_link(); }
+        continue_to_files => { root.code_continue(); }
+    }
+
+    if (root.view == 2) : files := FilesPage {
+        x: 0px;
+        y: Theme.title_bar_height;
+        width: parent.width;
+        height: parent.height - Theme.title_bar_height;
+        items: root.visible_items;
+        path_segments: root.path_segments;
+        has_parent: root.has_parent;
+        folder_count: root.folder_count;
+        file_count: root.file_count;
+        total_label: root.total_label;
+        detail_open: root.detail_open;
+        detail_item: root.detail_item;
+        query <=> root.files_query;
+        mode <=> root.files_mode;
+        sort_index <=> root.files_sort;
+        open_item(id, item_type) => { root.files_open_item(id, item_type); }
+        go_up => { root.files_go_up(); }
+        go_root => { root.files_go_root(); }
+        go_to_path(index) => { root.files_go_to_path(index); }
+        set_sort(index) => { root.files_sort_changed(index); }
+        set_mode(index) => { root.files_mode_changed(index); }
+        query_changed => { root.files_query_changed(); }
+        close_detail => { root.files_close_detail(); }
+        menu_action(action, id) => { root.files_menu_action(action, id); }
+    }
+
+    if (root.view == 3) : media := MediaPage {
+        x: 0px;
+        y: Theme.title_bar_height;
+        width: parent.width;
+        height: parent.height - Theme.title_bar_height;
+    }
+
+    if (root.view == 4) : metadata := MetadataPage {
+        x: 0px;
+        y: Theme.title_bar_height;
+        width: parent.width;
+        height: parent.height - Theme.title_bar_height;
+        items: root.metadata_items;
+        query <=> root.metadata_query;
+        filter_index <=> root.metadata_filter;
+        hide_matched <=> root.metadata_hide_matched;
+        total_count: root.metadata_total_count;
+        selected_count: root.metadata_selected_count;
+        unmatched_count: root.metadata_unmatched_count;
+        tv_count: root.metadata_tv_count;
+        movie_count: root.metadata_movie_count;
+        toggle_item(id) => { root.metadata_toggle_item(id); }
+        toggle_expand(id) => { root.metadata_toggle_expand(id); }
+        select_unmatched => { root.metadata_select_unmatched(); }
+        clear_selection => { root.metadata_clear_selection(); }
+        criteria_changed => { root.metadata_criteria_changed(); }
+    }
+
+    if (root.view == 5) : settings := SettingsPage {
+        x: 0px;
+        y: Theme.title_bar_height;
+        width: parent.width;
+        height: parent.height - Theme.title_bar_height;
+        section <=> root.settings_section;
     }
 }

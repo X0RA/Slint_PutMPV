@@ -1,0 +1,261 @@
+import { Theme } from "../theme.slint";
+import { ButtonChip } from "../components/primitives.slint";
+import { Icon } from "../components/icons.slint";
+
+export component CodePage inherits Rectangle {
+    in property <string> code: "HVXZ-4K9P";
+    in property <string> expires: "10:00";
+    callback back();
+    callback continue_to_files();
+    callback open_link();
+
+    background: Theme.bg;
+
+    Rectangle {
+        width: min(460px, parent.width - 48px);
+        height: 420px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2 - 12px;
+        background: transparent;
+
+        Rectangle {
+            y: 0px;
+            width: 72px;
+            height: 24px;
+            background: transparent;
+
+            TouchArea {
+                clicked => { root.back(); }
+            }
+
+            Icon {
+                x: 0px;
+                y: 5px;
+                name: "chevron-left";
+                icon_size: 14px;
+                tint: Theme.text_dim;
+            }
+
+            Text {
+                x: 20px;
+                width: parent.width - 20px;
+                text: "Back";
+                color: Theme.text_dim;
+                font-size: 12.5px;
+                font-family: Theme.ui_font;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            y: 44px;
+            text: "Link this device";
+            color: Theme.text;
+            font-size: 22px;
+            font-weight: 600;
+            font-family: Theme.ui_font;
+        }
+
+        Text {
+            y: 78px;
+            width: parent.width;
+            text: "Open put.io on any browser and enter the code below to connect PutMPV to your account.";
+            color: Theme.text_dim;
+            font-size: 13.5px;
+            font-family: Theme.ui_font;
+            wrap: word-wrap;
+        }
+
+        code-card := Rectangle {
+            y: 142px;
+            width: parent.width;
+            height: 138px;
+            border-radius: 12px;
+            border-width: 1px;
+            border-color: Theme.border;
+            background: Theme.surface;
+
+            Text {
+                x: 24px;
+                y: 22px;
+                text: "YOUR CODE";
+                color: Theme.text_mute;
+                font-size: 10.5px;
+                font-weight: 600;
+                letter-spacing: 1.5px;
+                font-family: Theme.ui_font;
+            }
+
+            Text {
+                x: 24px;
+                y: 49px;
+                text: root.code;
+                color: Theme.accent;
+                font-size: 34px;
+                font-weight: 600;
+                letter-spacing: 4px;
+                font-family: Theme.mono_font;
+            }
+
+            copy-button := Rectangle {
+                x: parent.width - 90px;
+                y: 42px;
+                width: 66px;
+                height: 32px;
+                border-radius: 8px;
+                border-width: 1px;
+                border-color: Theme.border;
+                background: Theme.surface_hi;
+
+                Icon {
+                    x: 11px;
+                    y: 10px;
+                    name: "copy";
+                    icon_size: 13px;
+                    tint: Theme.text;
+                }
+
+                Text {
+                    x: 28px;
+                    y: 8px;
+                    text: "Copy";
+                    color: Theme.text;
+                    font-size: 12px;
+                    font-weight: 500;
+                    font-family: Theme.ui_font;
+                }
+            }
+
+            Rectangle {
+                x: 24px;
+                y: 98px;
+                width: parent.width - 48px;
+                height: 1px;
+                background: Theme.border;
+            }
+
+            Text {
+                x: 24px;
+                y: 111px;
+                text: "Expires in";
+                color: Theme.text_mute;
+                font-size: 11.5px;
+                font-family: Theme.ui_font;
+            }
+
+            Text {
+                x: parent.width - 66px;
+                y: 111px;
+                width: 42px;
+                text: root.expires;
+                color: Theme.text_dim;
+                font-size: 11.5px;
+                font-family: Theme.mono_font;
+                horizontal-alignment: right;
+            }
+        }
+
+        link-card := Rectangle {
+            y: 292px;
+            width: parent.width;
+            height: 48px;
+            border-radius: 10px;
+            border-width: 1px;
+            border-color: Theme.border;
+            background: Theme.surface;
+
+            Icon {
+                x: 14px;
+                y: 17px;
+                name: "link";
+                icon_size: 14px;
+                tint: Theme.text_mute;
+            }
+
+            Text {
+                x: 38px;
+                y: 17px;
+                width: 260px;
+                text: "put.io/link";
+                color: Theme.text_dim;
+                font-size: 12px;
+                font-family: Theme.mono_font;
+            }
+
+            Text {
+                x: parent.width - 72px;
+                y: 17px;
+                text: "or scan QR";
+                color: Theme.text_mute;
+                font-size: 11px;
+                font-family: Theme.ui_font;
+            }
+        }
+
+        action-row := Rectangle {
+            y: 352px;
+            width: parent.width;
+            height: 42px;
+            background: transparent;
+
+            HorizontalLayout {
+                width: parent.width;
+                height: parent.height;
+                spacing: 10px;
+
+                primary-button := Rectangle {
+                    border-radius: 10px;
+                    background: Theme.accent;
+                    horizontal-stretch: 1;
+
+                    Icon {
+                        x: 14px;
+                        y: 14px;
+                        name: "external";
+                        icon_size: 14px;
+                        tint: Theme.bg;
+                    }
+
+                    Text {
+                        x: 0px;
+                        y: 12px;
+                        width: parent.width;
+                        text: "Open put.io/link";
+                        color: Theme.bg;
+                        font-size: 13px;
+                        font-weight: 600;
+                        font-family: Theme.ui_font;
+                        horizontal-alignment: center;
+                    }
+
+                    TouchArea {
+                        clicked => { root.open_link(); }
+                    }
+                }
+
+                secondary-button := Rectangle {
+                    width: 126px;
+                    border-radius: 10px;
+                    border-width: 1px;
+                    border-color: Theme.border_hi;
+                    background: Theme.surface;
+
+                    Text {
+                        y: 12px;
+                        width: parent.width;
+                        text: "I've authorized";
+                        color: Theme.text;
+                        font-size: 13px;
+                        font-weight: 500;
+                        font-family: Theme.ui_font;
+                        horizontal-alignment: center;
+                    }
+
+                    TouchArea {
+                        clicked => { root.continue_to_files(); }
+                    }
+                }
+            }
+        }
+    }
+}

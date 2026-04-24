@@ -1,0 +1,34 @@
+export struct FileItem {
+    id: int,
+    item_type: string,
+    name: string,
+    kind: string,
+    grid_meta: string,
+    list_kind: string,
+    list_size: string,
+    list_updated: string,
+    detail_size: string,
+    detail_kind: string,
+    detail_extra_a_label: string,
+    detail_extra_a_value: string,
+    detail_extra_b_label: string,
+    detail_extra_b_value: string,
+    location: string,
+    is_media: bool,
+}
+
+export struct PathSegment {
+    id: int,
+    name: string,
+}
+
+export struct MetadataItem {
+    id: int,
+    media_type: string,
+    title: string,
+    subtitle: string,
+    badge: string,
+    matched: bool,
+    expanded: bool,
+    selected: bool,
+}

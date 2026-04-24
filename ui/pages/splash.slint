@@ -1,0 +1,114 @@
+import { Theme } from "../theme.slint";
+import { ButtonChip } from "../components/primitives.slint";
+import { LogoMark, Icon } from "../components/icons.slint";
+
+export component SplashPage inherits Rectangle {
+    callback sign_in();
+
+    background: Theme.bg;
+
+    Rectangle {
+        width: min(420px, parent.width - 48px);
+        height: 320px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2 - 12px;
+        background: transparent;
+
+        Rectangle {
+            width: 72px;
+            height: 72px;
+            x: (parent.width - self.width) / 2;
+            y: 0px;
+            border-radius: 18px;
+            border-width: 1px;
+            border-color: Theme.border_hi;
+            background: Theme.surface;
+
+            LogoMark {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: 34px;
+                height: 34px;
+            }
+        }
+
+        Text {
+            y: 101px;
+            width: parent.width;
+            text: "Welcome to PutMPV";
+            color: Theme.text;
+            font-size: 30px;
+            font-weight: 600;
+            font-family: Theme.ui_font;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            y: 148px;
+            width: parent.width;
+            text: "Your put.io files, finally with an interface worth opening.\nSign in to browse, stream and manage your library.";
+            color: Theme.text_dim;
+            font-size: 14px;
+            font-family: Theme.ui_font;
+            wrap: word-wrap;
+            horizontal-alignment: center;
+        }
+
+        sign-in-button := Rectangle {
+            x: 0px;
+            y: 238px;
+            width: parent.width;
+            height: 48px;
+            border-radius: 10px;
+            background: Theme.accent;
+
+            states [
+                hover when touch.has-hover : {
+                    background: Theme.accent_hi;
+                }
+            ]
+
+            Icon {
+                x: 124px;
+                y: (parent.height - self.height) / 2;
+                name: "external";
+                icon_size: 14px;
+                tint: Theme.bg;
+            }
+
+            Text {
+                x: 0px;
+                y: (parent.height - self.height) / 2;
+                width: parent.width;
+                text: "Sign in with put.io";
+                color: Theme.bg;
+                font-size: 14px;
+                font-weight: 600;
+                font-family: Theme.ui_font;
+                horizontal-alignment: center;
+            }
+
+            Icon {
+                x: parent.width - 34px;
+                y: (parent.height - self.height) / 2;
+                name: "chevron-right";
+                icon_size: 16px;
+                tint: Theme.bg;
+            }
+
+            touch := TouchArea {
+                clicked => { root.sign_in(); }
+            }
+        }
+
+        Text {
+            y: 302px;
+            width: parent.width;
+            text: "We use put.io's OAuth device flow · No password required";
+            color: Theme.text_mute;
+            font-size: 11.5px;
+            font-family: Theme.ui_font;
+            horizontal-alignment: center;
+        }
+    }
+}
