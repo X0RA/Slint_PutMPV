@@ -5,6 +5,19 @@ edition = "2021"
 
 [dependencies]
 slint = "1.16"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+directories = "5"
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+open = "5"
+arboard = { version = "3", features = ["wayland-data-control"] }
+which = "6"
+rfd = { version = "0.14", default-features = false, features = ["xdg-portal", "tokio"] }
 
 [build-dependencies]
 slint-build = "1.16"

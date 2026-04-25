@@ -384,12 +384,14 @@ export component FilesPage inherits Rectangle {
     in-out property <string> query;
     in-out property <int> mode;
     in-out property <int> sort_index;
+    in-out property <bool> sort_descending: true;
     callback open_item(id: int, item_type: string);
     callback go_up();
     callback go_root();
     callback go_to_path(index: int);
     callback set_sort(index: int);
     callback set_mode(index: int);
+    callback toggle_sort_direction();
     callback query_changed();
     callback close_detail();
     callback menu_action(action: string, id: int);
@@ -472,24 +474,25 @@ export component FilesPage inherits Rectangle {
     }
 
     counts-block := Rectangle {
-        width: 150px;
-        height: 42px;
+        width: 260px;
+        height: 50px;
         x: max(page_padding, parent.width - page_padding - self.width);
-        y: 24px;
+        y: 22px;
         background: transparent;
         opacity: root.width < 980px ? 0 : 1;
 
         Text {
+            y: 0px;
             width: parent.width;
-            text: folder_count + " fld / " + file_count + " fil";
+            text: folder_count + " folders / " + file_count + " files";
             color: Theme.text;
-            font-size: 20px;
+            font-size: 16px;
             font-family: Theme.ui_font;
             horizontal-alignment: right;
         }
 
         Text {
-            y: 28px;
+            y: 30px;
             width: parent.width;
             text: total_label;
             color: Theme.text_mute;
@@ -555,7 +558,14 @@ export component FilesPage inherits Rectangle {
             ButtonChip { x: 222px; y: 3px; width: 71px; height: 26px; label: "Updated"; active: root.sort_index == 0; clicked => { root.set_sort(0); } }
         }
 
-        descending-chip := ButtonChip { x: 476px; y: 1px; height: 32px; label: "Descending"; icon_name: "sort"; }
+        descending-chip := ButtonChip {
+            x: 476px;
+            y: 1px;
+            height: 32px;
+            label: root.sort_descending ? "Descending" : "Ascending";
+            icon_name: "sort";
+            clicked => { root.toggle_sort_direction(); }
+        }
 
         SearchField {
             x: descending-chip.x + descending-chip.width + 12px;
@@ -608,6 +618,8 @@ export component FilesPage inherits Rectangle {
             viewport-height: max(self.visible-height, 44px + root.items.length * 44px);
 
             Rectangle {
+                x: 0px;
+                y: 0px;
                 width: parent.width;
                 height: 44px;
                 border-radius: 10px;

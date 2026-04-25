@@ -1,0 +1,44 @@
+import { Theme } from "../theme.slint";
+import { LogoMark } from "../components/icons.slint";
+
+export component LoadingPage inherits Rectangle {
+    in property <string> message: "Checking sign-in…";
+
+    background: Theme.bg;
+
+    Rectangle {
+        width: 220px;
+        height: 140px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2 - 12px;
+        background: transparent;
+
+        LogoMark {
+            x: (parent.width - self.width) / 2;
+            y: 0px;
+            width: 40px;
+            height: 40px;
+        }
+
+        Text {
+            y: 70px;
+            width: parent.width;
+            text: "PutMPV";
+            color: Theme.text;
+            font-size: 18px;
+            font-weight: 600;
+            font-family: Theme.ui_font;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            y: 100px;
+            width: parent.width;
+            text: root.message;
+            color: Theme.text_dim;
+            font-size: 13px;
+            font-family: Theme.ui_font;
+            horizontal-alignment: center;
+        }
+    }
+}
