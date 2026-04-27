@@ -149,7 +149,7 @@ export component AppWindow inherits Window {
 
             TopNavButton { label: "Files"; icon_name: "folder"; active: root.view == 3; clicked => { root.view = 3; } }
             TopNavButton { label: "Media"; icon_name: "media"; active: root.view == 4; clicked => { root.view = 4; } }
-            TopNavButton { label: "Metadata"; icon_name: "metadata"; active: root.view == 5; clicked => { root.view = 5; } }
+            TopNavButton { label: "Metadata"; icon_name: "metadata"; active: root.view == 5; clicked => { root.view = 5; root.metadata_criteria_changed(); } }
             TopNavButton { label: "Settings"; icon_name: "settings"; active: root.view == 6; clicked => { root.view = 6; root.settings_refresh(); if (root.settings_section == 1) { root.sync_refresh_profiles(); } } }
             Rectangle { width: 13px; Rectangle { x: 6px; y: (parent.height - self.height) / 2; width: 1px; height: 20px; background: Theme.border; } }
             ButtonChip { label: "Logout"; icon_name: "logout"; clicked => { root.logout(); } }

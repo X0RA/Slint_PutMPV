@@ -24,10 +24,15 @@ export struct PathSegment {
 
 export struct MetadataItem {
     id: int,
+    parent_id: int,
     media_type: string,
     title: string,
     subtitle: string,
     badge: string,
+    filename: string,
+    relative_path: string,
+    season: int,
+    episode: int,
     matched: bool,
     expanded: bool,
     selected: bool,

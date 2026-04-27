@@ -109,20 +109,19 @@ component GroupHeader inherits Rectangle {
 }
 
 component EpisodeRow inherits Rectangle {
-    in property <string> show_title;
-    in property <int> episode_index;
+    in property <MetadataItem> item;
 
-    height: 30px;
+    height: item.media_type == "Episode" ? 30px : 0px;
     background: transparent;
 
-    Rectangle {
+    if (root.item.media_type == "Episode") : Rectangle {
         y: parent.height - 1px;
         width: parent.width;
         height: 1px;
         background: Theme.border;
     }
 
-    Text {
+    if (root.item.media_type == "Episode") : Text {
         x: 0px;
         y: 0px;
         height: parent.height;
@@ -133,11 +132,11 @@ component EpisodeRow inherits Rectangle {
         vertical-alignment: center;
     }
 
-    Text {
+    if (root.item.media_type == "Episode") : Text {
         x: 18px;
         y: 0px;
         height: parent.height;
-        text: "1";
+        text: root.item.season;
         color: Theme.text;
         font-size: 11px;
         font-weight: 600;
@@ -145,7 +144,7 @@ component EpisodeRow inherits Rectangle {
         vertical-alignment: center;
     }
 
-    Text {
+    if (root.item.media_type == "Episode") : Text {
         x: 40px;
         y: 0px;
         height: parent.height;
@@ -156,11 +155,11 @@ component EpisodeRow inherits Rectangle {
         vertical-alignment: center;
     }
 
-    Text {
+    if (root.item.media_type == "Episode") : Text {
         x: 58px;
         y: 0px;
         height: parent.height;
-        text: episode_index < 9 ? "0" + (episode_index + 1) : (episode_index + 1);
+        text: root.item.episode < 10 ? "0" + root.item.episode : root.item.episode;
         color: Theme.text;
         font-size: 11px;
         font-weight: 600;
@@ -168,12 +167,12 @@ component EpisodeRow inherits Rectangle {
         vertical-alignment: center;
     }
 
-    Text {
+    if (root.item.media_type == "Episode") : Text {
         x: 90px;
         y: 0px;
         width: parent.width - 90px - 96px;
         height: parent.height;
-        text: show_title + ".S01E" + (episode_index < 9 ? "0" + (episode_index + 1) : (episode_index + 1)) + ".mkv";
+        text: root.item.filename;
         color: Theme.text_dim;
         font-size: 11.5px;
         font-family: Theme.ui_font;
@@ -181,10 +180,10 @@ component EpisodeRow inherits Rectangle {
         vertical-alignment: center;
     }
 
-    StatusBadge {
+    if (root.item.media_type == "Episode") : StatusBadge {
         x: parent.width - self.width;
         y: (parent.height - self.height) / 2;
-        label: "Matched";
+        label: root.item.badge == "" ? "Parsed" : root.item.badge;
         positive: true;
     }
 }
@@ -194,7 +193,7 @@ component TvRow inherits Rectangle {
     callback toggle_item(id: int);
     callback toggle_expand(id: int);
 
-    height: item.media_type == "TV" ? (item.expanded ? 60px + 30px + 4 * 30px + 8px : 60px) : 0px;
+    height: item.media_type == "TV" ? 60px : 0px;
     background: transparent;
 
     if (root.item.media_type == "TV") : row := Rectangle {
@@ -273,33 +272,6 @@ component TvRow inherits Rectangle {
         }
     }
 
-    if (root.item.media_type == "TV" && root.item.expanded) : episodes := Rectangle {
-        y: 60px;
-        width: parent.width;
-        height: 30px + 4 * 30px + 8px;
-        background: Theme.bg;
-
-        Text {
-            x: 58px;
-            y: 0px;
-            height: 30px;
-            text: "SEASON 1 · SAMPLE EPISODES";
-            color: Theme.text_dim;
-            font-size: 10.5px;
-            font-weight: 600;
-            letter-spacing: 1px;
-            font-family: Theme.ui_font;
-            vertical-alignment: center;
-        }
-
-        for episode[index] in [0, 1, 2, 3] : EpisodeRow {
-            x: 58px;
-            y: 30px + index * 30px;
-            width: parent.width - 58px - 22px;
-            show_title: root.item.title;
-            episode_index: index;
-        }
-    }
 }
 
 component MovieRow inherits Rectangle {
@@ -531,6 +503,7 @@ export component MetadataPage inherits Rectangle {
             label: "Fetch Metadata";
             icon_name: "refresh";
             primary: true;
+            enabled: false;
         }
 
     }
@@ -576,6 +549,10 @@ export component MetadataPage inherits Rectangle {
                             item: item;
                             toggle_item(id) => { root.toggle_item(id); }
                             toggle_expand(id) => { root.toggle_expand(id); }
+                        }
+
+                        for item in root.items : EpisodeRow {
+                            item: item;
                         }
                     }
                 }

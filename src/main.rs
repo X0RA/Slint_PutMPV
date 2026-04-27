@@ -9,6 +9,7 @@ use slint::{ModelRc, VecModel};
 use tokio::runtime::Runtime;
 use tracing::{error, info, warn};
 
+mod fileparser;
 mod mpv;
 mod putio;
 mod storage;
@@ -50,6 +51,24 @@ fn empty_file_item() -> FileItem {
         detail_extra_b_value: "".into(),
         location: "".into(),
         is_media: false,
+    }
+}
+
+fn metadata_item_empty() -> MetadataItem {
+    MetadataItem {
+        id: -1,
+        parent_id: -1,
+        media_type: "".into(),
+        title: "".into(),
+        subtitle: "".into(),
+        badge: "".into(),
+        filename: "".into(),
+        relative_path: "".into(),
+        season: 0,
+        episode: 0,
+        matched: false,
+        expanded: false,
+        selected: false,
     }
 }
 
@@ -307,6 +326,222 @@ fn install_hint() -> (String, bool, &'static str) {
     }
 }
 
+#[derive(Debug, Clone)]
+struct MetadataUiState {
+    rows: Vec<MetadataRow>,
+    expanded: std::collections::BTreeSet<i32>,
+    selected: std::collections::BTreeSet<i32>,
+}
+
+impl MetadataUiState {
+    fn new() -> Self {
+        Self {
+            rows: Vec::new(),
+            expanded: std::collections::BTreeSet::new(),
+            selected: std::collections::BTreeSet::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum MetadataRowKind {
+    Show,
+    Episode,
+    Movie,
+}
+
+#[derive(Debug, Clone)]
+struct MetadataRow {
+    id: i32,
+    parent_id: i32,
+    kind: MetadataRowKind,
+    title: String,
+    subtitle: String,
+    badge: String,
+    filename: String,
+    relative_path: String,
+    season: i32,
+    episode: i32,
+}
+
+fn stable_i32_id(value: &str) -> i32 {
+    let mut hash: u32 = 2_166_136_261;
+    for b in value.as_bytes() {
+        hash ^= *b as u32;
+        hash = hash.wrapping_mul(16_777_619);
+    }
+    (hash & 0x7fff_ffff) as i32
+}
+
+fn build_metadata_rows(tree: &UnifiedDirectoryTree) -> Vec<MetadataRow> {
+    let lib = fileparser::parse_directory_tree(&tree.root);
+    let mut rows = Vec::new();
+    for show in lib.shows.values() {
+        let show_id = stable_i32_id(&format!("show:{}", show.key));
+        let episode_count = show
+            .seasons
+            .values()
+            .map(|season| season.episodes.len())
+            .sum::<usize>();
+        let season_count = show.seasons.len();
+        rows.push(MetadataRow {
+            id: show_id,
+            parent_id: -1,
+            kind: MetadataRowKind::Show,
+            title: show.title.clone(),
+            subtitle: format!(
+                "{} season{} · {} episode{}",
+                season_count,
+                if season_count == 1 { "" } else { "s" },
+                episode_count,
+                if episode_count == 1 { "" } else { "s" }
+            ),
+            badge: "Unmatched".to_string(),
+            filename: String::new(),
+            relative_path: String::new(),
+            season: 0,
+            episode: 0,
+        });
+        for season in show.seasons.values() {
+            for ep in &season.episodes {
+                rows.push(MetadataRow {
+                    id: stable_i32_id(&format!(
+                        "episode:{}:s{}e{}",
+                        ep.file_id, ep.season, ep.episode
+                    )),
+                    parent_id: show_id,
+                    kind: MetadataRowKind::Episode,
+                    title: if ep.episode_title.is_empty() {
+                        ep.filename.clone()
+                    } else {
+                        ep.episode_title.clone()
+                    },
+                    subtitle: ep.relative_path.clone(),
+                    badge: ep.quality.clone(),
+                    filename: ep.filename.clone(),
+                    relative_path: ep.relative_path.clone(),
+                    season: ep.season,
+                    episode: ep.episode,
+                });
+            }
+        }
+    }
+    for movie in lib.movies {
+        rows.push(MetadataRow {
+            id: stable_i32_id(&format!("movie:{}", movie.file_id)),
+            parent_id: -1,
+            kind: MetadataRowKind::Movie,
+            title: movie.title.clone(),
+            subtitle: if movie.year > 0 {
+                format!("{} · {}", movie.year, movie.relative_path)
+            } else {
+                movie.relative_path.clone()
+            },
+            badge: if movie.quality.is_empty() {
+                "Unmatched".to_string()
+            } else {
+                movie.quality.clone()
+            },
+            filename: movie.filename,
+            relative_path: movie.relative_path,
+            season: 0,
+            episode: 0,
+        });
+    }
+    rows
+}
+
+fn row_matches_query(row: &MetadataRow, query: &str) -> bool {
+    if query.is_empty() {
+        return true;
+    }
+    let haystack = format!(
+        "{} {} {} {}",
+        row.title, row.subtitle, row.filename, row.relative_path
+    )
+    .to_lowercase();
+    haystack.contains(query)
+}
+
+fn refresh_metadata_ui(
+    app: &AppWindow,
+    model: &Rc<VecModel<MetadataItem>>,
+    state: &Rc<RefCell<MetadataUiState>>,
+    tree: &Arc<RwLock<UnifiedDirectoryTree>>,
+) {
+    let rebuilt = {
+        let tree = tree.read().unwrap();
+        build_metadata_rows(&tree)
+    };
+    state.borrow_mut().rows = rebuilt;
+    let query = app.get_metadata_query().to_string().to_lowercase();
+    let filter = app.get_metadata_filter();
+    let hide_matched = app.get_metadata_hide_matched();
+    let state_ref = state.borrow();
+    let mut items = Vec::new();
+    let mut total = 0;
+    let mut tv_count = 0;
+    let mut movie_count = 0;
+    let mut unmatched = 0;
+
+    for row in &state_ref.rows {
+        let is_show = matches!(row.kind, MetadataRowKind::Show);
+        let is_movie = matches!(row.kind, MetadataRowKind::Movie);
+        let is_episode = matches!(row.kind, MetadataRowKind::Episode);
+        if is_episode && !state_ref.expanded.contains(&row.parent_id) {
+            continue;
+        }
+        if filter == 1 && is_movie {
+            continue;
+        }
+        if filter == 2 && (is_show || is_episode) {
+            continue;
+        }
+        if hide_matched {
+            continue;
+        }
+        if !row_matches_query(row, &query) {
+            continue;
+        }
+        if is_show {
+            tv_count += 1;
+        }
+        if is_movie {
+            movie_count += 1;
+        }
+        if !is_episode {
+            total += 1;
+            unmatched += 1;
+        }
+        let media_type = match row.kind {
+            MetadataRowKind::Show => "TV",
+            MetadataRowKind::Episode => "Episode",
+            MetadataRowKind::Movie => "Movie",
+        };
+        items.push(MetadataItem {
+            id: row.id,
+            parent_id: row.parent_id,
+            media_type: media_type.into(),
+            title: row.title.as_str().into(),
+            subtitle: row.subtitle.as_str().into(),
+            badge: row.badge.as_str().into(),
+            filename: row.filename.as_str().into(),
+            relative_path: row.relative_path.as_str().into(),
+            season: row.season,
+            episode: row.episode,
+            matched: false,
+            expanded: state_ref.expanded.contains(&row.id),
+            selected: state_ref.selected.contains(&row.id),
+        });
+    }
+    model.set_vec(items);
+    app.set_metadata_total_count(total);
+    app.set_metadata_tv_count(tv_count);
+    app.set_metadata_movie_count(movie_count);
+    app.set_metadata_unmatched_count(unmatched);
+    app.set_metadata_selected_count(state_ref.selected.len() as i32);
+}
+
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -340,9 +575,11 @@ fn main() -> Result<()> {
     let visible_model = Rc::new(VecModel::from(Vec::<FileItem>::new()));
     let path_model = Rc::new(VecModel::from(Vec::<PathSegment>::new()));
     let metadata_model = Rc::new(VecModel::from(Vec::<MetadataItem>::new()));
+    let metadata_state = Rc::new(RefCell::new(MetadataUiState::new()));
     app.set_visible_items(ModelRc::from(visible_model.clone()));
     app.set_path_segments(ModelRc::from(path_model.clone()));
     app.set_metadata_items(ModelRc::from(metadata_model.clone()));
+    let _ = metadata_item_empty();
     app.set_detail_item(empty_file_item());
 
     // Wire the request_refresh callback (runs on UI thread)
@@ -428,6 +665,18 @@ fn main() -> Result<()> {
             app.set_total_label(format!("TOTAL · {}", format_size(total_size)).into());
         }
     });
+
+    let metadata_refresh_now = {
+        let weak = app.as_weak();
+        let metadata_model = metadata_model.clone();
+        let metadata_state = metadata_state.clone();
+        let tree = tree.clone();
+        move || {
+            if let Some(app) = weak.upgrade() {
+                refresh_metadata_ui(&app, &metadata_model, &metadata_state, &tree);
+            }
+        }
+    };
 
     // Helper: refresh from UI thread.
     let request_refresh_now = {
@@ -1113,6 +1362,7 @@ fn main() -> Result<()> {
                         *tree.write().unwrap() = new_tree;
                         let _ = weak.upgrade_in_event_loop(|app| {
                             app.invoke_request_refresh();
+                            app.invoke_metadata_criteria_changed();
                         });
                     }
                     Err(e) => error!("tree refresh failed: {e}"),
@@ -1208,6 +1458,7 @@ fn main() -> Result<()> {
                                     *tree.write().unwrap() = new_tree;
                                     let _ = weak_inner.upgrade_in_event_loop(|app| {
                                         app.invoke_request_refresh();
+                                        app.invoke_metadata_criteria_changed();
                                     });
                                 }
                                 Err(e) => error!("initial tree build failed: {e}"),
@@ -1447,11 +1698,58 @@ fn main() -> Result<()> {
         info!("menu action: {action} on {id}");
     });
 
-    app.on_metadata_toggle_item(|_| {});
-    app.on_metadata_toggle_expand(|_| {});
-    app.on_metadata_select_unmatched(|| {});
-    app.on_metadata_clear_selection(|| {});
-    app.on_metadata_criteria_changed(|| {});
+    app.on_metadata_toggle_item({
+        let metadata_state = metadata_state.clone();
+        let refresh = metadata_refresh_now.clone();
+        move |id| {
+            let mut state = metadata_state.borrow_mut();
+            if !state.selected.insert(id) {
+                state.selected.remove(&id);
+            }
+            drop(state);
+            refresh();
+        }
+    });
+    app.on_metadata_toggle_expand({
+        let metadata_state = metadata_state.clone();
+        let refresh = metadata_refresh_now.clone();
+        move |id| {
+            let mut state = metadata_state.borrow_mut();
+            if !state.expanded.insert(id) {
+                state.expanded.remove(&id);
+            }
+            drop(state);
+            refresh();
+        }
+    });
+    app.on_metadata_select_unmatched({
+        let metadata_state = metadata_state.clone();
+        let refresh = metadata_refresh_now.clone();
+        move || {
+            let mut state = metadata_state.borrow_mut();
+            let ids = state
+                .rows
+                .iter()
+                .filter(|row| !matches!(row.kind, MetadataRowKind::Episode))
+                .map(|row| row.id)
+                .collect::<Vec<_>>();
+            state.selected.extend(ids);
+            drop(state);
+            refresh();
+        }
+    });
+    app.on_metadata_clear_selection({
+        let metadata_state = metadata_state.clone();
+        let refresh = metadata_refresh_now.clone();
+        move || {
+            metadata_state.borrow_mut().selected.clear();
+            refresh();
+        }
+    });
+    app.on_metadata_criteria_changed({
+        let refresh = metadata_refresh_now.clone();
+        move || refresh()
+    });
 
     app.run()?;
     drop(rt);
