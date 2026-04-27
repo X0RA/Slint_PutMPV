@@ -7,6 +7,9 @@ use serde::{de::DeserializeOwned, Serialize};
 pub mod config;
 pub mod file_state;
 pub mod files_store;
+pub mod matched_store;
+pub mod tmdb_store;
+pub mod tvmaze_store;
 
 pub fn config_dir() -> Result<PathBuf> {
     let dirs = ProjectDirs::from("io", "putmpv", "PutMPV")

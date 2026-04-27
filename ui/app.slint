@@ -49,6 +49,8 @@ export component AppWindow inherits Window {
     in-out property <int> metadata_unmatched_count: 0;
     in-out property <int> metadata_tv_count: 0;
     in-out property <int> metadata_movie_count: 0;
+    in-out property <string> metadata_status;
+    in-out property <bool> metadata_busy: false;
     in-out property <int> settings_section: 0;
     in-out property <string> tmdb_local_key;
     in-out property <string> tmdb_putio_key;
@@ -96,6 +98,7 @@ export component AppWindow inherits Window {
     callback metadata_toggle_expand(id: int);
     callback metadata_select_unmatched();
     callback metadata_clear_selection();
+    callback metadata_fetch();
     callback metadata_criteria_changed();
     callback request_refresh();
     callback settings_refresh();
@@ -242,10 +245,13 @@ export component AppWindow inherits Window {
         unmatched_count: root.metadata_unmatched_count;
         tv_count: root.metadata_tv_count;
         movie_count: root.metadata_movie_count;
+        status: root.metadata_status;
+        busy: root.metadata_busy;
         toggle_item(id) => { root.metadata_toggle_item(id); }
         toggle_expand(id) => { root.metadata_toggle_expand(id); }
         select_unmatched => { root.metadata_select_unmatched(); }
         clear_selection => { root.metadata_clear_selection(); }
+        fetch_metadata => { root.metadata_fetch(); }
         criteria_changed => { root.metadata_criteria_changed(); }
     }
 
