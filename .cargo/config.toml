@@ -1,0 +1,13 @@
+# Workaround for Slint + MSVC stack overflow.
+# Slint's generated Rust code has large stack frames that blow past MSVC's
+# default 1 MB main-thread stack on Windows, crashing both build scripts and
+# the final binary with STATUS_STACK_OVERFLOW. Raising /STACK to 8 MB matches
+# the default on Linux/macOS and is the fix recommended by the Slint docs:
+# https://slint.dev/latest/docs/slint/guide/platforms/desktop
+# https://github.com/slint-ui/slint/issues/4586
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/STACK:8000000"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "link-arg=/STACK:8000000"]
