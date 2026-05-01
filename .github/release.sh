@@ -9,7 +9,7 @@ if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
 fi
 
 echo "Triggering release ${VERSION}..."
-gh workflow run release.yml -f version="${VERSION}"
+gh workflow run release.yml --ref main -f version="${VERSION}"
 
 echo "Workflow dispatched. Watch it with:"
 echo "   gh run watch"

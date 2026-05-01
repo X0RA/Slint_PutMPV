@@ -3,7 +3,8 @@ name: Release
 on:
   push:
     branches:
-      - master
+      - main
+      - dev
   workflow_dispatch:
     inputs:
       version:
@@ -27,8 +28,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-        with:
-          ref: master
 
       - name: Install Linux build dependencies
         run: |
@@ -87,8 +86,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-        with:
-          ref: master
 
       - name: Install mpv development files
         shell: pwsh
@@ -150,8 +147,6 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
-        with:
-          ref: master
 
       - name: Install macOS build dependencies
         run: brew install mpv dylibbundler
