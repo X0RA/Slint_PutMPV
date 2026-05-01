@@ -238,6 +238,7 @@ component GridCard inherits Rectangle {
 component DetailPanel inherits Rectangle {
     in property <FileItem> item;
     callback close();
+    callback play(id: int);
 
     property <length> actions_height: root.item.is_media ? 92px : 50px;
 
@@ -350,6 +351,7 @@ component DetailPanel inherits Rectangle {
             label: "Play";
             icon_name: "play";
             primary: true;
+            clicked => { root.play(root.item.id); }
         }
 
         ButtonChip {
@@ -395,6 +397,7 @@ export component FilesPage inherits Rectangle {
     callback query_changed();
     callback close_detail();
     callback menu_action(action: string, id: int);
+    callback play_item(id: int);
 
     background: Theme.bg;
 
@@ -735,6 +738,7 @@ export component FilesPage inherits Rectangle {
             height: parent.height;
             item: root.detail_item;
             close => { root.close_detail(); }
+            play(id) => { root.play_item(id); }
         }
     }
 
@@ -767,6 +771,7 @@ export component FilesPage inherits Rectangle {
                 height: parent.height;
                 item: root.detail_item;
                 close => { root.close_detail(); }
+                play(id) => { root.play_item(id); }
             }
         }
     }

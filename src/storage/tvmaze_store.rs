@@ -98,10 +98,7 @@ mod tests {
     }
 
     fn tempfile_path(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "putmpv_{name}_{}",
-            std::process::id()
-        ));
+        let path = std::env::temp_dir().join(format!("putmpv_{name}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
         path

@@ -89,14 +89,22 @@ impl TMDBAPI {
 
     pub async fn get_movie_details(&self, movie_id: i32) -> Result<MovieDetails> {
         let key = format!("movie_{movie_id}_details_{LANGUAGE}");
-        self.cached_request(&key, &format!("/movie/{movie_id}"), &[("language", LANGUAGE.to_string())])
-            .await
+        self.cached_request(
+            &key,
+            &format!("/movie/{movie_id}"),
+            &[("language", LANGUAGE.to_string())],
+        )
+        .await
     }
 
     pub async fn get_tv_series_details(&self, series_id: i32) -> Result<TVSeriesDetails> {
         let key = format!("tv_{series_id}_details_{LANGUAGE}");
-        self.cached_request(&key, &format!("/tv/{series_id}"), &[("language", LANGUAGE.to_string())])
-            .await
+        self.cached_request(
+            &key,
+            &format!("/tv/{series_id}"),
+            &[("language", LANGUAGE.to_string())],
+        )
+        .await
     }
 
     pub async fn get_tv_season_details(

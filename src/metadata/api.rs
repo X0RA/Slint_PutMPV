@@ -48,7 +48,12 @@ impl MetadataAPI {
             .collect::<BTreeSet<_>>();
         let mut ok = 0;
         for season in uniq {
-            if self.tmdb.get_tv_season_details(series_id, season).await.is_ok() {
+            if self
+                .tmdb
+                .get_tv_season_details(series_id, season)
+                .await
+                .is_ok()
+            {
                 ok += 1;
             }
         }
@@ -109,7 +114,9 @@ impl MetadataAPI {
         show_id: i32,
         items: &[EpisodeRefByFileID],
     ) -> Result<HashMap<String, i32>> {
-        self.tvmaze.resolve_tv_episodes_by_file_id(show_id, items).await
+        self.tvmaze
+            .resolve_tv_episodes_by_file_id(show_id, items)
+            .await
     }
 
     pub async fn resolve_absolute_episodes(

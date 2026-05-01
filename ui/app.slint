@@ -8,6 +8,7 @@ import { FilesPage } from "./pages/files.slint";
 import { MetadataPage } from "./pages/metadata.slint";
 import { SettingsPage } from "./pages/settings.slint";
 import { MediaPage } from "./pages/media.slint";
+import { PlayerPage } from "./pages/player.slint";
 import { FileItem, MetadataItem, PathSegment, LocalDataRow } from "./types.slint";
 
 export component AppWindow inherits Window {
@@ -74,6 +75,10 @@ export component AppWindow inherits Window {
     in-out property <bool> mpv_show_managed: false;
     in-out property <string> mpv_install_hint;
     in-out property <bool> mpv_can_open_install_link: false;
+    in-out property <image> player_texture;
+    in-out property <string> player_title;
+    in-out property <float> player_texture_width: self.width / 1phx;
+    in-out property <float> player_texture_height: (self.height - Theme.title_bar_height) / 1phx;
     in-out property <[LocalDataRow]> local_data_rows;
     in-out property <bool> confirm_open: false;
     in-out property <string> local_data_status;
@@ -116,6 +121,7 @@ export component AppWindow inherits Window {
     callback mpv_custom_path_edited();
     callback mpv_browse_custom();
     callback mpv_open_install_link();
+    callback player_close();
     callback local_data_clear(index: int);
     callback local_data_confirm_clear();
     callback local_data_cancel_clear();
@@ -142,7 +148,7 @@ export component AppWindow inherits Window {
             font-family: Theme.ui_font;
         }
 
-        if (root.view >= 3) : top-nav := HorizontalLayout {
+        if (root.view >= 3 && root.view != 7) : top-nav := HorizontalLayout {
             x: parent.width - self.width - 18px;
             y: 9px;
             width: self.preferred-width;
@@ -222,6 +228,7 @@ export component AppWindow inherits Window {
         query_changed => { root.files_query_changed(); }
         close_detail => { root.files_close_detail(); }
         menu_action(action, id) => { root.files_menu_action(action, id); }
+        play_item(id) => { root.files_menu_action("play", id); }
     }
 
     if (root.view == 4) : media := MediaPage {
@@ -229,6 +236,16 @@ export component AppWindow inherits Window {
         y: Theme.title_bar_height;
         width: parent.width;
         height: parent.height - Theme.title_bar_height;
+    }
+
+    if (root.view == 7) : player := PlayerPage {
+        x: 0px;
+        y: Theme.title_bar_height;
+        width: parent.width;
+        height: parent.height - Theme.title_bar_height;
+        texture <=> root.player_texture;
+        title <=> root.player_title;
+        close => { root.player_close(); }
     }
 
     if (root.view == 5) : metadata := MetadataPage {

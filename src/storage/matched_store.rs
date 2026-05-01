@@ -46,10 +46,16 @@ impl MatchedStore {
         self.save_data(&data)
     }
 
-    pub fn insert_tv_with_source(&self, file_id: &str, episode_id: i32, source: &str) -> Result<()> {
+    pub fn insert_tv_with_source(
+        &self,
+        file_id: &str,
+        episode_id: i32,
+        source: &str,
+    ) -> Result<()> {
         let mut data = self.read_data()?;
         data.tv.insert(file_id.to_string(), episode_id);
-        data.tv_source.insert(file_id.to_string(), source.to_string());
+        data.tv_source
+            .insert(file_id.to_string(), source.to_string());
         data.tv_scraped_at
             .insert(file_id.to_string(), now_unix_millis());
         self.save_data(&data)
@@ -123,10 +129,7 @@ mod tests {
     }
 
     fn tempfile_path(name: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!(
-            "putmpv_{name}_{}",
-            std::process::id()
-        ));
+        let path = std::env::temp_dir().join(format!("putmpv_{name}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
         path

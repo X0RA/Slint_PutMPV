@@ -190,7 +190,12 @@ fn walk_node(node: &DirectoryNode, path_prefix: &str, lib: &mut ParsedLibrary) {
 
 fn process_file(file: &PutIoFile, relative_path: &str, lib: &mut ParsedLibrary) {
     let mut parsed = parse_name_with_context(&file.name, relative_path, true);
-    if parsed.title.is_empty() || parsed.title.chars().all(|c| c.is_ascii_digit() || c.is_whitespace()) {
+    if parsed.title.is_empty()
+        || parsed
+            .title
+            .chars()
+            .all(|c| c.is_ascii_digit() || c.is_whitespace())
+    {
         if let Some(path_title) = infer_title_from_path(relative_path) {
             parsed.title = path_title;
         }
@@ -277,7 +282,9 @@ fn parse_name_inner(name: &str, relative_path: Option<&str>, standardise: bool) 
     work = work.replace('_', " ");
     let mut parsed = ParsedName::default();
 
-    static SITE_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^\[\s*([^\]]+?)\s*\]\s*-?\s*|^(?:www\.)?[\w-]+\.[\w-]+\s+-\s*").unwrap());
+    static SITE_RE: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"(?i)^\[\s*([^\]]+?)\s*\]\s*-?\s*|^(?:www\.)?[\w-]+\.[\w-]+\s+-\s*").unwrap()
+    });
     if let Some(caps) = SITE_RE.captures(&work) {
         if let Some(m) = caps.get(1) {
             parsed.encoder = clean_title(m.as_str());
@@ -303,7 +310,11 @@ fn parse_name_inner(name: &str, relative_path: Option<&str>, standardise: bool) 
         if let Some(caps) = re.captures(&work) {
             let m = caps.get(0).unwrap();
             let val = caps.get(1).map(|m| m.as_str()).unwrap_or(m.as_str());
-            let std_val = if standardise { standardise_fn(val.trim()) } else { standardise_fn(val) };
+            let std_val = if standardise {
+                standardise_fn(val.trim())
+            } else {
+                standardise_fn(val)
+            };
             let blanks = " ".repeat(m.end() - m.start());
             title_end = title_end.min(m.start());
             work.replace_range(m.start()..m.end(), &blanks);
@@ -326,13 +337,17 @@ fn parse_name_inner(name: &str, relative_path: Option<&str>, standardise: bool) 
         work.replace_range(m.start()..m.end(), &blanks);
     }
 
-    static GO_DASH_EP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s-\s(\d{1,4})(?:\s-\s|\s+)(.*)$").unwrap());
-    
+    static GO_DASH_EP_RE: Lazy<Regex> =
+        Lazy::new(|| Regex::new(r"(?i)\s-\s(\d{1,4})(?:\s-\s|\s+)(.*)$").unwrap());
+
     if let Some(caps) = SXX_EXX_RE.captures(&work) {
         let m = caps.get(0).unwrap();
         title_end = title_end.min(m.start());
         parsed.season = caps.get(1).and_then(|m| m.as_str().parse().ok());
-        let first = caps.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0);
+        let first = caps
+            .get(2)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0);
         let second = caps.get(3).and_then(|m| m.as_str().parse().ok());
         parsed.episodes = expand_episode_range(first, second);
         parsed.episode_name = clean_title(&work[m.end()..]);
@@ -340,9 +355,15 @@ fn parse_name_inner(name: &str, relative_path: Option<&str>, standardise: bool) 
         let m = caps.get(0).unwrap();
         title_end = title_end.min(m.start());
         parsed.season = caps.get(1).and_then(|m| m.as_str().parse().ok());
-        parsed.episodes = vec![caps.get(2).and_then(|m| m.as_str().parse().ok()).unwrap_or(0)];
+        parsed.episodes = vec![caps
+            .get(2)
+            .and_then(|m| m.as_str().parse().ok())
+            .unwrap_or(0)];
         parsed.episode_name = clean_title(&work[m.end()..]);
-    } else if let Some(caps) = GO_DASH_EP_RE.captures(&work).or_else(|| DASH_EP_RE.captures(&work)) {
+    } else if let Some(caps) = GO_DASH_EP_RE
+        .captures(&work)
+        .or_else(|| DASH_EP_RE.captures(&work))
+    {
         let episode_match = caps.get(1).unwrap();
         if let Some(m0) = GO_DASH_EP_RE.captures(&work) {
             title_end = title_end.min(m0.get(0).unwrap().start());
@@ -351,7 +372,10 @@ fn parse_name_inner(name: &str, relative_path: Option<&str>, standardise: bool) 
         }
         parsed.episodes = vec![episode_match.as_str().parse().unwrap_or(0)];
         parsed.season = relative_path.and_then(infer_season_from_path);
-        parsed.episode_name = caps.get(2).map(|m| clean_title(m.as_str())).unwrap_or_default();
+        parsed.episode_name = caps
+            .get(2)
+            .map(|m| clean_title(m.as_str()))
+            .unwrap_or_default();
     } else {
         if let Some(caps) = SEASON_FOLDER_RE.captures(&work) {
             let m = caps.get(0).unwrap();
@@ -384,7 +408,7 @@ fn parse_name_inner(name: &str, relative_path: Option<&str>, standardise: bool) 
     if parsed.title.is_empty() {
         parsed.title = clean_title(raw_title);
     }
-    
+
     if parsed.episode_name == parsed.encoder {
         parsed.episode_name = String::new();
     }
@@ -393,21 +417,22 @@ fn parse_name_inner(name: &str, relative_path: Option<&str>, standardise: bool) 
 }
 
 fn infer_season_from_path(path: &str) -> Option<i32> {
-    path.split('/')
-        .rev()
-        .find_map(|part| {
-            SEASON_FOLDER_RE
-                .captures(part)
-                .or_else(|| SHORT_SEASON_RE.captures(part))
-                .and_then(|caps| caps.get(1).and_then(|m| m.as_str().parse().ok()))
-        })
+    path.split('/').rev().find_map(|part| {
+        SEASON_FOLDER_RE
+            .captures(part)
+            .or_else(|| SHORT_SEASON_RE.captures(part))
+            .and_then(|caps| caps.get(1).and_then(|m| m.as_str().parse().ok()))
+    })
 }
 
 fn infer_title_from_path(path: &str) -> Option<String> {
     let mut parts: Vec<&str> = path.split('/').collect();
     parts.pop(); // remove filename
     for part in parts.into_iter().rev() {
-        if SEASON_FOLDER_RE.is_match(part) || SHORT_SEASON_RE.is_match(part) || COMPLETE_RANGE_RE.is_match(part) {
+        if SEASON_FOLDER_RE.is_match(part)
+            || SHORT_SEASON_RE.is_match(part)
+            || COMPLETE_RANGE_RE.is_match(part)
+        {
             continue;
         }
         let parsed_dir = parse_name_inner(part, None, true);
@@ -434,7 +459,6 @@ fn expand_episode_range(first: i32, second: Option<i32>) -> Vec<i32> {
         None => vec![first],
     }
 }
-
 
 fn clean_title(value: &str) -> String {
     let mut s = value.replace(['.', '_', '+'], " ");
@@ -627,9 +651,12 @@ mod tests {
         let inputs: Vec<String> =
             serde_json::from_str(include_str!("../tests/fixtures/fileparser/input.json")).unwrap();
         let raw: Vec<Map<String, Value>> =
-            serde_json::from_str(include_str!("../tests/fixtures/fileparser/output_raw.json")).unwrap();
-        let standard: Vec<Map<String, Value>> =
-            serde_json::from_str(include_str!("../tests/fixtures/fileparser/output_standard.json")).unwrap();
+            serde_json::from_str(include_str!("../tests/fixtures/fileparser/output_raw.json"))
+                .unwrap();
+        let standard: Vec<Map<String, Value>> = serde_json::from_str(include_str!(
+            "../tests/fixtures/fileparser/output_standard.json"
+        ))
+        .unwrap();
         assert_eq!(inputs.len(), 408);
         assert_eq!(raw.len(), inputs.len());
         assert_eq!(standard.len(), inputs.len());
@@ -640,15 +667,38 @@ mod tests {
         let inputs: Vec<String> =
             serde_json::from_str(include_str!("../tests/fixtures/fileparser/input.json")).unwrap();
         let raw: Vec<Map<String, Value>> =
-            serde_json::from_str(include_str!("../tests/fixtures/fileparser/output_raw.json")).unwrap();
-        let standard: Vec<Map<String, Value>> =
-            serde_json::from_str(include_str!("../tests/fixtures/fileparser/output_standard.json")).unwrap();
+            serde_json::from_str(include_str!("../tests/fixtures/fileparser/output_raw.json"))
+                .unwrap();
+        let standard: Vec<Map<String, Value>> = serde_json::from_str(include_str!(
+            "../tests/fixtures/fileparser/output_standard.json"
+        ))
+        .unwrap();
         let cases: &[(usize, &[&str])] = &[
-            (0, &["title", "season", "episode", "resolution", "quality", "codec"]),
+            (
+                0,
+                &[
+                    "title",
+                    "season",
+                    "episode",
+                    "resolution",
+                    "quality",
+                    "codec",
+                ],
+            ),
             (1, &["title", "year", "resolution", "quality", "codec"]),
             (2, &["title", "year", "quality", "codec"]),
             (3, &["title", "season", "episode", "quality", "codec"]),
-            (61, &["title", "season", "episode", "resolution", "quality", "codec"]),
+            (
+                61,
+                &[
+                    "title",
+                    "season",
+                    "episode",
+                    "resolution",
+                    "quality",
+                    "codec",
+                ],
+            ),
             (150, &["title", "season", "episode"]),
             (362, &["title"]),
         ];
@@ -671,12 +721,18 @@ mod tests {
     fn full_standard_fixture_parity() {
         let inputs: Vec<String> =
             serde_json::from_str(include_str!("../tests/fixtures/fileparser/input.json")).unwrap();
-        let standard: Vec<Map<String, Value>> =
-            serde_json::from_str(include_str!("../tests/fixtures/fileparser/output_standard.json")).unwrap();
+        let standard: Vec<Map<String, Value>> = serde_json::from_str(include_str!(
+            "../tests/fixtures/fileparser/output_standard.json"
+        ))
+        .unwrap();
         for (index, input) in inputs.iter().enumerate() {
             let got = parse(input, true, false);
             for (key, expected_value) in &standard[index] {
-                assert_eq!(got.get(key), Some(expected_value), "fixture {index} key {key}");
+                assert_eq!(
+                    got.get(key),
+                    Some(expected_value),
+                    "fixture {index} key {key}"
+                );
             }
         }
     }

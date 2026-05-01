@@ -1,0 +1,49 @@
+import { Theme } from "../theme.slint";
+import { ButtonChip } from "../components/primitives.slint";
+
+export component PlayerPage inherits Rectangle {
+    in property <image> texture;
+    in property <string> title;
+    out property <float> requested_texture_width: video.width / 1phx;
+    out property <float> requested_texture_height: video.height / 1phx;
+    callback close();
+
+    background: #000000;
+
+    video := Image {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height;
+        source: root.texture;
+        image-fit: contain;
+    }
+
+    top-bar := Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: 56px;
+        background: #00000099;
+
+        ButtonChip {
+            x: 16px;
+            y: 12px;
+            label: "Back";
+            icon_name: "chevron-left";
+            clicked => { root.close(); }
+        }
+
+        Text {
+            x: 110px;
+            y: 18px;
+            width: parent.width - self.x - 24px;
+            text: root.title;
+            color: Theme.text;
+            font-size: 13px;
+            font-weight: 500;
+            font-family: Theme.ui_font;
+            overflow: elide;
+        }
+    }
+}

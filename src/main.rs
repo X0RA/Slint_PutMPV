@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
 use anyhow::Result;
 use metadata::api::{EpisodeRefByFileID, MatchItemByFileID};
@@ -14,6 +14,7 @@ use tracing::{error, info, warn};
 mod fileparser;
 mod metadata;
 mod mpv;
+mod player;
 mod putio;
 mod storage;
 
@@ -32,11 +33,19 @@ const VIEW_LOADING: i32 = 0;
 const VIEW_SPLASH: i32 = 1;
 const VIEW_CODE: i32 = 2;
 const VIEW_FILES: i32 = 3;
+const VIEW_PLAYER: i32 = 7;
 const VIEW_SPLASH_AFTER_RESET: i32 = VIEW_SPLASH;
 
 #[derive(Default)]
 struct OauthFlow {
     cancel: Option<Arc<AtomicBool>>,
+}
+
+#[derive(Default)]
+struct PlayerPlaybackState {
+    active: bool,
+    tried_fallback: bool,
+    fallback_url: Option<String>,
 }
 
 fn empty_file_item() -> FileItem {
@@ -395,7 +404,10 @@ fn stable_i32_id(value: &str) -> i32 {
     (hash & 0x7fff_ffff) as i32
 }
 
-fn build_metadata_rows(tree: &UnifiedDirectoryTree, matched: &storage::matched_store::MatchedData) -> Vec<MetadataRow> {
+fn build_metadata_rows(
+    tree: &UnifiedDirectoryTree,
+    matched: &storage::matched_store::MatchedData,
+) -> Vec<MetadataRow> {
     let lib = fileparser::parse_directory_tree(&tree.root);
     let mut rows = Vec::new();
     for show in lib.shows.values() {
@@ -669,6 +681,128 @@ fn main() -> Result<()> {
     app.set_view(VIEW_LOADING);
     app.set_loading_message("Checking sign-in…".into());
 
+    let player_engine = match player::PlayerEngine::new() {
+        Ok(engine) => Some(Arc::new(engine)),
+        Err(e) => {
+            warn!("embedded mpv player unavailable: {e}");
+            None
+        }
+    };
+    let player_playback_state = Arc::new(Mutex::new(PlayerPlaybackState::default()));
+
+    if let Some(player_engine_for_render) = player_engine.clone() {
+        let weak = app.as_weak();
+        let mut renderer: Option<player::PlayerRenderer> = None;
+        let notifier =
+            app.window()
+                .set_rendering_notifier(move |state, graphics_api| match state {
+                    slint::RenderingState::RenderingSetup => {
+                        let slint::GraphicsAPI::NativeOpenGL { get_proc_address } = graphics_api
+                        else {
+                            warn!("embedded player needs Slint's OpenGL renderer");
+                            return;
+                        };
+
+                        let gl = unsafe {
+                            glow::Context::from_loader_function_cstr(|name| get_proc_address(name))
+                        };
+                        match player::PlayerRenderer::new(
+                            player_engine_for_render.mpv(),
+                            gl,
+                            get_proc_address,
+                        ) {
+                            Ok(mut player_renderer) => {
+                                let weak = weak.clone();
+                                player_renderer.set_update_callback(move || {
+                                    let _ = weak
+                                        .upgrade_in_event_loop(|app| app.window().request_redraw());
+                                });
+                                renderer = Some(player_renderer);
+                            }
+                            Err(e) => warn!("could not create embedded mpv renderer: {e}"),
+                        }
+                    }
+                    slint::RenderingState::BeforeRendering => {
+                        let (Some(renderer), Some(app)) = (renderer.as_mut(), weak.upgrade())
+                        else {
+                            return;
+                        };
+                        if app.get_view() != VIEW_PLAYER {
+                            return;
+                        }
+                        let width = app.get_player_texture_width().max(1.0) as u32;
+                        let height = app.get_player_texture_height().max(1.0) as u32;
+                        match renderer.render(width, height) {
+                            Ok(Some(texture)) => app.set_player_texture(texture),
+                            Ok(None) => {}
+                            Err(e) => warn!("embedded mpv render failed: {e}"),
+                        }
+                    }
+                    slint::RenderingState::RenderingTeardown => {
+                        renderer = None;
+                    }
+                    _ => {}
+                });
+        if let Err(e) = notifier {
+            warn!("embedded player rendering notifier unavailable: {e}");
+        }
+    }
+
+    if let Some(player_engine_for_events) = player_engine.clone() {
+        match player_engine_for_events.create_event_client() {
+            Ok(mut event_client) => {
+                let weak = app.as_weak();
+                let player_playback_state = player_playback_state.clone();
+                std::thread::spawn(move || loop {
+                    match event_client.wait_event(1.0) {
+                        Some(Ok(libmpv2::events::Event::EndFile(_))) => {
+                            player_playback_state.lock().unwrap().active = false;
+                        }
+                        Some(Ok(_)) | None => {}
+                        Some(Err(e)) => {
+                            let error_message = e.to_string();
+                            let fallback_url = {
+                                let mut state = player_playback_state.lock().unwrap();
+                                if !state.active || state.tried_fallback {
+                                    None
+                                } else {
+                                    state.tried_fallback = true;
+                                    state.fallback_url.clone()
+                                }
+                            };
+
+                            if let Some(fallback_url) = fallback_url {
+                                warn!(
+                                    "embedded mpv original playback failed, trying fallback: {error_message}"
+                                );
+                                if let Err(load_err) = player_engine_for_events.load(&fallback_url)
+                                {
+                                    let load_err = load_err.to_string();
+                                    let _ = weak.upgrade_in_event_loop(move |app| {
+                                        app.set_player_title(
+                                            format!("Embedded playback failed: {load_err}").into(),
+                                        );
+                                    });
+                                }
+                            } else {
+                                let _ = weak.upgrade_in_event_loop(move |app| {
+                                    app.set_player_title(
+                                        format!("Embedded playback failed: {error_message}").into(),
+                                    );
+                                });
+                            }
+                        }
+                    }
+
+                    if weak.upgrade_in_event_loop(|_| {}).is_err() {
+                        break;
+                    }
+                });
+            }
+            Err(e) => warn!("could not create embedded mpv event client: {e}"),
+        }
+    }
+
     // Tree is shared across threads
     let tree: Arc<RwLock<UnifiedDirectoryTree>> =
         Arc::new(RwLock::new(UnifiedDirectoryTree::default()));
@@ -783,7 +917,13 @@ fn main() -> Result<()> {
         let matched_store = matched_store.clone();
         move || {
             if let Some(app) = weak.upgrade() {
-                refresh_metadata_ui(&app, &metadata_model, &metadata_state, &tree, &matched_store);
+                refresh_metadata_ui(
+                    &app,
+                    &metadata_model,
+                    &metadata_state,
+                    &tree,
+                    &matched_store,
+                );
             }
         }
     };
@@ -1837,8 +1977,103 @@ fn main() -> Result<()> {
         }
     });
 
-    app.on_files_menu_action(|action, id| {
-        info!("menu action: {action} on {id}");
+    app.on_files_menu_action({
+        let weak = app.as_weak();
+        let tree = tree.clone();
+        let current_folder = current_folder.clone();
+        let client = client.clone();
+        let config = config.clone();
+        let rt = rt.clone();
+        let player_engine = player_engine.clone();
+        let player_playback_state = player_playback_state.clone();
+        move |action, id| {
+            info!("menu action: {action} on {id}");
+            if action.as_str() != "play" && action.as_str() != "play-mpv" {
+                return;
+            }
+
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            let Some(player_engine) = player_engine.clone() else {
+                app.set_player_title("Embedded mpv player is unavailable.".into());
+                app.set_view(VIEW_PLAYER);
+                return;
+            };
+
+            let tree_borrow = tree.read().unwrap();
+            let kids = children_for_folder(&tree_borrow, *current_folder.borrow());
+            let Some(entry) = kids.iter().find(|e| truncate_id(e.file.id) == id) else {
+                app.set_player_title("Could not find the selected media file.".into());
+                app.set_view(VIEW_PLAYER);
+                return;
+            };
+            let file_id = entry.file.id;
+            let title = entry.file.name.clone();
+            drop(tree_borrow);
+
+            let token = config.oauth_token();
+            if token.is_empty() {
+                app.set_player_title("Sign in before playing media.".into());
+                app.set_view(VIEW_PLAYER);
+                return;
+            }
+
+            let fallback_url = putio::stream::fallback_mp4_stream_url(&token, file_id);
+            {
+                let mut state = player_playback_state.lock().unwrap();
+                state.active = true;
+                state.tried_fallback = false;
+                state.fallback_url = Some(fallback_url.clone());
+            }
+
+            app.set_player_title(format!("Opening {title}...").into());
+            app.set_view(VIEW_PLAYER);
+
+            let weak = weak.clone();
+            let client = client.clone();
+            let playback_title = title.clone();
+            rt.spawn(async move {
+                let message = match putio::stream::resolve_play_url(&client, &token, file_id).await {
+                    Ok(url) => match player_engine.load(&url) {
+                        Ok(()) => playback_title,
+                        Err(e) => format!("Could not start embedded playback: {e}"),
+                    },
+                    Err(e) => match player_engine.load(&fallback_url) {
+                        Ok(()) => playback_title,
+                        Err(load_err) => {
+                            format!("Could not resolve original stream: {e}; fallback failed: {load_err}")
+                        }
+                    },
+                };
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    app.set_player_title(message.into());
+                    app.window().request_redraw();
+                });
+            });
+        }
+    });
+
+    app.on_player_close({
+        let weak = app.as_weak();
+        let player_engine = player_engine.clone();
+        let player_playback_state = player_playback_state.clone();
+        move || {
+            if let Some(player_engine) = player_engine.as_ref() {
+                if let Err(e) = player_engine.stop() {
+                    warn!("could not stop embedded mpv playback: {e}");
+                }
+            }
+            {
+                let mut state = player_playback_state.lock().unwrap();
+                state.active = false;
+                state.tried_fallback = false;
+                state.fallback_url = None;
+            }
+            if let Some(app) = weak.upgrade() {
+                app.set_view(VIEW_FILES);
+            }
+        }
     });
 
     app.on_metadata_toggle_item({
