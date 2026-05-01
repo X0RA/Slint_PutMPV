@@ -28,10 +28,20 @@ pub struct ConfigFile {
     pub file_state_sync_profile_slug: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub file_state_sync_profile_name: String,
+    #[serde(default)]
+    pub files_mode: i32,
+    #[serde(default)]
+    pub files_sort: i32,
+    #[serde(default = "default_files_sort_descending")]
+    pub files_sort_descending: bool,
 }
 
 fn default_client_id() -> u32 {
     DEFAULT_PUT_CLIENT_ID
+}
+
+fn default_files_sort_descending() -> bool {
+    true
 }
 
 #[derive(Debug)]
@@ -61,6 +71,9 @@ impl ConfigStore {
                     mpv_source: String::new(),
                     file_state_sync_profile_slug: String::new(),
                     file_state_sync_profile_name: String::new(),
+                    files_mode: 0,
+                    files_sort: 0,
+                    files_sort_descending: true,
                 };
                 write_atomic(&path, &c)?;
                 c
@@ -187,10 +200,48 @@ impl ConfigStore {
         write_atomic(&self.path, &*guard)
     }
 
+    pub fn files_mode(&self) -> i32 {
+        match self.inner.lock().unwrap().files_mode {
+            1 => 1,
+            _ => 0,
+        }
+    }
+
+    pub fn set_files_mode(&self, mode: i32) -> Result<()> {
+        let mut guard = self.inner.lock().unwrap();
+        guard.files_mode = if mode == 1 { 1 } else { 0 };
+        write_atomic(&self.path, &*guard)
+    }
+
+    pub fn files_sort(&self) -> i32 {
+        let sort = self.inner.lock().unwrap().files_sort;
+        match sort {
+            1..=3 => sort,
+            _ => 0,
+        }
+    }
+
+    pub fn set_files_sort(&self, sort: i32) -> Result<()> {
+        let mut guard = self.inner.lock().unwrap();
+        guard.files_sort = if (1..=3).contains(&sort) { sort } else { 0 };
+        write_atomic(&self.path, &*guard)
+    }
+
+    pub fn files_sort_descending(&self) -> bool {
+        self.inner.lock().unwrap().files_sort_descending
+    }
+
+    pub fn set_files_sort_descending(&self, descending: bool) -> Result<()> {
+        let mut guard = self.inner.lock().unwrap();
+        guard.files_sort_descending = descending;
+        write_atomic(&self.path, &*guard)
+    }
+
     pub fn reset_to_defaults(&self) -> Result<()> {
         let mut guard = self.inner.lock().unwrap();
         *guard = ConfigFile {
             put_client_id: DEFAULT_PUT_CLIENT_ID,
+            files_sort_descending: true,
             ..ConfigFile::default()
         };
         write_atomic(&self.path, &*guard)

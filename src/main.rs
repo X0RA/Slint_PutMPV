@@ -171,6 +171,77 @@ fn find_node_by_id(node: &DirectoryNode, id: u64) -> Option<&DirectoryNode> {
     None
 }
 
+fn find_path_to_folder(node: &DirectoryNode, id: u64) -> Option<Vec<(u64, String)>> {
+    if id == 0 {
+        return Some(vec![(0, "put.io".to_string())]);
+    }
+
+    for child in &node.children {
+        let Some(file) = &child.file else {
+            continue;
+        };
+        if file.id == id {
+            return Some(vec![
+                (0, "put.io".to_string()),
+                (file.id, file.name.clone()),
+            ]);
+        }
+        if let Some(mut path) = find_path_to_folder(child, id) {
+            path.insert(1, (file.id, file.name.clone()));
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+fn find_entry_by_id(node: &DirectoryNode, id: i32) -> Option<(DisplayEntry, Vec<(u64, String)>)> {
+    fn walk(
+        node: &DirectoryNode,
+        id: i32,
+        stack: &mut Vec<(u64, String)>,
+    ) -> Option<(DisplayEntry, Vec<(u64, String)>)> {
+        for child in &node.children {
+            let Some(file) = &child.file else {
+                continue;
+            };
+            if truncate_id(file.id) == id {
+                return Some((
+                    DisplayEntry {
+                        file: file.clone(),
+                        aggregate_size: node_total_size(child),
+                        folder_item_count: node_item_count(child),
+                    },
+                    stack.clone(),
+                ));
+            }
+
+            stack.push((file.id, file.name.clone()));
+            if let Some(found) = walk(child, id, stack) {
+                return Some(found);
+            }
+            stack.pop();
+        }
+
+        for file in &node.files {
+            if truncate_id(file.id) == id {
+                return Some((
+                    DisplayEntry {
+                        file: file.clone(),
+                        aggregate_size: file.size,
+                        folder_item_count: 0,
+                    },
+                    stack.clone(),
+                ));
+            }
+        }
+
+        None
+    }
+
+    walk(node, id, &mut vec![(0, "put.io".to_string())])
+}
+
 fn reconcile_path_stack(tree: &UnifiedDirectoryTree, stack: &mut Vec<(u64, String)>) -> bool {
     let original = stack.clone();
     if stack.is_empty() {
@@ -237,6 +308,60 @@ fn children_for_folder(tree: &UnifiedDirectoryTree, folder_id: u64) -> Vec<Displ
             folder_item_count: 0,
         });
     }
+    out
+}
+
+fn search_entries(
+    tree: &UnifiedDirectoryTree,
+    query: &str,
+) -> Vec<(DisplayEntry, Vec<(u64, String)>)> {
+    fn walk(
+        node: &DirectoryNode,
+        query: &str,
+        stack: &mut Vec<(u64, String)>,
+        out: &mut Vec<(DisplayEntry, Vec<(u64, String)>)>,
+    ) {
+        for child in &node.children {
+            let Some(file) = &child.file else {
+                continue;
+            };
+            if file.name.to_lowercase().contains(query) {
+                out.push((
+                    DisplayEntry {
+                        file: file.clone(),
+                        aggregate_size: node_total_size(child),
+                        folder_item_count: node_item_count(child),
+                    },
+                    stack.clone(),
+                ));
+            }
+
+            stack.push((file.id, file.name.clone()));
+            walk(child, query, stack, out);
+            stack.pop();
+        }
+
+        for file in &node.files {
+            if file.name.to_lowercase().contains(query) {
+                out.push((
+                    DisplayEntry {
+                        file: file.clone(),
+                        aggregate_size: file.size,
+                        folder_item_count: 0,
+                    },
+                    stack.clone(),
+                ));
+            }
+        }
+    }
+
+    let mut out = Vec::new();
+    walk(
+        &tree.root,
+        query,
+        &mut vec![(0, "put.io".to_string())],
+        &mut out,
+    );
     out
 }
 
@@ -696,6 +821,9 @@ fn main() -> Result<()> {
     let rt = Arc::new(Runtime::new()?);
 
     let app = AppWindow::new()?;
+    app.set_files_mode(config.files_mode());
+    app.set_files_sort(config.files_sort());
+    app.set_files_sort_descending(config.files_sort_descending());
     app.set_view(VIEW_LOADING);
     app.set_loading_message("Checking sign-in…".into());
 
@@ -754,31 +882,41 @@ fn main() -> Result<()> {
                 app.set_detail_open(false);
                 app.set_detail_item(empty_file_item());
             }
-            let location = location_text(&path_stack.borrow());
-            let mut rows = children_for_folder(&tree, folder_id);
             let query = app.get_files_query().to_lowercase();
-            if !query.is_empty() {
-                rows.retain(|e| e.file.name.to_lowercase().contains(&query));
-            }
+            let mut rows = if query.is_empty() {
+                let location = location_text(&path_stack.borrow());
+                children_for_folder(&tree, folder_id)
+                    .into_iter()
+                    .map(|entry| (entry, location.clone()))
+                    .collect::<Vec<_>>()
+            } else {
+                search_entries(&tree, &query)
+                    .into_iter()
+                    .map(|(entry, stack)| (entry, location_text(&stack)))
+                    .collect::<Vec<_>>()
+            };
             let descending = app.get_files_sort_descending();
             match app.get_files_sort() {
-                1 => {
-                    rows.sort_by(|a, b| a.file.name.to_lowercase().cmp(&b.file.name.to_lowercase()))
-                }
-                2 => rows.sort_by(|a, b| a.aggregate_size.cmp(&b.aggregate_size)),
+                1 => rows.sort_by(|a, b| {
+                    a.0.file
+                        .name
+                        .to_lowercase()
+                        .cmp(&b.0.file.name.to_lowercase())
+                }),
+                2 => rows.sort_by(|a, b| a.0.aggregate_size.cmp(&b.0.aggregate_size)),
                 3 => rows.sort_by(|a, b| {
-                    a.file
+                    a.0.file
                         .created_at
                         .as_deref()
                         .unwrap_or("")
-                        .cmp(b.file.created_at.as_deref().unwrap_or(""))
+                        .cmp(b.0.file.created_at.as_deref().unwrap_or(""))
                 }),
                 _ => rows.sort_by(|a, b| {
-                    a.file
+                    a.0.file
                         .updated_at
                         .as_deref()
                         .unwrap_or("")
-                        .cmp(b.file.updated_at.as_deref().unwrap_or(""))
+                        .cmp(b.0.file.updated_at.as_deref().unwrap_or(""))
                 }),
             }
             if descending {
@@ -787,8 +925,8 @@ fn main() -> Result<()> {
 
             let mut folder_count = 0i32;
             let mut file_count = 0i32;
-            for r in &rows {
-                if r.file.file_type == "FOLDER" {
+            for (entry, _) in &rows {
+                if entry.file.file_type == "FOLDER" {
                     folder_count += 1;
                 } else {
                     file_count += 1;
@@ -797,7 +935,7 @@ fn main() -> Result<()> {
 
             visible_model.set_vec(
                 rows.iter()
-                    .map(|e| put_to_file_item(e, &location))
+                    .map(|(entry, location)| put_to_file_item(entry, location))
                     .collect::<Vec<_>>(),
             );
             path_model.set_vec(
@@ -1762,28 +1900,42 @@ fn main() -> Result<()> {
 
     app.on_files_sort_changed({
         let weak = app.as_weak();
+        let cfg = config.clone();
         let r = request_refresh_now.clone();
         move |index| {
             if let Some(app) = weak.upgrade() {
                 app.set_files_sort(index);
+            }
+            if let Err(e) = cfg.set_files_sort(index) {
+                warn!("save files sort preference: {e}");
             }
             r();
         }
     });
     app.on_files_mode_changed({
         let weak = app.as_weak();
+        let cfg = config.clone();
         move |index| {
             if let Some(app) = weak.upgrade() {
                 app.set_files_mode(index);
+            }
+            if let Err(e) = cfg.set_files_mode(index) {
+                warn!("save files mode preference: {e}");
             }
         }
     });
     app.on_files_sort_direction_toggled({
         let weak = app.as_weak();
+        let cfg = config.clone();
         let r = request_refresh_now.clone();
         move || {
+            let mut descending = true;
             if let Some(app) = weak.upgrade() {
-                app.set_files_sort_descending(!app.get_files_sort_descending());
+                descending = !app.get_files_sort_descending();
+                app.set_files_sort_descending(descending);
+            }
+            if let Err(e) = cfg.set_files_sort_descending(descending) {
+                warn!("save files sort direction preference: {e}");
             }
             r();
         }
@@ -1851,22 +2003,38 @@ fn main() -> Result<()> {
                 return;
             };
             let tree_borrow = tree.read().unwrap();
-            let kids = children_for_folder(&tree_borrow, *current_folder.borrow());
-            let Some(entry) = kids.iter().find(|e| truncate_id(e.file.id) == id) else {
+            let query_active = !app.get_files_query().is_empty();
+            let found = if query_active {
+                find_entry_by_id(&tree_borrow.root, id)
+            } else {
+                let current_path = path_stack.borrow().clone();
+                children_for_folder(&tree_borrow, *current_folder.borrow())
+                    .into_iter()
+                    .find(|entry| truncate_id(entry.file.id) == id)
+                    .map(|entry| (entry, current_path))
+                    .or_else(|| find_entry_by_id(&tree_borrow.root, id))
+            };
+            let Some((entry, location_stack)) = found else {
                 return;
             };
             if item_type.as_str() == "folder" {
                 let real_id = entry.file.id;
-                let name = entry.file.name.clone();
+                let folder_path =
+                    find_path_to_folder(&tree_borrow.root, real_id).unwrap_or_else(|| {
+                        let mut path = location_stack.clone();
+                        path.push((real_id, entry.file.name.clone()));
+                        path
+                    });
                 drop(tree_borrow);
                 *current_folder.borrow_mut() = real_id;
-                path_stack.borrow_mut().push((real_id, name));
+                *path_stack.borrow_mut() = folder_path;
+                app.set_files_query("".into());
                 app.set_detail_open(false);
                 app.set_detail_item(empty_file_item());
                 r();
             } else {
-                let location = location_text(&path_stack.borrow());
-                app.set_detail_item(put_to_file_item(entry, &location));
+                let location = location_text(&location_stack);
+                app.set_detail_item(put_to_file_item(&entry, &location));
                 app.set_detail_open(true);
             }
         }
@@ -1955,8 +2123,11 @@ fn main() -> Result<()> {
             };
 
             let tree_borrow = tree.read().unwrap();
-            let kids = children_for_folder(&tree_borrow, *current_folder.borrow());
-            let Some(entry) = kids.iter().find(|e| truncate_id(e.file.id) == id) else {
+            let found = children_for_folder(&tree_borrow, *current_folder.borrow())
+                .into_iter()
+                .find(|entry| truncate_id(entry.file.id) == id)
+                .or_else(|| find_entry_by_id(&tree_borrow.root, id).map(|(entry, _)| entry));
+            let Some(entry) = found else {
                 app.set_player_title("Could not find the selected media file.".into());
                 app.set_view(VIEW_PLAYER);
                 return;

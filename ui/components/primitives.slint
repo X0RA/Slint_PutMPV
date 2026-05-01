@@ -240,6 +240,10 @@ export component SearchField inherits Rectangle {
     in property <string> shortcut: "";
     callback edited();
 
+    public function blur() {
+        search_input.clear-focus();
+    }
+
     height: 38px;
     border-radius: 8px;
     border-width: 1px;
@@ -254,7 +258,7 @@ export component SearchField inherits Rectangle {
         tint: Theme.text_mute;
     }
 
-    TextInput {
+    search_input := TextInput {
         x: 34px;
         y: 0px;
         width: parent.width - (root.shortcut == "" ? 44px : 76px);
@@ -278,23 +282,45 @@ export component SearchField inherits Rectangle {
         font-family: Theme.ui_font;
     }
 
-    if (root.shortcut != "") : shortcut-badge := Rectangle {
-        width: shortcut-text.preferred-width + 10px;
+    if (root.shortcut != "") : Rectangle {
+        width: shortcut-label.preferred-width + 10px;
         height: 18px;
         x: parent.width - self.width - 10px;
         y: (parent.height - self.height) / 2;
         border-radius: 4px;
         border-width: 1px;
         border-color: Theme.border;
-        background: transparent;
+        background: root.text != "" && badge-touch.has-hover ? Theme.surface_hi : transparent;
 
-        shortcut-text := Text {
+        shortcut-label := Text {
             text: root.shortcut;
             color: Theme.text_mute;
             font-size: 10.5px;
             font-family: Theme.mono_font;
             horizontal-alignment: center;
             vertical-alignment: center;
+            opacity: root.text != "" && badge-touch.has-hover ? 0 : 1;
+        }
+
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            name: "close";
+            icon_size: 11px;
+            tint: Theme.text_mute;
+            opacity: root.text != "" && badge-touch.has-hover ? 1 : 0;
+        }
+
+        badge-touch := TouchArea {
+            width: parent.width;
+            height: parent.height;
+            clicked => {
+                if (root.text != "") {
+                    root.text = "";
+                    root.edited();
+                    search_input.clear-focus();
+                }
+            }
         }
     }
 }

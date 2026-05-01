@@ -345,7 +345,9 @@ fn register_callbacks(
             warn!("could not select embedded mpv subtitle track: {e}");
         }
         if let Some(app) = weak.upgrade() {
-            if let Err(e) = engine_for_subtitle.set_sub_visibility(app.get_player_subtitle_render_mode() == 0) {
+            if let Err(e) =
+                engine_for_subtitle.set_sub_visibility(app.get_player_subtitle_render_mode() == 0)
+            {
                 warn!("could not update embedded mpv subtitle visibility: {e}");
             }
         }
@@ -503,25 +505,26 @@ fn apply_property_change(weak: &slint::Weak<AppWindow>, name: &str, change: Prop
         }
         ("sub-text", PropertyData::Str(text)) | ("sub-text", PropertyData::OsdStr(text)) => {
             let text = text.to_owned();
-            let _ = weak.upgrade_in_event_loop(move |app| app.set_player_subtitle_text(text.into()));
+            let _ =
+                weak.upgrade_in_event_loop(move |app| app.set_player_subtitle_text(text.into()));
         }
         ("sid", PropertyData::Str(track_id)) | ("sid", PropertyData::OsdStr(track_id)) => {
             let track_id = normalize_track_id(track_id).to_owned();
-            let _ = weak
-                .upgrade_in_event_loop(move |app| app.set_player_selected_subtitle(track_id.into()));
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                app.set_player_selected_subtitle(track_id.into())
+            });
         }
         ("aid", PropertyData::Str(track_id)) | ("aid", PropertyData::OsdStr(track_id)) => {
             let track_id = normalize_track_id(track_id).to_owned();
-            let _ = weak.upgrade_in_event_loop(move |app| app.set_player_selected_audio(track_id.into()));
+            let _ = weak
+                .upgrade_in_event_loop(move |app| app.set_player_selected_audio(track_id.into()));
         }
         _ => {}
     }
 }
 
 fn apply_tracks(app: &AppWindow, tracks: PlayerTracks) {
-    app.set_player_subtitle_tracks(ModelRc::from(Rc::new(VecModel::from(
-        tracks.subtitles,
-    ))));
+    app.set_player_subtitle_tracks(ModelRc::from(Rc::new(VecModel::from(tracks.subtitles))));
     app.set_player_selected_subtitle(tracks.selected_subtitle);
     app.set_player_audio_tracks(ModelRc::from(Rc::new(VecModel::from(tracks.audio))));
     app.set_player_selected_audio(tracks.selected_audio);
@@ -602,7 +605,9 @@ fn read_tracks(mpv: &Mpv) -> PlayerTracks {
 }
 
 fn get_string(mpv: &Mpv, name: &str) -> Option<String> {
-    mpv.get_property::<String>(name).ok().filter(|s| !s.is_empty())
+    mpv.get_property::<String>(name)
+        .ok()
+        .filter(|s| !s.is_empty())
 }
 
 fn get_i64(mpv: &Mpv, name: &str) -> Option<i64> {

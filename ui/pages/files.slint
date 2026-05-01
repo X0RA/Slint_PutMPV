@@ -419,7 +419,10 @@ export component FilesPage inherits Rectangle {
         x: page_padding + title-text.preferred-width + 10px;
         y: title-text.y + (title-text.preferred-height - self.height) / 2;
         tint: Theme.text_mute;
-        clicked => { root.refresh_requested(); }
+        clicked => {
+            root.dismiss_search_focus();
+            root.refresh_requested();
+        }
     }
 
     breadcrumb-row := Rectangle {
@@ -441,7 +444,10 @@ export component FilesPage inherits Rectangle {
             BreadcrumbButton {
                 label: "Home";
                 icon_name: "home";
-                clicked => { root.go_root(); }
+                clicked => {
+                    root.dismiss_search_focus();
+                    root.go_root();
+                }
             }
 
             for segment[index] in root.path_segments : HorizontalLayout {
@@ -463,7 +469,10 @@ export component FilesPage inherits Rectangle {
                 BreadcrumbButton {
                     label: segment.name;
                     active: index == root.path_segments.length - 1;
-                    clicked => { root.go_to_path(index); }
+                    clicked => {
+                        root.dismiss_search_focus();
+                        root.go_to_path(index);
+                    }
                 }
             }
         }
@@ -527,7 +536,10 @@ export component FilesPage inherits Rectangle {
                     icon_name: "list";
                     active: root.mode == 1;
                     show_right_divider: true;
-                    clicked => { root.set_mode(1); }
+                    clicked => {
+                        root.dismiss_search_focus();
+                        root.set_mode(1);
+                    }
                 }
 
                 SegmentChip {
@@ -536,7 +548,10 @@ export component FilesPage inherits Rectangle {
                     icon_name: "grid";
                     active: root.mode == 0;
                     show_right_divider: false;
-                    clicked => { root.set_mode(0); }
+                    clicked => {
+                        root.dismiss_search_focus();
+                        root.set_mode(0);
+                    }
                 }
             }
         }
@@ -562,7 +577,10 @@ export component FilesPage inherits Rectangle {
                     label: "Name";
                     active: root.sort_index == 1;
                     show_right_divider: true;
-                    clicked => { root.set_sort(1); }
+                    clicked => {
+                        root.dismiss_search_focus();
+                        root.set_sort(1);
+                    }
                 }
 
                 SegmentChip {
@@ -570,7 +588,10 @@ export component FilesPage inherits Rectangle {
                     label: "Size";
                     active: root.sort_index == 2;
                     show_right_divider: true;
-                    clicked => { root.set_sort(2); }
+                    clicked => {
+                        root.dismiss_search_focus();
+                        root.set_sort(2);
+                    }
                 }
 
                 SegmentChip {
@@ -578,7 +599,10 @@ export component FilesPage inherits Rectangle {
                     label: "Created";
                     active: root.sort_index == 3;
                     show_right_divider: true;
-                    clicked => { root.set_sort(3); }
+                    clicked => {
+                        root.dismiss_search_focus();
+                        root.set_sort(3);
+                    }
                 }
 
                 SegmentChip {
@@ -586,7 +610,10 @@ export component FilesPage inherits Rectangle {
                     label: "Updated";
                     active: root.sort_index == 0;
                     show_right_divider: false;
-                    clicked => { root.set_sort(0); }
+                    clicked => {
+                        root.dismiss_search_focus();
+                        root.set_sort(0);
+                    }
                 }
             }
         }
@@ -597,19 +624,26 @@ export component FilesPage inherits Rectangle {
             height: 32px;
             label: root.sort_descending ? "Descending" : "Ascending";
             icon_name: "sort";
-            clicked => { root.toggle_sort_direction(); }
+            clicked => {
+                root.dismiss_search_focus();
+                root.toggle_sort_direction();
+            }
         }
 
-        SearchField {
+        files_search := SearchField {
             x: descending-chip.x + descending-chip.width + 12px;
             y: 0px;
             height: 34px;
-            width: max(120px, parent.width - self.x);
+            width: min(max(120px, parent.width - self.x), 380px);
             text <=> root.query;
             placeholder: "Search files or folders";
             shortcut: "CMD+K";
             edited => { root.query_changed(); }
         }
+    }
+
+    function dismiss_search_focus() {
+        files_search.blur();
     }
 
     content-area := Rectangle {
@@ -625,6 +659,12 @@ export component FilesPage inherits Rectangle {
             viewport-width: self.visible-width;
             viewport-height: max(self.visible-height, root.grid_rows * root.grid_card_height + max(0px, (root.grid_rows - 1) * root.grid_gap));
 
+            TouchArea {
+                width: parent.width;
+                height: parent.height;
+                clicked => { root.dismiss_search_focus(); }
+            }
+
             for item[index] in root.items : GridCard {
                 width: root.grid_card_width;
                 height: root.grid_card_height;
@@ -632,8 +672,12 @@ export component FilesPage inherits Rectangle {
                 y: Math.floor(index / max(root.grid_columns, 1)) * (root.grid_card_height + root.grid_gap);
                 item: item;
                 selected: root.detail_open && root.detail_item.id == item.id;
-                clicked => { root.open_item(item.id, item.item_type); }
+                clicked => {
+                    root.dismiss_search_focus();
+                    root.open_item(item.id, item.item_type);
+                }
                 menu_requested(id, item_type, anchor_abs_x, anchor_abs_y) => {
+                    root.dismiss_search_focus();
                     root.menu_item_id = id;
                     root.menu_item_type = item_type;
                     root.menu_item_watched = item.is_watched;
@@ -650,12 +694,21 @@ export component FilesPage inherits Rectangle {
             viewport-width: self.visible-width;
             viewport-height: max(self.visible-height, 44px + root.items.length * 44px);
 
+            TouchArea {
+                width: parent.width;
+                height: parent.height;
+                clicked => { root.dismiss_search_focus(); }
+            }
+
             Rectangle {
                 x: 0px;
                 y: 0px;
                 width: parent.width;
                 height: 44px;
-                border-radius: 10px;
+                border-top-left-radius: 10px;
+                border-top-right-radius: 10px;
+                border-bottom-left-radius: 0px;
+                border-bottom-right-radius: 0px;
                 border-width: 1px;
                 border-color: Theme.border;
                 background: Theme.surface;
@@ -664,6 +717,19 @@ export component FilesPage inherits Rectangle {
                 Text { x: parent.width - 344px; y: 15px; text: "KIND"; color: Theme.text_mute; font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; font-family: Theme.ui_font; }
                 Text { x: parent.width - 220px; y: 15px; text: "SIZE"; color: Theme.text_mute; font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; font-family: Theme.ui_font; }
                 Text { x: parent.width - 126px; y: 15px; text: "UPDATED"; color: Theme.text_mute; font-size: 10.5px; font-weight: 600; letter-spacing: 0.8px; font-family: Theme.ui_font; }
+
+                Rectangle {
+                    y: parent.height - 1px;
+                    width: parent.width;
+                    height: 1px;
+                    background: Theme.surface;
+                }
+
+                TouchArea {
+                    width: parent.width;
+                    height: parent.height;
+                    clicked => { root.dismiss_search_focus(); }
+                }
             }
 
             for item[index] in root.items : Rectangle {
@@ -673,9 +739,14 @@ export component FilesPage inherits Rectangle {
                 background: root.detail_open && root.detail_item.id == item.id ? Theme.accent_soft : (Math.mod(index, 2) == 0 ? #ffffff04 : Theme.bg);
                 border-width: 1px;
                 border-color: Theme.border;
+                border-bottom-left-radius: index == root.items.length - 1 ? 10px : 0px;
+                border-bottom-right-radius: index == root.items.length - 1 ? 10px : 0px;
 
                 row-touch := TouchArea {
-                    clicked => { root.open_item(item.id, item.item_type); }
+                    clicked => {
+                        root.dismiss_search_focus();
+                        root.open_item(item.id, item.item_type);
+                    }
                 }
 
                 Icon {
@@ -737,6 +808,7 @@ export component FilesPage inherits Rectangle {
 
                     menu-touch := TouchArea {
                         clicked => {
+                            root.dismiss_search_focus();
                             root.menu_item_id = item.id;
                             root.menu_item_type = item.item_type;
                             root.menu_item_watched = item.is_watched;
@@ -745,6 +817,13 @@ export component FilesPage inherits Rectangle {
                             root.menu_open = true;
                         }
                     }
+                }
+
+                if index > 0 : Rectangle {
+                    y: 0px;
+                    width: parent.width;
+                    height: 1px;
+                    background: root.detail_open && root.detail_item.id == item.id ? Theme.accent_soft : (Math.mod(index, 2) == 0 ? #ffffff04 : Theme.bg);
                 }
             }
         }
@@ -767,7 +846,10 @@ export component FilesPage inherits Rectangle {
             width: parent.width;
             height: parent.height;
             item: root.detail_item;
-            close => { root.close_detail(); }
+            close => {
+                root.dismiss_search_focus();
+                root.close_detail();
+            }
             play(id) => { root.play_item(id); }
         }
     }
@@ -780,7 +862,10 @@ export component FilesPage inherits Rectangle {
         background: #00000066;
 
         TouchArea {
-            clicked => { root.close_detail(); }
+            clicked => {
+                root.dismiss_search_focus();
+                root.close_detail();
+            }
         }
 
         Rectangle {
@@ -800,7 +885,10 @@ export component FilesPage inherits Rectangle {
                 width: parent.width;
                 height: parent.height;
                 item: root.detail_item;
-                close => { root.close_detail(); }
+                close => {
+                    root.dismiss_search_focus();
+                    root.close_detail();
+                }
                 play(id) => { root.play_item(id); }
             }
         }
@@ -814,7 +902,10 @@ export component FilesPage inherits Rectangle {
         background: transparent;
 
         TouchArea {
-            clicked => { root.menu_open = false; }
+            clicked => {
+                root.dismiss_search_focus();
+                root.menu_open = false;
+            }
         }
 
         KebabMenu {
@@ -824,10 +915,14 @@ export component FilesPage inherits Rectangle {
             is_watched: root.menu_item_watched;
             item_id: root.menu_item_id;
             action(name, id) => {
+                root.dismiss_search_focus();
                 root.menu_open = false;
                 root.menu_action(name, id);
             }
-            close => { root.menu_open = false; }
+            close => {
+                root.dismiss_search_focus();
+                root.menu_open = false;
+            }
         }
     }
 }
