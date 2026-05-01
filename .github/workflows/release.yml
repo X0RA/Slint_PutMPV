@@ -164,7 +164,7 @@ jobs:
 
   build-macos:
     name: Build macOS
-    runs-on: macos-latest
+    runs-on: macos-14
 
     steps:
       - name: Check out repository
@@ -174,7 +174,9 @@ jobs:
         run: brew install mpv dylibbundler
 
       - name: Configure Homebrew library path
-        run: echo "LIBRARY_PATH=$(brew --prefix)/lib" >> "$GITHUB_ENV"
+        run: |
+          echo "LIBRARY_PATH=$(brew --prefix)/lib" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=14.0" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

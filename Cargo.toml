@@ -15,13 +15,19 @@ thiserror = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 open = "5"
-arboard = { version = "3", features = ["wayland-data-control"] }
 which = "6"
-rfd = { version = "0.14", default-features = false, features = ["xdg-portal", "tokio"] }
 regex = "1"
 once_cell = "1"
 libmpv2 = { version = "5", features = ["render"] }
 glow = "0.13"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+arboard = { version = "3", features = ["wayland-data-control"] }
+rfd = { version = "0.14", default-features = false, features = ["xdg-portal", "tokio"] }
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+arboard = { version = "3" }
+rfd = { version = "0.14", default-features = false, features = ["tokio"] }
 
 [build-dependencies]
 slint-build = "1.16"
