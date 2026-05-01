@@ -43,11 +43,19 @@ component SettingsRow inherits Rectangle {
         VerticalLayout {
             spacing: 3px;
             horizontal-stretch: 1;
-            alignment: center;
+            alignment: start;
             Text { text: root.label; color: Theme.text; font-size: 12.5px; font-weight: 500; font-family: Theme.ui_font; }
             if (root.hint != "") : Text { text: root.hint; color: Theme.text_mute; font-size: 11.5px; font-family: Theme.ui_font; wrap: word-wrap; }
         }
-        HorizontalLayout { horizontal-stretch: 0; alignment: end; @children }
+        HorizontalLayout {
+            horizontal-stretch: 0;
+            alignment: end;
+            VerticalLayout {
+                vertical-stretch: 1;
+                alignment: center;
+                @children
+            }
+        }
     }
     if (root.show_divider) : Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
 }
@@ -240,27 +248,23 @@ export component SettingsPage inherits Rectangle {
                         SettingsRow {
                             label: "Local Key";
                             hint: "Stored on this device only.";
-                            VerticalLayout {
+                            HorizontalLayout {
                                 spacing: 8px;
-                                alignment: start;
+                                alignment: center;
                                 TextFieldBox { width: 300px; placeholder: "Enter your TMDB key"; monospace: true; text <=> root.tmdb_local_key; }
-                                HorizontalLayout { alignment: end; ButtonChip { label: "Save local"; primary: true; clicked => { root.tmdb_save_local(); } } }
+                                ButtonChip { label: "Save local"; primary: true; clicked => { root.tmdb_save_local(); } }
                             }
                         }
                         SettingsRow {
                             label: "Put.io Shared Key";
                             hint: "Cached from your put.io account config.";
                             show_divider: false;
-                            VerticalLayout {
+                            HorizontalLayout {
                                 spacing: 8px;
-                                alignment: start;
+                                alignment: center;
                                 TextFieldBox { width: 300px; text: root.tmdb_putio_key == "" ? "" : "........................"; placeholder: "No shared key found"; monospace: true; read_only: true; }
-                                HorizontalLayout {
-                                    spacing: 6px;
-                                    alignment: end;
-                                    ButtonChip { label: "Replace on put.io"; icon_name: "arrow-up"; primary: true; clicked => { root.tmdb_replace_putio(); } }
-                                    ButtonChip { label: "Delete"; icon_name: "trash"; danger: true; clicked => { root.tmdb_delete_putio(); } }
-                                }
+                                ButtonChip { label: "Replace on put.io"; icon_name: "arrow-up"; primary: true; clicked => { root.tmdb_replace_putio(); } }
+                                ButtonChip { label: ""; icon_name: "trash"; danger: true; clicked => { root.tmdb_delete_putio(); } }
                             }
                         }
                     }

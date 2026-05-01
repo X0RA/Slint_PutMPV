@@ -59,6 +59,7 @@ fn empty_file_item() -> FileItem {
         detail_extra_b_value: "".into(),
         location: "".into(),
         is_media: false,
+        is_watched: false,
     }
 }
 
@@ -268,6 +269,7 @@ fn put_to_file_item(entry: &DisplayEntry, location: &str) -> FileItem {
         detail_extra_b_value: "".into(),
         location: location.into(),
         is_media,
+        is_watched: false,
     }
 }
 

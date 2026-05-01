@@ -110,19 +110,24 @@ component GroupHeader inherits Rectangle {
 
 component EpisodeRow inherits Rectangle {
     in property <MetadataItem> item;
+    /// When false, row takes no space (used to filter episodes in a nested model loop).
+    in property <bool> active: true;
 
-    height: item.media_type == "Episode" ? 30px : 0px;
+    private property <length> side-pad: 14px;
+    private property <length> label-block-w: 90px;
+
+    height: root.active && item.media_type == "Episode" ? 34px : 0px;
     background: transparent;
 
-    if (root.item.media_type == "Episode") : Rectangle {
+    if (root.active && root.item.media_type == "Episode") : Rectangle {
         y: parent.height - 1px;
         width: parent.width;
         height: 1px;
         background: Theme.border;
     }
 
-    if (root.item.media_type == "Episode") : Text {
-        x: 0px;
+    if (root.active && root.item.media_type == "Episode") : Text {
+        x: side-pad;
         y: 0px;
         height: parent.height;
         text: "S";
@@ -132,8 +137,8 @@ component EpisodeRow inherits Rectangle {
         vertical-alignment: center;
     }
 
-    if (root.item.media_type == "Episode") : Text {
-        x: 18px;
+    if (root.active && root.item.media_type == "Episode") : Text {
+        x: side-pad + 18px;
         y: 0px;
         height: parent.height;
         text: root.item.season;
@@ -144,8 +149,8 @@ component EpisodeRow inherits Rectangle {
         vertical-alignment: center;
     }
 
-    if (root.item.media_type == "Episode") : Text {
-        x: 40px;
+    if (root.active && root.item.media_type == "Episode") : Text {
+        x: side-pad + 40px;
         y: 0px;
         height: parent.height;
         text: "E";
@@ -155,8 +160,8 @@ component EpisodeRow inherits Rectangle {
         vertical-alignment: center;
     }
 
-    if (root.item.media_type == "Episode") : Text {
-        x: 58px;
+    if (root.active && root.item.media_type == "Episode") : Text {
+        x: side-pad + 58px;
         y: 0px;
         height: parent.height;
         text: root.item.episode < 10 ? "0" + root.item.episode : root.item.episode;
@@ -167,10 +172,10 @@ component EpisodeRow inherits Rectangle {
         vertical-alignment: center;
     }
 
-    if (root.item.media_type == "Episode") : Text {
-        x: 90px;
+    if (root.active && root.item.media_type == "Episode") : Text {
+        x: side-pad + label-block-w;
         y: 0px;
-        width: parent.width - 90px - 96px;
+        width: parent.width - side-pad * 2 - label-block-w - 96px;
         height: parent.height;
         text: root.item.filename;
         color: Theme.text_dim;
@@ -180,8 +185,8 @@ component EpisodeRow inherits Rectangle {
         vertical-alignment: center;
     }
 
-    if (root.item.media_type == "Episode") : StatusBadge {
-        x: parent.width - self.width;
+    if (root.active && root.item.media_type == "Episode") : StatusBadge {
+        x: parent.width - self.width - side-pad;
         y: (parent.height - self.height) / 2;
         label: root.item.badge == "" ? "Parsed" : root.item.badge;
         positive: true;
@@ -550,14 +555,25 @@ export component MetadataPage inherits Rectangle {
                         width: parent.width;
                         spacing: 0px;
 
-                        for item in root.items : TvRow {
-                            item: item;
-                            toggle_item(id) => { root.toggle_item(id); }
-                            toggle_expand(id) => { root.toggle_expand(id); }
-                        }
+                        for show in root.items : VerticalLayout {
+                            width: parent.width;
+                            spacing: 0px;
 
-                        for item in root.items : EpisodeRow {
-                            item: item;
+                            if (show.media_type == "TV") : TvRow {
+                                item: show;
+                                toggle_item(id) => { root.toggle_item(id); }
+                                toggle_expand(id) => { root.toggle_expand(id); }
+                            }
+
+                            if (show.media_type == "TV" && show.expanded) : VerticalLayout {
+                                width: parent.width;
+                                spacing: 0px;
+
+                                for ep in root.items : EpisodeRow {
+                                    item: ep;
+                                    active: ep.media_type == "Episode" && ep.parent_id == show.id;
+                                }
+                            }
                         }
                     }
                 }

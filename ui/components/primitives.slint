@@ -56,7 +56,7 @@ export component ButtonChip inherits Rectangle {
     opacity: enabled ? 1 : 0.45;
     border-color: primary ? transparent : (danger ? #f871714d : (active ? Theme.accent_border : Theme.border));
     background: primary ? Theme.accent : (active ? Theme.accent_soft : Theme.surface);
-    width: label-text.preferred-width + (icon_name == "" ? 22px : 40px);
+    width: root.label == "" && root.icon_name != "" ? 32px : label-text.preferred-width + (icon_name == "" ? 22px : 40px);
 
     states [
         hover when root.enabled && touch.has-hover : {
@@ -65,7 +65,7 @@ export component ButtonChip inherits Rectangle {
     ]
 
     if (root.icon_name != "") : icon := Icon {
-        x: 10px;
+        x: root.label == "" ? (parent.width - self.width) / 2 : 10px;
         y: (parent.height - self.height) / 2;
         name: root.icon_name;
         icon_size: 12px;
@@ -84,6 +84,84 @@ export component ButtonChip inherits Rectangle {
 
     touch := TouchArea {
         clicked => { if (root.enabled) { root.clicked(); } }
+    }
+}
+
+/// Toolbar segment for conjoined pill groups (flush, no gaps; use inside a clipped rounded parent).
+export component SegmentChip inherits Rectangle {
+    in property <string> label;
+    in property <string> icon_name: "";
+    in property <bool> active: false;
+    in property <bool> show_right_divider: true;
+    callback clicked();
+
+    vertical-stretch: 1;
+    border-width: 0px;
+    border-radius: 0px;
+    background: active ? Theme.accent_soft : transparent;
+
+    if (show_right_divider) : Rectangle {
+        x: parent.width - 1px;
+        y: 0px;
+        width: 1px;
+        height: parent.height;
+        background: Theme.border;
+    }
+
+    states [
+        hover when touch.has-hover && !active : {
+            background: #ffffff08;
+        }
+        hover when touch.has-hover && active : {
+            background: Theme.accent_soft;
+        }
+    ]
+
+    if (root.icon_name == "") : Text {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height;
+        text: root.label;
+        color: root.active ? Theme.accent_hi : Theme.text_dim;
+        font-size: 12px;
+        font-weight: 500;
+        font-family: Theme.ui_font;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    if (root.icon_name != "") : HorizontalLayout {
+        width: parent.width;
+        height: parent.height;
+        spacing: 6px;
+        alignment: center;
+
+        Rectangle {
+            width: 14px;
+            vertical-stretch: 1;
+            Icon {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                name: root.icon_name;
+                icon_size: 12px;
+                tint: root.active ? Theme.accent_hi : Theme.text_dim;
+            }
+        }
+
+        Text {
+            vertical-stretch: 1;
+            text: root.label;
+            color: root.active ? Theme.accent_hi : Theme.text_dim;
+            font-size: 12px;
+            font-weight: 500;
+            font-family: Theme.ui_font;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => { root.clicked(); }
     }
 }
 

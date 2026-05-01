@@ -2,7 +2,7 @@ import { ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { FileItem, PathSegment } from "../types.slint";
 import { Icon } from "../components/icons.slint";
-import { ButtonChip, SearchField, DetailValueRow, IconButton } from "../components/primitives.slint";
+import { ButtonChip, SegmentChip, SearchField, DetailValueRow, IconButton } from "../components/primitives.slint";
 
 component BreadcrumbButton inherits Rectangle {
     in property <string> label;
@@ -89,61 +89,52 @@ component MenuEntry inherits Rectangle {
 
 component KebabMenu inherits Rectangle {
     in property <bool> is_folder: false;
-    in property <bool> is_media: false;
+    in property <bool> is_watched: false;
     in property <int> item_id: -1;
     callback action(name: string, id: int);
     callback close();
 
     width: 220px;
-    height: is_folder ? 180px : (is_media ? 216px : 180px);
+    height: root-menu.preferred-height;
     border-radius: 10px;
     border-width: 1px;
     border-color: Theme.border_hi;
     background: #1a1a24;
+    clip: true;
 
-    Rectangle {
-        y: 44px;
+    root-menu := VerticalLayout {
         width: parent.width;
-        height: 1px;
-        background: root.is_media ? Theme.border : transparent;
-    }
-
-    Rectangle {
-        y: root.is_media ? 136px : 100px;
-        width: parent.width;
-        height: 1px;
-        background: Theme.border;
-    }
-
-    Rectangle {
-        y: parent.height - 44px;
-        width: parent.width;
-        height: 1px;
-        background: Theme.border;
-    }
-
-    VerticalLayout {
         padding: 4px;
         spacing: 2px;
 
-        if (root.is_media) : media-group := VerticalLayout {
+        if (root.is_folder) : VerticalLayout {
             spacing: 2px;
-            MenuEntry { icon_name: "play"; label: "Play"; shortcut: "ENTER"; clicked => { root.action("play", root.item_id); } }
-            MenuEntry { icon_name: "media"; label: "Play in MPV"; clicked => { root.action("play-mpv", root.item_id); } }
+            MenuEntry { icon_name: "folder"; label: "Open"; clicked => { root.action("open-folder", root.item_id); } }
+            MenuEntry { icon_name: "refresh"; label: "Rename"; clicked => { root.action("rename", root.item_id); } }
+            MenuEntry { icon_name: "folder"; label: "Move to…"; clicked => { root.action("move", root.item_id); } }
+            MenuEntry { icon_name: "download"; label: "Zip and download"; clicked => { root.action("zip-download", root.item_id); } }
         }
 
-        if (root.is_folder) : folder-group := VerticalLayout {
+        if (!root.is_folder) : VerticalLayout {
             spacing: 2px;
-            MenuEntry { icon_name: "folder"; label: "Open folder"; shortcut: "ENTER"; clicked => { root.action("open-folder", root.item_id); } }
+            MenuEntry { icon_name: "play"; label: "Play"; clicked => { root.action("play", root.item_id); } }
+            MenuEntry { icon_name: "refresh"; label: "Rename"; clicked => { root.action("rename", root.item_id); } }
+            MenuEntry { icon_name: "folder"; label: "Move to"; clicked => { root.action("move", root.item_id); } }
+            MenuEntry { icon_name: "download"; label: "Download"; clicked => { root.action("download", root.item_id); } }
+            MenuEntry { icon_name: "share"; label: "Copy share link"; clicked => { root.action("share", root.item_id); } }
+            MenuEntry {
+                icon_name: "image";
+                label: root.is_watched ? "Mark as unwatched" : "Mark as watched";
+                clicked => { root.action("watched", root.item_id); }
+            }
         }
 
-        MenuEntry { icon_name: "download"; label: "Download"; shortcut: "CMD+D"; clicked => { root.action("download", root.item_id); } }
-        MenuEntry { icon_name: "share"; label: "Copy share link"; clicked => { root.action("share", root.item_id); } }
-        MenuEntry { icon_name: "refresh"; label: "Rename"; clicked => { root.action("rename", root.item_id); } }
-        MenuEntry { icon_name: "folder"; label: "Move to…"; clicked => { root.action("move", root.item_id); } }
-        MenuEntry { icon_name: "metadata"; label: root.is_folder ? "Fetch metadata" : "Identify file"; clicked => { root.action("metadata", root.item_id); } }
-        MenuEntry { icon_name: "image"; label: "Mark as watched"; clicked => { root.action("watched", root.item_id); } }
-        MenuEntry { icon_name: "trash"; label: "Delete…"; shortcut: "DEL"; danger: true; clicked => { root.action("delete", root.item_id); } }
+        Rectangle {
+            height: 1px;
+            background: Theme.border;
+        }
+
+        MenuEntry { icon_name: "trash"; label: "Delete"; danger: true; clicked => { root.action("delete", root.item_id); } }
     }
 }
 
@@ -151,7 +142,7 @@ component GridCard inherits Rectangle {
     in property <FileItem> item;
     in property <bool> selected: false;
     callback clicked();
-    callback menu_requested(id: int, item_type: string, is_media: bool, x: length, y: length);
+    callback menu_requested(id: int, item_type: string, anchor_abs_x: length, anchor_abs_y: length);
 
     border-radius: 10px;
     border-width: 1px;
@@ -201,6 +192,10 @@ component GridCard inherits Rectangle {
         font-family: Theme.ui_font;
     }
 
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
     menu-button := Rectangle {
         x: parent.width - 28px;
         y: 12px;
@@ -222,16 +217,11 @@ component GridCard inherits Rectangle {
                 root.menu_requested(
                     root.item.id,
                     root.item.item_type,
-                    root.item.is_media,
-                    min(self.absolute-position.x - root.absolute-position.x - 194px + self.width, root.width - 226px),
-                    self.absolute-position.y - root.absolute-position.y + self.height + 6px
+                    self.absolute-position.x,
+                    self.absolute-position.y + self.height + 6px
                 );
             }
         }
-    }
-
-    touch := TouchArea {
-        clicked => { root.clicked(); }
     }
 }
 
@@ -271,6 +261,7 @@ component DetailPanel inherits Rectangle {
         height: parent.height - self.y - root.actions_height - 16px;
 
         VerticalLayout {
+            alignment: start;
             padding-left: 20px;
             padding-right: 20px;
             padding-top: 4px;
@@ -278,6 +269,7 @@ component DetailPanel inherits Rectangle {
             spacing: 10px;
 
             preview := Rectangle {
+                horizontal-stretch: 1;
                 height: (root.width - 40px) * 10 / 16;
                 border-radius: 10px;
                 border-width: 1px;
@@ -311,6 +303,7 @@ component DetailPanel inherits Rectangle {
             }
 
             Text {
+                horizontal-stretch: 1;
                 text: item.name;
                 wrap: word-wrap;
                 color: Theme.text;
@@ -319,16 +312,10 @@ component DetailPanel inherits Rectangle {
                 font-family: Theme.ui_font;
             }
 
-            Text {
-                text: item.detail_size + " · " + item.list_updated;
-                color: Theme.text_mute;
-                font-size: 11.5px;
-                font-family: Theme.ui_font;
-            }
-
-            Rectangle { height: 8px; }
+            Rectangle { height: 4px; }
 
             DetailValueRow { label: "Size"; value: item.detail_size; mono: true; }
+            if (item.list_updated != "") : DetailValueRow { label: "Date"; value: item.list_updated; mono: true; }
             DetailValueRow { label: "Kind"; value: item.detail_kind; }
             if (item.detail_extra_a_label != "") : extra-a := DetailValueRow { label: item.detail_extra_a_label; value: item.detail_extra_a_value; mono: true; }
             if (item.detail_extra_b_label != "") : extra-b := DetailValueRow { label: item.detail_extra_b_label; value: item.detail_extra_b_value; mono: true; }
@@ -415,7 +402,7 @@ export component FilesPage inherits Rectangle {
     private property <length> menu_y: 0px;
     private property <int> menu_item_id: -1;
     private property <string> menu_item_type: "";
-    private property <bool> menu_item_is_media: false;
+    private property <bool> menu_item_watched: false;
 
     title-text := Text {
         x: page_padding;
@@ -438,7 +425,7 @@ export component FilesPage inherits Rectangle {
         x: page_padding;
         y: 62px;
         width: parent.width - page_padding * 2;
-        height: 28px;
+        height: 26px;
         background: transparent;
         clip: true;
 
@@ -458,13 +445,18 @@ export component FilesPage inherits Rectangle {
 
             for segment[index] in root.path_segments : HorizontalLayout {
                 spacing: 4px;
-                alignment: center;
+                height: parent.height;
 
-                Icon {
-                    name: "chevron-right";
-                    icon_size: 11px;
-                    tint: Theme.text_mute;
-                    width: 11px;
+                Rectangle {
+                    width: 12px;
+                    height: parent.height;
+                    Icon {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        name: "chevron-right";
+                        icon_size: 11px;
+                        tint: Theme.text_mute;
+                    }
                 }
 
                 BreadcrumbButton {
@@ -516,32 +508,35 @@ export component FilesPage inherits Rectangle {
             x: 0px;
             y: 0px;
             width: 160px;
-            height: 34px;
+            height: 32px;
             border-radius: 8px;
             border-width: 1px;
             border-color: Theme.border;
             background: Theme.surface;
+            clip: true;
 
-            ButtonChip {
-                x: 3px;
-                y: 3px;
-                width: 74px;
-                height: 26px;
-                label: "List";
-                icon_name: "list";
-                active: root.mode == 1;
-                clicked => { root.set_mode(1); }
-            }
+            HorizontalLayout {
+                width: parent.width;
+                height: parent.height;
+                spacing: 0px;
 
-            ButtonChip {
-                x: 81px;
-                y: 3px;
-                width: 74px;
-                height: 26px;
-                label: "Grid";
-                icon_name: "grid";
-                active: root.mode == 0;
-                clicked => { root.set_mode(0); }
+                SegmentChip {
+                    horizontal-stretch: 1;
+                    label: "List";
+                    icon_name: "list";
+                    active: root.mode == 1;
+                    show_right_divider: true;
+                    clicked => { root.set_mode(1); }
+                }
+
+                SegmentChip {
+                    horizontal-stretch: 1;
+                    label: "Grid";
+                    icon_name: "grid";
+                    active: root.mode == 0;
+                    show_right_divider: false;
+                    clicked => { root.set_mode(0); }
+                }
             }
         }
 
@@ -549,21 +544,55 @@ export component FilesPage inherits Rectangle {
             x: 170px;
             y: 0px;
             width: 296px;
-            height: 34px;
+            height: 32px;
             border-radius: 8px;
             border-width: 1px;
             border-color: Theme.border;
             background: Theme.surface;
+            clip: true;
 
-            ButtonChip { x: 3px; y: 3px; width: 70px; height: 26px; label: "Name"; active: root.sort_index == 1; clicked => { root.set_sort(1); } }
-            ButtonChip { x: 76px; y: 3px; width: 70px; height: 26px; label: "Size"; active: root.sort_index == 2; clicked => { root.set_sort(2); } }
-            ButtonChip { x: 149px; y: 3px; width: 70px; height: 26px; label: "Created"; active: root.sort_index == 3; clicked => { root.set_sort(3); } }
-            ButtonChip { x: 222px; y: 3px; width: 71px; height: 26px; label: "Updated"; active: root.sort_index == 0; clicked => { root.set_sort(0); } }
+            HorizontalLayout {
+                width: parent.width;
+                height: parent.height;
+                spacing: 0px;
+
+                SegmentChip {
+                    horizontal-stretch: 1;
+                    label: "Name";
+                    active: root.sort_index == 1;
+                    show_right_divider: true;
+                    clicked => { root.set_sort(1); }
+                }
+
+                SegmentChip {
+                    horizontal-stretch: 1;
+                    label: "Size";
+                    active: root.sort_index == 2;
+                    show_right_divider: true;
+                    clicked => { root.set_sort(2); }
+                }
+
+                SegmentChip {
+                    horizontal-stretch: 1;
+                    label: "Created";
+                    active: root.sort_index == 3;
+                    show_right_divider: true;
+                    clicked => { root.set_sort(3); }
+                }
+
+                SegmentChip {
+                    horizontal-stretch: 1;
+                    label: "Updated";
+                    active: root.sort_index == 0;
+                    show_right_divider: false;
+                    clicked => { root.set_sort(0); }
+                }
+            }
         }
 
         descending-chip := ButtonChip {
-            x: 476px;
-            y: 1px;
+            x: sort-segment.x + sort-segment.width + 10px;
+            y: 0px;
             height: 32px;
             label: root.sort_descending ? "Descending" : "Ascending";
             icon_name: "sort";
@@ -603,12 +632,12 @@ export component FilesPage inherits Rectangle {
                 item: item;
                 selected: root.detail_open && root.detail_item.id == item.id;
                 clicked => { root.open_item(item.id, item.item_type); }
-                menu_requested(id, item_type, is_media, x, y) => {
+                menu_requested(id, item_type, anchor_abs_x, anchor_abs_y) => {
                     root.menu_item_id = id;
                     root.menu_item_type = item_type;
-                    root.menu_item_is_media = is_media;
-                    root.menu_x = x;
-                    root.menu_y = min(y, root.height - 228px);
+                    root.menu_item_watched = item.is_watched;
+                    root.menu_x = max(8px, min(anchor_abs_x - root.absolute-position.x, root.width - 220px - 8px));
+                    root.menu_y = min(anchor_abs_y - root.absolute-position.y, root.height - 380px);
                     root.menu_open = true;
                 }
             }
@@ -709,9 +738,9 @@ export component FilesPage inherits Rectangle {
                         clicked => {
                             root.menu_item_id = item.id;
                             root.menu_item_type = item.item_type;
-                            root.menu_item_is_media = item.is_media;
-                            root.menu_x = min(self.absolute-position.x - root.absolute-position.x - 194px + self.width, root.width - 226px);
-                            root.menu_y = min(self.absolute-position.y - root.absolute-position.y + self.height + 6px, root.height - 228px);
+                            root.menu_item_watched = item.is_watched;
+                            root.menu_x = max(8px, min(self.absolute-position.x - root.absolute-position.x, root.width - 220px - 8px));
+                            root.menu_y = min(self.absolute-position.y + self.height + 6px - root.absolute-position.y, root.height - 380px);
                             root.menu_open = true;
                         }
                     }
@@ -791,7 +820,7 @@ export component FilesPage inherits Rectangle {
             x: root.menu_x;
             y: root.menu_y - root.header_height;
             is_folder: root.menu_item_type == "folder";
-            is_media: root.menu_item_is_media;
+            is_watched: root.menu_item_watched;
             item_id: root.menu_item_id;
             action(name, id) => {
                 root.menu_open = false;
