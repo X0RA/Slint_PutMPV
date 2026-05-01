@@ -171,6 +171,29 @@ fn find_node_by_id(node: &DirectoryNode, id: u64) -> Option<&DirectoryNode> {
     None
 }
 
+fn reconcile_path_stack(tree: &UnifiedDirectoryTree, stack: &mut Vec<(u64, String)>) -> bool {
+    let original = stack.clone();
+    if stack.is_empty() {
+        stack.push((0, "put.io".to_string()));
+    }
+
+    while stack.len() > 1 {
+        let folder_id = stack.last().map(|entry| entry.0).unwrap_or(0);
+        if find_node_by_id(&tree.root, folder_id).is_some() {
+            break;
+        }
+        stack.pop();
+    }
+
+    let folder_id = stack.last().map(|entry| entry.0).unwrap_or(0);
+    if find_node_by_id(&tree.root, folder_id).is_none() {
+        stack.clear();
+        stack.push((0, "put.io".to_string()));
+    }
+
+    *stack != original
+}
+
 #[derive(Clone)]
 struct DisplayEntry {
     file: PutIoFile,
@@ -690,6 +713,7 @@ fn main() -> Result<()> {
         Arc::new(RwLock::new(UnifiedDirectoryTree::default()));
     let sync_profiles: Arc<RwLock<Vec<putio::sync::SyncProfile>>> =
         Arc::new(RwLock::new(Vec::new()));
+    let files_refreshing = Arc::new(AtomicBool::new(false));
     let pending_local_clear: Rc<RefCell<Option<i32>>> = Rc::new(RefCell::new(None));
     // UI-thread-only state
     let current_folder: Rc<RefCell<u64>> = Rc::new(RefCell::new(0));
@@ -720,7 +744,16 @@ fn main() -> Result<()> {
                 return;
             };
             let tree = tree.read().unwrap();
-            let folder_id = *current_folder.borrow();
+            let path_changed = {
+                let mut stack = path_stack.borrow_mut();
+                reconcile_path_stack(&tree, &mut stack)
+            };
+            let folder_id = path_stack.borrow().last().map(|entry| entry.0).unwrap_or(0);
+            *current_folder.borrow_mut() = folder_id;
+            if path_changed {
+                app.set_detail_open(false);
+                app.set_detail_item(empty_file_item());
+            }
             let location = location_text(&path_stack.borrow());
             let mut rows = children_for_folder(&tree, folder_id);
             let query = app.get_files_query().to_lowercase();
@@ -1758,6 +1791,53 @@ fn main() -> Result<()> {
     app.on_files_query_changed({
         let r = request_refresh_now.clone();
         move || r()
+    });
+
+    app.on_files_refresh({
+        let weak = app.as_weak();
+        let client = client.clone();
+        let config = config.clone();
+        let files_store = files_store.clone();
+        let tree = tree.clone();
+        let rt = rt.clone();
+        let files_refreshing = files_refreshing.clone();
+        move || {
+            if files_refreshing.swap(true, Ordering::Relaxed) {
+                return;
+            }
+
+            let token = config.oauth_token();
+            if token.is_empty() {
+                files_refreshing.store(false, Ordering::Relaxed);
+                return;
+            }
+
+            let weak = weak.clone();
+            let client = client.clone();
+            let files_store = files_store.clone();
+            let tree = tree.clone();
+            let files_refreshing = files_refreshing.clone();
+            rt.spawn(async move {
+                match putio::files::build_tree(client, token).await {
+                    Ok(new_tree) => {
+                        info!(
+                            "manual tree refresh done: {} folders, {} files",
+                            new_tree.total_folders, new_tree.total_files
+                        );
+                        if let Err(e) = files_store.write_tree(&new_tree) {
+                            error!("write tree: {e}");
+                        }
+                        *tree.write().unwrap() = new_tree;
+                        let _ = weak.upgrade_in_event_loop(|app| {
+                            app.invoke_request_refresh();
+                            app.invoke_metadata_criteria_changed();
+                        });
+                    }
+                    Err(e) => warn!("manual tree refresh failed: {e}"),
+                }
+                files_refreshing.store(false, Ordering::Relaxed);
+            });
+        }
     });
 
     app.on_files_open_item({

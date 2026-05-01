@@ -194,6 +194,46 @@ export component IconButton inherits Rectangle {
     }
 }
 
+/// Same footprint as IconButton; spins the refresh glyph on each click.
+export component RefreshIconButton inherits Rectangle {
+    in property <brush> tint: Theme.text_mute;
+    callback clicked();
+
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    background: transparent;
+
+    private property <angle> spin_total: 0deg;
+
+    animate spin_total {
+        duration: 680ms;
+        easing: cubic-bezier(0.33, 1, 0.68, 1);
+    }
+
+    states [
+        hover when touch.has-hover : {
+            background: #ffffff08;
+        }
+    ]
+
+    Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        name: "refresh";
+        icon_size: 14px;
+        tint: root.tint;
+        transform-rotation: root.spin_total;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.spin_total += 360deg;
+            root.clicked();
+        }
+    }
+}
+
 export component SearchField inherits Rectangle {
     in-out property <string> text: "";
     in property <string> placeholder: "";

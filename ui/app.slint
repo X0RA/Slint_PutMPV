@@ -112,6 +112,7 @@ export component AppWindow inherits Window {
     callback files_mode_changed(index: int);
     callback files_sort_direction_toggled();
     callback files_query_changed();
+    callback files_refresh();
     callback files_close_detail();
     callback files_menu_action(action: string, id: int);
     callback metadata_toggle_item(id: int);
@@ -251,6 +252,7 @@ export component AppWindow inherits Window {
         set_mode(index) => { root.files_mode_changed(index); }
         toggle_sort_direction => { root.files_sort_direction_toggled(); }
         query_changed => { root.files_query_changed(); }
+        refresh_requested => { root.files_refresh(); }
         close_detail => { root.files_close_detail(); }
         menu_action(action, id) => { root.files_menu_action(action, id); }
         play_item(id) => { root.files_menu_action("play", id); }
