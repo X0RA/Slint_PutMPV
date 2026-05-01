@@ -1,0 +1,300 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (e.g. 1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  APP_BIN: putmpv
+  APP_NAME: PutMPV
+  APP_BUNDLE_ID: io.putmpv.app
+
+jobs:
+  build-linux:
+    name: Build Linux
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: master
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            clang \
+            cmake \
+            pkg-config \
+            libdbus-1-dev \
+            libudev-dev \
+            libfontconfig-dev \
+            libgl1-mesa-dev \
+            libmpv-dev \
+            libwayland-dev \
+            libx11-dev \
+            libxcb-shape0-dev \
+            libxcb-xfixes0-dev \
+            libxcursor-dev \
+            libxi-dev \
+            libxkbcommon-dev \
+            libxrandr-dev
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: putmpv-v1
+          key: linux-release
+          cache-on-failure: true
+          cache-bin: false
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Stage Linux binary
+        if: inputs.version != ''
+        run: |
+          mkdir -p dist
+          cp "target/release/${APP_BIN}" "dist/${APP_BIN}-linux-x86_64"
+          chmod +x "dist/${APP_BIN}-linux-x86_64"
+
+      - name: Upload Linux artifact
+        if: inputs.version != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: linux-release
+          path: dist/${{ env.APP_BIN }}-linux-x86_64
+          if-no-files-found: error
+
+  build-windows:
+    name: Build Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: master
+
+      - name: Install mpv development files
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $mpvDir = Join-Path $env:GITHUB_WORKSPACE "mpv-dev"
+          New-Item -ItemType Directory -Force -Path $mpvDir | Out-Null
+          gh release download --repo shinchiro/mpv-winbuild-cmake --pattern "mpv-dev-x86_64-2*-git-*.7z" --dir $mpvDir
+          $archive = Get-ChildItem $mpvDir -Filter "mpv-dev-x86_64-*.7z" | Select-Object -First 1
+          if (-not $archive) { throw "No mpv-dev archive downloaded" }
+          7z x "$($archive.FullName)" "-o$mpvDir" -y | Out-Null
+          $defFile = Join-Path $mpvDir "mpv.def"
+          if (-not (Test-Path $defFile)) { throw "mpv.def missing from mpv-dev archive" }
+          $vsInstall = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          $vcvars = Join-Path $vsInstall "VC\Auxiliary\Build\vcvars64.bat"
+          cmd /c "`"$vcvars`" && lib /def:`"$defFile`" /name:libmpv-2.dll /out:`"$mpvDir\mpv.lib`" /MACHINE:X64"
+          if (-not (Test-Path (Join-Path $mpvDir "mpv.lib"))) { throw "Failed to generate mpv.lib" }
+          echo "LIB=$mpvDir;$env:LIB" >> $env:GITHUB_ENV
+          echo "MPV_DEV_DIR=$mpvDir" >> $env:GITHUB_ENV
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: putmpv-v1
+          key: windows-release
+          cache-on-failure: true
+          cache-bin: false
+
+      - name: Build release executable
+        run: cargo build --release --locked
+
+      - name: Stage Windows executable
+        if: inputs.version != ''
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target\release\${env:APP_BIN}.exe" "dist\${env:APP_BIN}-windows-x86_64.exe"
+          $dll = Get-ChildItem $env:MPV_DEV_DIR -Filter "libmpv-2.dll" | Select-Object -First 1
+          if ($dll) { Copy-Item $dll.FullName "dist\libmpv-2.dll" }
+
+      - name: Upload Windows artifact
+        if: inputs.version != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-release
+          path: |
+            dist/${{ env.APP_BIN }}-windows-x86_64.exe
+            dist/libmpv-2.dll
+          if-no-files-found: error
+
+  build-macos:
+    name: Build macOS
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          ref: master
+
+      - name: Install macOS build dependencies
+        run: brew install mpv dylibbundler
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: putmpv-v1
+          key: macos-arm64-release
+          cache-on-failure: true
+          cache-bin: false
+
+      - name: Build macOS release target
+        run: cargo build --release --locked --target aarch64-apple-darwin
+
+      - name: Assemble macOS app
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          APP_DIR="dist/app/${APP_NAME}.app"
+          mkdir -p "${APP_DIR}/Contents/MacOS"
+          mkdir -p "${APP_DIR}/Contents/Resources"
+          mkdir -p "${APP_DIR}/Contents/Frameworks"
+          cp "target/aarch64-apple-darwin/release/${APP_BIN}" "${APP_DIR}/Contents/MacOS/${APP_NAME}"
+          chmod +x "${APP_DIR}/Contents/MacOS/${APP_NAME}"
+          if [ -f "ui/assets/logo.icns" ]; then
+            cp "ui/assets/logo.icns" "${APP_DIR}/Contents/Resources/${APP_NAME}.icns"
+          fi
+
+      - name: Bundle dynamic libraries into app
+        if: inputs.version != ''
+        run: |
+          APP_DIR="dist/app/${APP_NAME}.app"
+          dylibbundler \
+            --overwrite-files \
+            --bundle-deps \
+            --fix-file "${APP_DIR}/Contents/MacOS/${APP_NAME}" \
+            --dest-dir "${APP_DIR}/Contents/Frameworks/" \
+            --install-path "@executable_path/../Frameworks/"
+
+      - name: Create macOS app metadata
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          APP_DIR="dist/app/${APP_NAME}.app"
+          ICON_KEY=""
+          if [ -f "${APP_DIR}/Contents/Resources/${APP_NAME}.icns" ]; then
+            ICON_KEY="<key>CFBundleIconFile</key><string>${APP_NAME}</string>"
+          fi
+          cat > "${APP_DIR}/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>en</string>
+            <key>CFBundleDisplayName</key>
+            <string>${APP_NAME}</string>
+            <key>CFBundleExecutable</key>
+            <string>${APP_NAME}</string>
+            <key>CFBundleIdentifier</key>
+            <string>${APP_BUNDLE_ID}</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>${APP_NAME}</string>
+            ${ICON_KEY}
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${VERSION}</string>
+            <key>CFBundleVersion</key>
+            <string>${VERSION}</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>11.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+            <key>NSPrincipalClass</key>
+            <string>NSApplication</string>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Validate and ad-hoc sign macOS app
+        if: inputs.version != ''
+        run: |
+          APP_DIR="dist/app/${APP_NAME}.app"
+          plutil -lint "${APP_DIR}/Contents/Info.plist"
+          test -x "${APP_DIR}/Contents/MacOS/${APP_NAME}"
+          codesign --force --deep --sign - "${APP_DIR}"
+          codesign --verify --deep --strict --verbose=2 "${APP_DIR}"
+
+      - name: Create macOS DMG
+        if: inputs.version != ''
+        run: |
+          hdiutil create \
+            -volname "${APP_NAME}" \
+            -srcfolder "dist/app" \
+            -ov \
+            -format UDZO \
+            "dist/${APP_BIN}-macos-arm64.dmg"
+
+      - name: Upload macOS DMG artifact
+        if: inputs.version != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-release
+          path: dist/${{ env.APP_BIN }}-macos-arm64.dmg
+          if-no-files-found: error
+
+  publish-release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    if: inputs.version != ''
+    needs:
+      - build-linux
+      - build-windows
+      - build-macos
+
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create or update GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          if gh release view "${VERSION}" >/dev/null 2>&1; then
+            gh release upload "${VERSION}" release-assets/* --clobber
+          else
+            gh release create "${VERSION}" release-assets/* \
+              --generate-notes \
+              --title "${VERSION}"
+          fi
