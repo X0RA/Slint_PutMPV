@@ -1,4 +1,7 @@
+mod app;
 mod gl;
+
+pub use app::EmbeddedPlayer;
 
 use std::ffi::{c_void, CStr, CString};
 use std::rc::Rc;
@@ -119,7 +122,12 @@ impl PlayerRenderer {
         unsafe {
             self.texture.with_texture_as_active_fbo(|| {
                 self.render_context
-                    .render::<()>(self.texture.raw_fbo_id(), width as i32, height as i32, false)
+                    .render::<()>(
+                        self.texture.raw_fbo_id(),
+                        width as i32,
+                        height as i32,
+                        false,
+                    )
                     .map_err(|e| anyhow!("{e}"))
             })?;
         }

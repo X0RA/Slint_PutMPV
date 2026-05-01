@@ -648,15 +648,11 @@ mod tests {
 
     #[test]
     fn copied_fixture_files_are_present() {
-        let inputs: Vec<String> =
-            serde_json::from_str(include_str!("../tests/fixtures/fileparser/input.json")).unwrap();
+        let inputs: Vec<String> = serde_json::from_str(include_str!("tests/input.json")).unwrap();
         let raw: Vec<Map<String, Value>> =
-            serde_json::from_str(include_str!("../tests/fixtures/fileparser/output_raw.json"))
-                .unwrap();
-        let standard: Vec<Map<String, Value>> = serde_json::from_str(include_str!(
-            "../tests/fixtures/fileparser/output_standard.json"
-        ))
-        .unwrap();
+            serde_json::from_str(include_str!("tests/output_raw.json")).unwrap();
+        let standard: Vec<Map<String, Value>> =
+            serde_json::from_str(include_str!("tests/output_standard.json")).unwrap();
         assert_eq!(inputs.len(), 408);
         assert_eq!(raw.len(), inputs.len());
         assert_eq!(standard.len(), inputs.len());
@@ -664,15 +660,11 @@ mod tests {
 
     #[test]
     fn fixture_subset_matches_known_cases() {
-        let inputs: Vec<String> =
-            serde_json::from_str(include_str!("../tests/fixtures/fileparser/input.json")).unwrap();
+        let inputs: Vec<String> = serde_json::from_str(include_str!("tests/input.json")).unwrap();
         let raw: Vec<Map<String, Value>> =
-            serde_json::from_str(include_str!("../tests/fixtures/fileparser/output_raw.json"))
-                .unwrap();
-        let standard: Vec<Map<String, Value>> = serde_json::from_str(include_str!(
-            "../tests/fixtures/fileparser/output_standard.json"
-        ))
-        .unwrap();
+            serde_json::from_str(include_str!("tests/output_raw.json")).unwrap();
+        let standard: Vec<Map<String, Value>> =
+            serde_json::from_str(include_str!("tests/output_standard.json")).unwrap();
         let cases: &[(usize, &[&str])] = &[
             (
                 0,
@@ -719,12 +711,9 @@ mod tests {
     #[test]
     #[ignore = "full PTN fixture parity is tracked incrementally"]
     fn full_standard_fixture_parity() {
-        let inputs: Vec<String> =
-            serde_json::from_str(include_str!("../tests/fixtures/fileparser/input.json")).unwrap();
-        let standard: Vec<Map<String, Value>> = serde_json::from_str(include_str!(
-            "../tests/fixtures/fileparser/output_standard.json"
-        ))
-        .unwrap();
+        let inputs: Vec<String> = serde_json::from_str(include_str!("tests/input.json")).unwrap();
+        let standard: Vec<Map<String, Value>> =
+            serde_json::from_str(include_str!("tests/output_standard.json")).unwrap();
         for (index, input) in inputs.iter().enumerate() {
             let got = parse(input, true, false);
             for (key, expected_value) in &standard[index] {
