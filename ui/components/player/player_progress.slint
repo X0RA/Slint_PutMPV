@@ -1,0 +1,96 @@
+import { Theme } from "../../theme.slint";
+
+export component PlayerProgress inherits Rectangle {
+    in property <float> position: 0;
+    in property <float> duration: 0;
+    in property <float> buffered_fraction: 0.65;
+    in property <string> position_label: "0:00";
+    in property <string> duration_label: "0:00";
+    callback seek(seconds: float);
+
+    height: 24px;
+    background: transparent;
+
+    property <float> progress_fraction: root.duration > 0 ? max(0, min(root.position / root.duration, 1)) : 0;
+    property <float> seek_fraction: max(0, min(touch.mouse_x / root.width, 1));
+
+    bar := Rectangle {
+        x: 0px;
+        y: 3px;
+        width: parent.width;
+        height: touch.has-hover || touch.pressed ? 6px : 4px;
+        border-radius: 3px;
+        background: #ffffff26;
+
+        animate height { duration: 120ms; easing: ease-out; }
+
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width * max(0, min(root.buffered_fraction, 1));
+            height: parent.height;
+            border-radius: parent.border-radius;
+            background: #ffffff40;
+        }
+
+        played := Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width * root.progress_fraction;
+            height: parent.height;
+            border-radius: parent.border-radius;
+            background: #9d8aff;
+
+            animate width { duration: 90ms; easing: linear; }
+        }
+
+        handle := Rectangle {
+            x: played.width - self.width / 2;
+            y: (parent.height - self.height) / 2;
+            width: 12px;
+            height: 12px;
+            border-radius: 6px;
+            background: #ffffff;
+            opacity: touch.has-hover || touch.pressed ? 1 : 0;
+
+            animate opacity { duration: 100ms; easing: ease-out; }
+        }
+
+        Rectangle { x: parent.width * 0.25; y: 0px; width: 3px; height: parent.height; border-radius: 1px; background: #ffffff66; }
+        Rectangle { x: parent.width * 0.55; y: 0px; width: 3px; height: parent.height; border-radius: 1px; background: #ffffff66; }
+        Rectangle { x: parent.width * 0.78; y: 0px; width: 3px; height: parent.height; border-radius: 1px; background: #ffffff66; }
+    }
+
+    Text {
+        x: 0px;
+        y: 12px;
+        text: root.position_label;
+        color: #5a5a5a;
+        font-size: 11px;
+        font-family: Theme.mono_font;
+    }
+
+    Text {
+        x: parent.width - self.width;
+        y: 12px;
+        text: root.duration_label;
+        color: #5a5a5a;
+        font-size: 11px;
+        font-family: Theme.mono_font;
+    }
+
+    touch := TouchArea {
+        y: 0px;
+        height: 12px;
+        clicked => {
+            if (root.duration > 0) {
+                root.seek(root.duration * root.seek_fraction);
+            }
+        }
+        moved => {
+            if (self.pressed && root.duration > 0) {
+                root.seek(root.duration * root.seek_fraction);
+            }
+        }
+    }
+}

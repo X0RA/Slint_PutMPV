@@ -9,7 +9,7 @@ import { MetadataPage } from "./pages/metadata.slint";
 import { SettingsPage } from "./pages/settings.slint";
 import { MediaPage } from "./pages/media.slint";
 import { PlayerPage } from "./pages/player.slint";
-import { FileItem, MetadataItem, PathSegment, LocalDataRow } from "./types.slint";
+import { FileItem, MetadataItem, PathSegment, LocalDataRow, PlayerTrack } from "./types.slint";
 
 export component AppWindow inherits Window {
     title: "PutMPV";
@@ -78,7 +78,22 @@ export component AppWindow inherits Window {
     in-out property <image> player_texture;
     in-out property <string> player_title;
     in-out property <float> player_texture_width: self.width / 1phx;
-    in-out property <float> player_texture_height: (self.height - Theme.title_bar_height) / 1phx;
+    in-out property <float> player_texture_height: (self.height - (root.view == 7 ? 0px : Theme.title_bar_height)) / 1phx;
+    in-out property <bool> player_paused: true;
+    in-out property <float> player_position: 0;
+    in-out property <float> player_duration: 0;
+    in-out property <float> player_buffered_fraction: 0;
+    in-out property <string> player_position_label: "0:00";
+    in-out property <string> player_duration_label: "0:00";
+    in-out property <float> player_volume: 80;
+    in-out property <bool> player_muted: false;
+    in-out property <[PlayerTrack]> player_subtitle_tracks;
+    in-out property <string> player_selected_subtitle: "";
+    in-out property <[PlayerTrack]> player_audio_tracks;
+    in-out property <string> player_selected_audio: "";
+    in-out property <string> player_subtitle_text: "";
+    in-out property <int> player_subtitle_render_mode: 0;
+    in-out property <bool> player_fullscreen: false;
     in-out property <[LocalDataRow]> local_data_rows;
     in-out property <bool> confirm_open: false;
     in-out property <string> local_data_status;
@@ -122,11 +137,21 @@ export component AppWindow inherits Window {
     callback mpv_browse_custom();
     callback mpv_open_install_link();
     callback player_close();
+    callback player_toggle_play();
+    callback player_seek(seconds: float);
+    callback player_set_volume(volume: float);
+    callback player_toggle_mute();
+    callback player_select_subtitle(track_id: string);
+    callback player_toggle_captions();
+    callback player_subtitle_render_mode_changed(mode: int);
+    callback player_select_audio(track_id: string);
+    callback player_toggle_fullscreen();
+    callback player_exit_fullscreen();
     callback local_data_clear(index: int);
     callback local_data_confirm_clear();
     callback local_data_cancel_clear();
 
-    title-bar := Rectangle {
+    if (root.view != 7) : title-bar := Rectangle {
         x: 0px;
         y: 0px;
         width: parent.width;
@@ -240,12 +265,37 @@ export component AppWindow inherits Window {
 
     if (root.view == 7) : player := PlayerPage {
         x: 0px;
-        y: Theme.title_bar_height;
+        y: 0px;
         width: parent.width;
-        height: parent.height - Theme.title_bar_height;
+        height: parent.height;
         texture <=> root.player_texture;
         title <=> root.player_title;
+        paused <=> root.player_paused;
+        position <=> root.player_position;
+        duration <=> root.player_duration;
+        buffered_fraction <=> root.player_buffered_fraction;
+        position_label <=> root.player_position_label;
+        duration_label <=> root.player_duration_label;
+        volume <=> root.player_volume;
+        muted <=> root.player_muted;
+        subtitle_tracks <=> root.player_subtitle_tracks;
+        selected_subtitle <=> root.player_selected_subtitle;
+        audio_tracks <=> root.player_audio_tracks;
+        selected_audio <=> root.player_selected_audio;
+        subtitle_text <=> root.player_subtitle_text;
+        subtitle_render_mode <=> root.player_subtitle_render_mode;
+        fullscreen <=> root.player_fullscreen;
         close => { root.player_close(); }
+        toggle_play => { root.player_toggle_play(); }
+        seek(seconds) => { root.player_seek(seconds); }
+        set_volume(volume) => { root.player_set_volume(volume); }
+        toggle_mute => { root.player_toggle_mute(); }
+        select_subtitle(track_id) => { root.player_select_subtitle(track_id); }
+        toggle_captions => { root.player_toggle_captions(); }
+        subtitle_render_mode_changed(mode) => { root.player_subtitle_render_mode_changed(mode); }
+        select_audio(track_id) => { root.player_select_audio(track_id); }
+        toggle_fullscreen => { root.player_toggle_fullscreen(); }
+        exit_fullscreen => { root.player_exit_fullscreen(); }
     }
 
     if (root.view == 5) : metadata := MetadataPage {

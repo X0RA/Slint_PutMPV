@@ -1,0 +1,44 @@
+import { Theme } from "../../theme.slint";
+import { Icon } from "../icons.slint";
+
+export component PlayerIconButton inherits Rectangle {
+    in property <string> icon_name;
+    in property <string> tone: "default";
+    in property <bool> enabled: true;
+    in property <bool> large_icon: false;
+    callback clicked();
+
+    width: root.tone == "accent-circle" ? 40px : 30px;
+    height: root.tone == "accent-circle" ? 40px : 30px;
+    border-radius: root.tone == "accent-circle" ? 20px : 6px;
+    opacity: root.enabled ? 1 : 0.45;
+    background: root.tone == "accent-circle" ? Theme.accent : transparent;
+
+    states [
+        hover when root.enabled && touch.has-hover : {
+            background: root.tone == "accent-circle" ? Theme.accent_hi : #ffffff14;
+        }
+        pressed when root.enabled && touch.pressed : {
+            background: root.tone == "accent-circle" ? Theme.accent_hi : #ffffff1f;
+        }
+    ]
+
+    animate background { duration: 140ms; easing: ease-out; }
+    animate opacity { duration: 140ms; easing: ease-out; }
+
+    Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        name: root.icon_name;
+        icon_size: root.tone == "accent-circle" ? 20px : (root.large_icon ? 20px : 18px);
+        tint: root.tone == "accent-circle" ? #ffffff : (root.tone == "subtle" ? #666666 : #808080);
+    }
+
+    touch := TouchArea {
+        clicked => {
+            if (root.enabled) {
+                root.clicked();
+            }
+        }
+    }
+}

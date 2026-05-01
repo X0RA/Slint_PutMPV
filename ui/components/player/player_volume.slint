@@ -1,0 +1,70 @@
+import { Theme } from "../../theme.slint";
+import { PlayerIconButton } from "./player_button.slint";
+
+export component PlayerVolume inherits Rectangle {
+    in-out property <float> volume: 80;
+    in-out property <bool> muted: false;
+    callback set_volume(volume: float);
+    callback toggle_mute();
+
+    width: 120px;
+    height: 30px;
+    background: transparent;
+
+    private property <string> volume_icon:
+        root.muted || root.volume <= 0 ? "volume-mute" :
+        root.volume < 34 ? "volume-low" :
+        root.volume < 67 ? "volume-medium" :
+        "volume-high";
+
+    PlayerIconButton {
+        x: 0px;
+        y: 0px;
+        icon_name: root.volume_icon;
+        clicked => { root.toggle_mute(); }
+    }
+
+    slider := Rectangle {
+        x: 38px;
+        y: 13px;
+        width: 80px;
+        height: 4px;
+        border-radius: 2px;
+        background: #ffffff26;
+
+        property <float> fraction: max(0, min(root.volume / 100, 1));
+
+        fill := Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width * parent.fraction;
+            height: parent.height;
+            border-radius: parent.border-radius;
+            background: root.muted ? #ffffff33 : #ffffffcc;
+        }
+
+        handle := Rectangle {
+            x: fill.width - self.width / 2;
+            y: (parent.height - self.height) / 2;
+            width: 12px;
+            height: 12px;
+            border-radius: 6px;
+            background: #ffffff;
+            opacity: touch.has-hover || touch.pressed ? 1 : 0.8;
+        }
+
+        touch := TouchArea {
+            property <float> value_fraction: max(0, min(self.mouse_x / slider.width, 1));
+            clicked => {
+                root.volume = self.value_fraction * 100;
+                root.set_volume(root.volume);
+            }
+            moved => {
+                if (self.pressed) {
+                    root.volume = self.value_fraction * 100;
+                    root.set_volume(root.volume);
+                }
+            }
+        }
+    }
+}

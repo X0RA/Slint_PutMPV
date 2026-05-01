@@ -1,12 +1,19 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    rc::Rc,
+    sync::{Arc, Mutex},
+};
 
-use slint::ComponentHandle;
+use libmpv2::{
+    events::{Event, PropertyData},
+    Mpv,
+};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tokio::runtime::Runtime;
 use tracing::warn;
 
 use crate::putio::{self, PutioClient};
 use crate::storage::config::ConfigStore;
-use crate::AppWindow;
+use crate::{AppWindow, PlayerTrack};
 
 use super::{PlayerEngine, PlayerRenderer};
 
@@ -15,6 +22,7 @@ struct PlayerPlaybackState {
     active: bool,
     tried_fallback: bool,
     fallback_url: Option<String>,
+    last_subtitle_track: Option<SharedString>,
 }
 
 #[derive(Clone)]
@@ -52,6 +60,9 @@ impl EmbeddedPlayer {
         if let Some(engine) = engine.clone() {
             register_events(app, engine, playback_state.clone());
         }
+        if let Some(engine) = engine.clone() {
+            register_callbacks(app, engine, playback_state.clone());
+        }
 
         let player = Self {
             engine,
@@ -86,9 +97,14 @@ impl EmbeddedPlayer {
             state.active = true;
             state.tried_fallback = false;
             state.fallback_url = Some(fallback_url.clone());
+            state.last_subtitle_track = None;
         }
 
         app.set_player_title(format!("Opening {title}...").into());
+        reset_player_state(app);
+        if let Err(e) = engine.set_sub_visibility(true) {
+            warn!("could not reset embedded mpv subtitle visibility: {e}");
+        }
         app.set_view(self.player_view);
 
         let weak = app.as_weak();
@@ -196,11 +212,30 @@ fn register_events(
 ) {
     match engine.create_event_client() {
         Ok(mut event_client) => {
+            if let Err(e) = PlayerEngine::observe_properties(&event_client) {
+                warn!("could not observe embedded player properties: {e}");
+            }
             let weak = app.as_weak();
             std::thread::spawn(move || loop {
                 match event_client.wait_event(1.0) {
-                    Some(Ok(libmpv2::events::Event::EndFile(_))) => {
+                    Some(Ok(Event::EndFile(_))) => {
                         playback_state.lock().unwrap().active = false;
+                    }
+                    Some(Ok(Event::FileLoaded | Event::AudioReconfig)) => {
+                        let tracks = read_tracks(&event_client);
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            apply_tracks(&app, tracks);
+                        });
+                    }
+                    Some(Ok(Event::PropertyChange { name, change, .. })) => {
+                        if name == "track-list/count" {
+                            let tracks = read_tracks(&event_client);
+                            let _ = weak.upgrade_in_event_loop(move |app| {
+                                apply_tracks(&app, tracks);
+                            });
+                        } else {
+                            apply_property_change(&weak, name, change);
+                        }
                     }
                     Some(Ok(_)) | None => {}
                     Some(Err(e)) => {
@@ -243,5 +278,360 @@ fn register_events(
             });
         }
         Err(e) => warn!("could not create embedded mpv event client: {e}"),
+    }
+}
+
+fn register_callbacks(
+    app: &AppWindow,
+    engine: Arc<PlayerEngine>,
+    playback_state: Arc<Mutex<PlayerPlaybackState>>,
+) {
+    let weak = app.as_weak();
+    let engine_for_play = engine.clone();
+    app.on_player_toggle_play(move || {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        let paused = !app.get_player_paused();
+        app.set_player_paused(paused);
+        if let Err(e) = engine_for_play.set_pause(paused) {
+            warn!("could not toggle embedded mpv playback: {e}");
+        }
+    });
+
+    let engine_for_seek = engine.clone();
+    app.on_player_seek(move |seconds| {
+        if let Err(e) = engine_for_seek.seek(seconds.into()) {
+            warn!("could not seek embedded mpv playback: {e}");
+        }
+    });
+
+    let weak = app.as_weak();
+    let engine_for_volume = engine.clone();
+    app.on_player_set_volume(move |volume| {
+        if let Some(app) = weak.upgrade() {
+            app.set_player_volume(volume);
+            if volume > 0.0 && app.get_player_muted() {
+                app.set_player_muted(false);
+                let _ = engine_for_volume.set_mute(false);
+            }
+        }
+        if let Err(e) = engine_for_volume.set_volume(volume.into()) {
+            warn!("could not set embedded mpv volume: {e}");
+        }
+    });
+
+    let weak = app.as_weak();
+    let engine_for_mute = engine.clone();
+    app.on_player_toggle_mute(move || {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        let muted = !app.get_player_muted();
+        app.set_player_muted(muted);
+        if let Err(e) = engine_for_mute.set_mute(muted) {
+            warn!("could not toggle embedded mpv mute: {e}");
+        }
+    });
+
+    let weak = app.as_weak();
+    let engine_for_subtitle = engine.clone();
+    let subtitle_state = playback_state.clone();
+    app.on_player_select_subtitle(move |track_id| {
+        if !track_id.is_empty() {
+            subtitle_state.lock().unwrap().last_subtitle_track = Some(track_id.clone());
+        }
+        if let Err(e) = engine_for_subtitle.set_sid(track_id.as_str()) {
+            warn!("could not select embedded mpv subtitle track: {e}");
+        }
+        if let Some(app) = weak.upgrade() {
+            if let Err(e) = engine_for_subtitle.set_sub_visibility(app.get_player_subtitle_render_mode() == 0) {
+                warn!("could not update embedded mpv subtitle visibility: {e}");
+            }
+        }
+    });
+
+    let weak = app.as_weak();
+    let engine_for_captions = engine.clone();
+    let captions_state = playback_state.clone();
+    app.on_player_toggle_captions(move || {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+
+        let current = app.get_player_selected_subtitle();
+        let next = if current.is_empty() {
+            captions_state
+                .lock()
+                .unwrap()
+                .last_subtitle_track
+                .clone()
+                .or_else(|| first_available_subtitle(&app))
+                .unwrap_or_default()
+        } else {
+            captions_state.lock().unwrap().last_subtitle_track = Some(current);
+            SharedString::from("")
+        };
+
+        app.set_player_selected_subtitle(next.clone());
+        if let Err(e) = engine_for_captions.set_sid(next.as_str()) {
+            warn!("could not toggle embedded mpv captions: {e}");
+        }
+        if let Err(e) =
+            engine_for_captions.set_sub_visibility(app.get_player_subtitle_render_mode() == 0)
+        {
+            warn!("could not update embedded mpv subtitle visibility: {e}");
+        }
+    });
+
+    let weak = app.as_weak();
+    let engine_for_subtitle_mode = engine.clone();
+    app.on_player_subtitle_render_mode_changed(move |mode| {
+        let mode = mode.clamp(0, 1);
+        if let Some(app) = weak.upgrade() {
+            app.set_player_subtitle_render_mode(mode);
+        }
+        if let Err(e) = engine_for_subtitle_mode.set_sub_visibility(mode == 0) {
+            warn!("could not switch embedded mpv subtitle rendering mode: {e}");
+        }
+    });
+
+    let engine_for_audio = engine;
+    app.on_player_select_audio(move |track_id| {
+        if let Err(e) = engine_for_audio.set_aid(track_id.as_str()) {
+            warn!("could not select embedded mpv audio track: {e}");
+        }
+    });
+
+    let weak = app.as_weak();
+    app.on_player_toggle_fullscreen(move || {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        let fullscreen = !app.get_player_fullscreen();
+        app.set_player_fullscreen(fullscreen);
+        app.window().set_fullscreen(fullscreen);
+    });
+
+    let weak = app.as_weak();
+    app.on_player_exit_fullscreen(move || {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        if app.get_player_fullscreen() {
+            app.set_player_fullscreen(false);
+            app.window().set_fullscreen(false);
+        }
+    });
+}
+
+fn reset_player_state(app: &AppWindow) {
+    app.set_player_paused(false);
+    app.set_player_position(0.0);
+    app.set_player_buffered_fraction(0.0);
+    app.set_player_position_label("0:00".into());
+    app.set_player_duration(0.0);
+    app.set_player_duration_label("0:00".into());
+    app.set_player_subtitle_text("".into());
+    app.set_player_subtitle_render_mode(0);
+    app.set_player_selected_subtitle("".into());
+    app.set_player_selected_audio("".into());
+    app.set_player_subtitle_tracks(ModelRc::from(Rc::new(VecModel::from(
+        Vec::<PlayerTrack>::new(),
+    ))));
+    app.set_player_audio_tracks(ModelRc::from(Rc::new(VecModel::from(
+        Vec::<PlayerTrack>::new(),
+    ))));
+}
+
+fn first_available_subtitle(app: &AppWindow) -> Option<SharedString> {
+    let tracks = app.get_player_subtitle_tracks();
+    for index in 0..tracks.row_count() {
+        let Some(track) = tracks.row_data(index) else {
+            continue;
+        };
+        if !track.id.is_empty() {
+            return Some(track.id);
+        }
+    }
+    None
+}
+
+#[derive(Debug)]
+struct PlayerTracks {
+    subtitles: Vec<PlayerTrack>,
+    selected_subtitle: SharedString,
+    audio: Vec<PlayerTrack>,
+    selected_audio: SharedString,
+}
+
+fn apply_property_change(weak: &slint::Weak<AppWindow>, name: &str, change: PropertyData<'_>) {
+    match (name, change) {
+        ("pause", PropertyData::Flag(paused)) => {
+            let _ = weak.upgrade_in_event_loop(move |app| app.set_player_paused(paused));
+        }
+        ("time-pos", PropertyData::Double(position)) => {
+            let label = format_time(position);
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                app.set_player_position(position as f32);
+                app.set_player_position_label(label.into());
+            });
+        }
+        ("duration", PropertyData::Double(duration)) => {
+            let label = format_time(duration);
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                app.set_player_duration(duration as f32);
+                app.set_player_duration_label(label.into());
+            });
+        }
+        ("demuxer-cache-time", PropertyData::Double(cache_time)) => {
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                let duration = app.get_player_duration();
+                let fraction = if duration > 0.0 {
+                    (cache_time as f32 / duration).clamp(0.0, 1.0)
+                } else {
+                    0.0
+                };
+                app.set_player_buffered_fraction(fraction);
+            });
+        }
+        ("volume", PropertyData::Double(volume)) => {
+            let _ = weak.upgrade_in_event_loop(move |app| app.set_player_volume(volume as f32));
+        }
+        ("mute", PropertyData::Flag(muted)) => {
+            let _ = weak.upgrade_in_event_loop(move |app| app.set_player_muted(muted));
+        }
+        ("sub-text", PropertyData::Str(text)) | ("sub-text", PropertyData::OsdStr(text)) => {
+            let text = text.to_owned();
+            let _ = weak.upgrade_in_event_loop(move |app| app.set_player_subtitle_text(text.into()));
+        }
+        ("sid", PropertyData::Str(track_id)) | ("sid", PropertyData::OsdStr(track_id)) => {
+            let track_id = normalize_track_id(track_id).to_owned();
+            let _ = weak
+                .upgrade_in_event_loop(move |app| app.set_player_selected_subtitle(track_id.into()));
+        }
+        ("aid", PropertyData::Str(track_id)) | ("aid", PropertyData::OsdStr(track_id)) => {
+            let track_id = normalize_track_id(track_id).to_owned();
+            let _ = weak.upgrade_in_event_loop(move |app| app.set_player_selected_audio(track_id.into()));
+        }
+        _ => {}
+    }
+}
+
+fn apply_tracks(app: &AppWindow, tracks: PlayerTracks) {
+    app.set_player_subtitle_tracks(ModelRc::from(Rc::new(VecModel::from(
+        tracks.subtitles,
+    ))));
+    app.set_player_selected_subtitle(tracks.selected_subtitle);
+    app.set_player_audio_tracks(ModelRc::from(Rc::new(VecModel::from(tracks.audio))));
+    app.set_player_selected_audio(tracks.selected_audio);
+}
+
+fn read_tracks(mpv: &Mpv) -> PlayerTracks {
+    let count = get_i64(mpv, "track-list/count").unwrap_or(0).max(0);
+    let mut subtitles = vec![PlayerTrack {
+        id: SharedString::from(""),
+        name: SharedString::from("Off"),
+        detail: SharedString::from(""),
+    }];
+    let mut audio = Vec::new();
+    let mut selected_subtitle = SharedString::from("");
+    let mut selected_audio = SharedString::from("");
+
+    for index in 0..count {
+        let prefix = format!("track-list/{index}");
+        let Some(kind) = get_string(mpv, &format!("{prefix}/type")) else {
+            continue;
+        };
+        let Some(id) = get_i64(mpv, &format!("{prefix}/id")) else {
+            continue;
+        };
+        let id_string = id.to_string();
+        let selected = get_bool(mpv, &format!("{prefix}/selected")).unwrap_or(false);
+        let default = get_bool(mpv, &format!("{prefix}/default")).unwrap_or(false);
+        let lang = get_string(mpv, &format!("{prefix}/lang"));
+        let title = get_string(mpv, &format!("{prefix}/title"));
+        let codec = get_string(mpv, &format!("{prefix}/codec"));
+
+        let label_base = if kind == "sub" { "Subtitle" } else { "Audio" };
+        let name = title
+            .clone()
+            .or(lang.clone())
+            .unwrap_or_else(|| format!("{label_base} {id}"));
+        let mut detail_parts = Vec::new();
+        if let Some(lang) = lang {
+            detail_parts.push(lang.to_uppercase());
+        }
+        if let Some(codec) = codec {
+            detail_parts.push(codec.to_uppercase());
+        }
+        if default {
+            detail_parts.push("Default".to_string());
+        }
+        let detail = detail_parts.join(" · ");
+
+        let track = PlayerTrack {
+            id: SharedString::from(id_string.as_str()),
+            name: SharedString::from(name),
+            detail: SharedString::from(detail),
+        };
+
+        match kind.as_str() {
+            "sub" => {
+                if selected {
+                    selected_subtitle = SharedString::from(id_string.as_str());
+                }
+                subtitles.push(track);
+            }
+            "audio" => {
+                if selected {
+                    selected_audio = SharedString::from(id_string.as_str());
+                }
+                audio.push(track);
+            }
+            _ => {}
+        }
+    }
+
+    PlayerTracks {
+        subtitles,
+        selected_subtitle,
+        audio,
+        selected_audio,
+    }
+}
+
+fn get_string(mpv: &Mpv, name: &str) -> Option<String> {
+    mpv.get_property::<String>(name).ok().filter(|s| !s.is_empty())
+}
+
+fn get_i64(mpv: &Mpv, name: &str) -> Option<i64> {
+    mpv.get_property::<i64>(name).ok()
+}
+
+fn get_bool(mpv: &Mpv, name: &str) -> Option<bool> {
+    mpv.get_property::<bool>(name).ok()
+}
+
+fn normalize_track_id(track_id: &str) -> &str {
+    if track_id == "no" || track_id == "auto" {
+        ""
+    } else {
+        track_id
+    }
+}
+
+fn format_time(seconds: f64) -> String {
+    if !seconds.is_finite() || seconds <= 0.0 {
+        return "0:00".to_string();
+    }
+    let seconds = seconds.round() as u64;
+    let hours = seconds / 3600;
+    let minutes = (seconds % 3600) / 60;
+    let seconds = seconds % 60;
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes}:{seconds:02}")
     }
 }

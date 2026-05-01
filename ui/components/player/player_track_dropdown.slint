@@ -1,0 +1,201 @@
+import { Theme } from "../../theme.slint";
+import { Icon } from "../icons.slint";
+import { PlayerTrack } from "../../types.slint";
+import { PlayerIconButton } from "./player_button.slint";
+
+export component PlayerTrackDropdown inherits Rectangle {
+    in property <string> icon_name;
+    in property <bool> large_icon: false;
+    in property <string> header;
+    in property <[PlayerTrack]> tracks;
+    in-out property <string> selected_id: "";
+    in property <bool> show_render_mode: false;
+    in-out property <int> render_mode: 0;
+    in-out property <bool> open: false;
+    callback select(track_id: string);
+    callback toggled(open: bool);
+    callback render_mode_changed(mode: int);
+
+    private property <int> visible_count: max(1, min(root.tracks.length, 7));
+    private property <length> render_mode_height: root.show_render_mode ? 48px : 0px;
+
+    width: 30px;
+    height: 30px;
+    background: transparent;
+
+    PlayerIconButton {
+        icon_name: root.icon_name;
+        tone: "subtle";
+        large_icon: root.large_icon;
+        clicked => {
+            root.open = !root.open;
+            root.toggled(root.open);
+        }
+    }
+
+    if (root.open) : menu := Rectangle {
+        x: -190px;
+        y: -self.height - 8px;
+        width: 220px;
+        height: 50px + root.render_mode_height + root.visible_count * 44px + max(0, root.visible_count - 1) * 4px;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: #ffffff1a;
+        background: #1a1a1c;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: #00000099;
+        clip: true;
+
+        Text {
+            x: 12px;
+            y: 10px;
+            width: parent.width - 24px;
+            text: root.header;
+            color: #6b6b6b;
+            font-size: 11px;
+            font-family: Theme.ui_font;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        Rectangle {
+            x: 6px;
+            y: 36px;
+            width: parent.width - 12px;
+            height: 1px;
+            background: #ffffff0f;
+        }
+
+        if (root.show_render_mode) : render-mode-box := Rectangle {
+            x: 6px;
+            y: 42px;
+            width: parent.width - 12px;
+            height: 40px;
+            border-radius: 5px;
+            background: #ffffff08;
+
+            mpv-mode := Rectangle {
+                x: 3px;
+                y: 3px;
+                width: (parent.width - 6px) / 2;
+                height: parent.height - 6px;
+                border-radius: 4px;
+                background: root.render_mode == 0 ? #9d8aff26 : transparent;
+
+                Text {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width;
+                    height: parent.height;
+                    text: "MPV";
+                    color: root.render_mode == 0 ? #b9aaff : #8a8a8a;
+                    font-size: 12px;
+                    font-family: Theme.ui_font;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.render_mode = 0;
+                        root.render_mode_changed(0);
+                    }
+                }
+            }
+
+            app-mode := Rectangle {
+                x: parent.width / 2;
+                y: 3px;
+                width: (parent.width - 6px) / 2;
+                height: parent.height - 6px;
+                border-radius: 4px;
+                background: root.render_mode == 1 ? #9d8aff26 : transparent;
+
+                Text {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width;
+                    height: parent.height;
+                    text: "App";
+                    color: root.render_mode == 1 ? #b9aaff : #8a8a8a;
+                    font-size: 12px;
+                    font-family: Theme.ui_font;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.render_mode = 1;
+                        root.render_mode_changed(1);
+                    }
+                }
+            }
+        }
+
+        if (root.tracks.length == 0) : empty := Text {
+            x: 12px;
+            y: 52px + root.render_mode_height;
+            width: parent.width - 24px;
+            text: "No tracks";
+            color: Theme.text_mute;
+            font-size: 13px;
+            font-family: Theme.ui_font;
+        }
+
+        VerticalLayout {
+            x: 6px;
+            y: 44px + root.render_mode_height;
+            width: parent.width - 12px;
+            height: parent.height - 50px - root.render_mode_height;
+            spacing: 4px;
+
+            for track[index] in root.tracks : Rectangle {
+                height: 44px;
+                border-radius: 4px;
+                background: track.id == root.selected_id ? #9d8aff26 : (row-touch.has-hover ? #ffffff0f : transparent);
+
+                VerticalLayout {
+                    x: 10px;
+                    y: 7px;
+                    width: parent.width - 38px;
+                    height: parent.height - 14px;
+                    spacing: 2px;
+                    alignment: center;
+
+                    Text {
+                        text: track.name;
+                        color: track.id == root.selected_id ? #9d8aff : #a0a0a0;
+                        font-size: 13px;
+                        font-family: Theme.ui_font;
+                        overflow: elide;
+                    }
+
+                    if (track.detail != "") : detail := Text {
+                        text: track.detail;
+                        color: #6b6b6b;
+                        font-size: 11px;
+                        font-family: Theme.ui_font;
+                        overflow: elide;
+                    }
+                }
+
+                if (track.id == root.selected_id) : check := Icon {
+                    x: parent.width - 25px;
+                    y: 14px;
+                    name: "check";
+                    icon_size: 16px;
+                    tint: #9d8aff;
+                }
+
+                row-touch := TouchArea {
+                    clicked => {
+                        root.selected_id = track.id;
+                        root.open = false;
+                        root.select(track.id);
+                    }
+                }
+            }
+        }
+    }
+}

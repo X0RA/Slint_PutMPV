@@ -1,0 +1,182 @@
+import { Theme } from "../../theme.slint";
+import { PlayerTrack } from "../../types.slint";
+import { PlayerIconButton } from "./player_button.slint";
+import { PlayerProgress } from "./player_progress.slint";
+import { PlayerVolume } from "./player_volume.slint";
+import { PlayerTrackDropdown } from "./player_track_dropdown.slint";
+
+export component PlayerControlsBar inherits Rectangle {
+    in property <bool> controls_visible: true;
+    in-out property <bool> paused: true;
+    in-out property <float> position: 0;
+    in property <float> duration: 0;
+    in property <float> buffered_fraction: 0;
+    in-out property <float> volume: 80;
+    in-out property <bool> muted: false;
+    in property <string> position_label: "0:00";
+    in property <string> duration_label: "0:00";
+    in property <[PlayerTrack]> subtitle_tracks;
+    in-out property <string> selected_subtitle: "";
+    in-out property <int> subtitle_render_mode: 0;
+    in property <[PlayerTrack]> audio_tracks;
+    in-out property <string> selected_audio: "";
+    callback toggle_play();
+    callback seek(seconds: float);
+    callback set_volume(volume: float);
+    callback toggle_mute();
+    callback select_subtitle(track_id: string);
+    callback toggle_captions();
+    callback subtitle_render_mode_changed(mode: int);
+    callback select_audio(track_id: string);
+    callback toggle_fullscreen();
+
+    height: 120px;
+    background: @linear-gradient(0deg, #000000e6 0%, #00000099 58%, #00000000 100%);
+    opacity: root.controls_visible ? 1 : 0;
+
+    private property <bool> subtitle_open: false;
+    private property <bool> audio_open: false;
+
+    animate opacity { duration: 250ms; easing: ease-out; }
+
+    public function close_menus() {
+        root.subtitle_open = false;
+        root.audio_open = false;
+    }
+
+    progress := PlayerProgress {
+        x: 20px;
+        y: 43px;
+        width: parent.width - 40px;
+        position: root.position;
+        duration: root.duration;
+        buffered_fraction: root.buffered_fraction;
+        position_label: root.position_label;
+        duration_label: root.duration_label;
+        seek(seconds) => {
+            root.close_menus();
+            root.seek(seconds);
+        }
+    }
+
+    left := Rectangle {
+        x: 20px;
+        y: 74px;
+        width: 150px;
+        height: 30px;
+        background: transparent;
+
+        PlayerVolume {
+            volume <=> root.volume;
+            muted <=> root.muted;
+            set_volume(volume) => {
+                root.close_menus();
+                root.set_volume(volume);
+            }
+            toggle_mute => {
+                root.close_menus();
+                root.toggle_mute();
+            }
+        }
+    }
+
+    center-controls := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 69px;
+        width: 224px;
+        height: 40px;
+        background: transparent;
+
+        PlayerIconButton {
+            x: 0px;
+            y: 5px;
+            icon_name: "skip-back";
+            clicked => { root.close_menus(); }
+        }
+        PlayerIconButton {
+            x: 40px;
+            y: 5px;
+            icon_name: "rewind";
+            clicked => { root.close_menus(); }
+        }
+        PlayerIconButton {
+            x: 92px;
+            y: 0px;
+            icon_name: root.paused ? "play" : "pause";
+            tone: "accent-circle";
+            clicked => {
+                root.close_menus();
+                root.toggle_play();
+            }
+        }
+        PlayerIconButton {
+            x: 144px;
+            y: 5px;
+            icon_name: "fast-forward";
+            clicked => { root.close_menus(); }
+        }
+        PlayerIconButton {
+            x: 184px;
+            y: 5px;
+            icon_name: "skip-forward";
+            clicked => { root.close_menus(); }
+        }
+    }
+
+    right := HorizontalLayout {
+        x: parent.width - self.width - 20px;
+        y: 74px;
+        width: 124px;
+        height: 30px;
+        spacing: 8px;
+        alignment: end;
+
+        PlayerTrackDropdown {
+            icon_name: "subtitles";
+            large_icon: true;
+            header: "Subtitles";
+            tracks: root.subtitle_tracks;
+            selected_id <=> root.selected_subtitle;
+            show_render_mode: true;
+            render_mode <=> root.subtitle_render_mode;
+            open <=> root.subtitle_open;
+            toggled(open) => {
+                if (open) {
+                    root.audio_open = false;
+                }
+            }
+            render_mode_changed(mode) => {
+                root.subtitle_render_mode_changed(mode);
+            }
+            select(track_id) => {
+                root.audio_open = false;
+                root.select_subtitle(track_id);
+            }
+        }
+
+        PlayerTrackDropdown {
+            icon_name: "audio";
+            header: "Audio Track";
+            tracks: root.audio_tracks;
+            selected_id <=> root.selected_audio;
+            open <=> root.audio_open;
+            toggled(open) => {
+                if (open) {
+                    root.subtitle_open = false;
+                }
+            }
+            select(track_id) => {
+                root.subtitle_open = false;
+                root.select_audio(track_id);
+            }
+        }
+
+        PlayerIconButton {
+            icon_name: "maximize";
+            clicked => {
+                root.close_menus();
+                root.toggle_fullscreen();
+            }
+        }
+    }
+}

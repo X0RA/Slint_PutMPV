@@ -1,14 +1,123 @@
-import { Theme } from "../theme.slint";
-import { ButtonChip } from "../components/primitives.slint";
+import { PlayerTrack } from "../types.slint";
+import { PlayerTopBar } from "../components/player/player_top_bar.slint";
+import { PlayerControlsBar } from "../components/player/player_controls_bar.slint";
 
-export component PlayerPage inherits Rectangle {
+export component PlayerPage inherits FocusScope {
     in property <image> texture;
     in property <string> title;
-    out property <float> requested_texture_width: video.width / 1phx;
-    out property <float> requested_texture_height: video.height / 1phx;
+    in-out property <bool> paused: true;
+    in-out property <float> position: 0;
+    in property <float> duration: 0;
+    in property <float> buffered_fraction: 0;
+    in property <string> position_label: "0:00";
+    in property <string> duration_label: "0:00";
+    in-out property <float> volume: 80;
+    in-out property <bool> muted: false;
+    in property <[PlayerTrack]> subtitle_tracks;
+    in-out property <string> selected_subtitle: "";
+    in property <[PlayerTrack]> audio_tracks;
+    in-out property <string> selected_audio: "";
+    in property <string> subtitle_text: "";
+    in-out property <int> subtitle_render_mode: 0;
+    in-out property <bool> fullscreen: false;
     callback close();
+    callback toggle_play();
+    callback seek(seconds: float);
+    callback set_volume(volume: float);
+    callback toggle_mute();
+    callback select_subtitle(track_id: string);
+    callback toggle_captions();
+    callback subtitle_render_mode_changed(mode: int);
+    callback select_audio(track_id: string);
+    callback toggle_fullscreen();
+    callback exit_fullscreen();
 
-    background: #000000;
+    in-out property <bool> controls_visible: true;
+
+    focus-on-click: true;
+    focus-on-tab-navigation: false;
+
+    key-pressed(event) => {
+        if (event.text == Key.LeftArrow) {
+            root.reveal_controls();
+            root.seek(max(0, root.position - 5));
+            return accept;
+        } else if (event.text == Key.RightArrow) {
+            root.reveal_controls();
+            root.seek(root.duration > 0 ? min(root.duration, root.position + 5) : root.position + 5);
+            return accept;
+        } else if (event.text == Key.UpArrow) {
+            root.reveal_controls();
+            root.set_volume(min(100, root.volume + 5));
+            return accept;
+        } else if (event.text == Key.DownArrow) {
+            root.reveal_controls();
+            root.set_volume(max(0, root.volume - 5));
+            return accept;
+        }
+        reject
+    }
+
+    function reveal_controls() {
+        root.controls_visible = true;
+        hide-timer.restart();
+    }
+
+    hide-timer := Timer {
+        interval: 3000ms;
+        running: root.controls_visible;
+        triggered => {
+            root.controls_visible = false;
+        }
+    }
+
+    KeyBinding {
+        keys: @keys(Space);
+        activated => {
+            root.reveal_controls();
+            root.toggle_play();
+        }
+    }
+
+    KeyBinding {
+        keys: @keys(C);
+        activated => {
+            root.reveal_controls();
+            root.toggle_captions();
+        }
+    }
+
+    KeyBinding {
+        keys: @keys(M);
+        activated => {
+            root.reveal_controls();
+            root.toggle_mute();
+        }
+    }
+
+    KeyBinding {
+        keys: @keys(F);
+        activated => {
+            root.reveal_controls();
+            root.toggle_fullscreen();
+        }
+    }
+
+    KeyBinding {
+        keys: @keys(Escape);
+        activated => {
+            root.reveal_controls();
+            root.exit_fullscreen();
+        }
+    }
+
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height;
+        background: #0a0a0b;
+    }
 
     video := Image {
         x: 0px;
@@ -19,31 +128,106 @@ export component PlayerPage inherits Rectangle {
         image-fit: contain;
     }
 
-    top-bar := Rectangle {
+    video-touch := TouchArea {
         x: 0px;
         y: 0px;
         width: parent.width;
-        height: 56px;
-        background: #00000099;
-
-        ButtonChip {
-            x: 16px;
-            y: 12px;
-            label: "Back";
-            icon_name: "chevron-left";
-            clicked => { root.close(); }
+        height: parent.height;
+        mouse-cursor: root.controls_visible ? default : none;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.move) {
+                root.reveal_controls();
+            }
         }
+        clicked => {
+            root.reveal_controls();
+            controls.close_menus();
+        }
+    }
 
-        Text {
-            x: 110px;
-            y: 18px;
-            width: parent.width - self.x - 24px;
-            text: root.title;
-            color: Theme.text;
-            font-size: 13px;
-            font-weight: 500;
-            font-family: Theme.ui_font;
-            overflow: elide;
+    if (root.subtitle_render_mode == 1 && root.subtitle_text != "") : subtitle-box := Rectangle {
+        x: max(24px, (parent.width - self.width) / 2);
+        y: parent.height - controls.height - self.height - 24px;
+        width: min(subtitle-content.preferred-width + 32px, parent.width - 48px);
+        height: subtitle-content.preferred-height + 16px;
+        border-radius: 4px;
+        background: #000000bf;
+
+        subtitle-content := Text {
+            x: 16px;
+            y: 8px;
+            width: parent.width - 32px;
+            text: root.subtitle_text;
+            color: #ffffff;
+            font-size: 22px;
+            font-family: "Noto Sans";
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+    }
+
+    top-bar := PlayerTopBar {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        title: root.title;
+        controls_visible: root.controls_visible;
+        close => { root.close(); }
+    }
+
+    controls := PlayerControlsBar {
+        x: 0px;
+        y: parent.height - self.height;
+        width: parent.width;
+        controls_visible: root.controls_visible;
+        paused <=> root.paused;
+        position <=> root.position;
+        duration: root.duration;
+        buffered_fraction: root.buffered_fraction;
+        position_label: root.position_label;
+        duration_label: root.duration_label;
+        volume <=> root.volume;
+        muted <=> root.muted;
+        subtitle_tracks: root.subtitle_tracks;
+        selected_subtitle <=> root.selected_subtitle;
+        audio_tracks: root.audio_tracks;
+        selected_audio <=> root.selected_audio;
+        subtitle_render_mode <=> root.subtitle_render_mode;
+        toggle_play => {
+            root.reveal_controls();
+            root.toggle_play();
+        }
+        seek(seconds) => {
+            root.reveal_controls();
+            root.seek(seconds);
+        }
+        set_volume(volume) => {
+            root.reveal_controls();
+            root.set_volume(volume);
+        }
+        toggle_mute => {
+            root.reveal_controls();
+            root.toggle_mute();
+        }
+        select_subtitle(track_id) => {
+            root.reveal_controls();
+            root.select_subtitle(track_id);
+        }
+        toggle_captions => {
+            root.reveal_controls();
+            root.toggle_captions();
+        }
+        subtitle_render_mode_changed(mode) => {
+            root.reveal_controls();
+            root.subtitle_render_mode_changed(mode);
+        }
+        select_audio(track_id) => {
+            root.reveal_controls();
+            root.select_audio(track_id);
+        }
+        toggle_fullscreen => {
+            root.reveal_controls();
+            root.toggle_fullscreen();
         }
     }
 }

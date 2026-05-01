@@ -8,8 +8,9 @@ use std::rc::Rc;
 
 use anyhow::{anyhow, Result};
 use libmpv2::{
+    events::mpv_event_id,
     render::{OpenGLInitParams, RenderContext, RenderParam, RenderParamApiType},
-    Mpv,
+    Format, Mpv,
 };
 
 type SlintGetProcAddress<'a> = dyn Fn(&CStr) -> *const c_void + 'a;
@@ -59,10 +60,97 @@ impl PlayerEngine {
         Ok(())
     }
 
+    pub fn set_pause(&self, paused: bool) -> Result<()> {
+        self.mpv
+            .set_property("pause", paused)
+            .map_err(|e| anyhow!("{e}"))
+    }
+
+    pub fn seek(&self, seconds: f64) -> Result<()> {
+        self.mpv
+            .set_property("time-pos", seconds.max(0.0))
+            .map_err(|e| anyhow!("{e}"))
+    }
+
+    pub fn set_volume(&self, volume: f64) -> Result<()> {
+        self.mpv
+            .set_property("volume", volume.clamp(0.0, 100.0))
+            .map_err(|e| anyhow!("{e}"))
+    }
+
+    pub fn set_mute(&self, muted: bool) -> Result<()> {
+        self.mpv
+            .set_property("mute", muted)
+            .map_err(|e| anyhow!("{e}"))
+    }
+
+    pub fn set_sub_visibility(&self, visible: bool) -> Result<()> {
+        self.mpv
+            .set_property("sub-visibility", visible)
+            .map_err(|e| anyhow!("{e}"))
+    }
+
+    pub fn set_sid(&self, track_id: &str) -> Result<()> {
+        let value = if track_id.is_empty() { "no" } else { track_id };
+        self.mpv
+            .set_property("sid", value)
+            .map_err(|e| anyhow!("{e}"))
+    }
+
+    pub fn set_aid(&self, track_id: &str) -> Result<()> {
+        let value = if track_id.is_empty() { "no" } else { track_id };
+        self.mpv
+            .set_property("aid", value)
+            .map_err(|e| anyhow!("{e}"))
+    }
+
     pub fn create_event_client(&self) -> Result<Mpv> {
         self.mpv
             .create_client(Some("putmpv_events"))
             .map_err(|e| anyhow!("{e}"))
+    }
+
+    pub fn observe_properties(event_client: &Mpv) -> Result<()> {
+        event_client
+            .enable_event(mpv_event_id::FileLoaded)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .enable_event(mpv_event_id::AudioReconfig)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .enable_event(mpv_event_id::EndFile)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .observe_property("pause", Format::Flag, 1)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .observe_property("time-pos", Format::Double, 2)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .observe_property("duration", Format::Double, 3)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .observe_property("volume", Format::Double, 4)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .observe_property("mute", Format::Flag, 5)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .observe_property("sub-text", Format::String, 6)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .observe_property("sid", Format::String, 7)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .observe_property("aid", Format::String, 8)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .observe_property("track-list/count", Format::Int64, 9)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
+            .observe_property("demuxer-cache-time", Format::Double, 10)
+            .map_err(|e| anyhow!("{e}"))?;
+        Ok(())
     }
 }
 
