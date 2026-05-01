@@ -98,12 +98,34 @@ jobs:
           $archive = Get-ChildItem $mpvDir -Filter "mpv-dev-x86_64-*.7z" | Select-Object -First 1
           if (-not $archive) { throw "No mpv-dev archive downloaded" }
           7z x "$($archive.FullName)" "-o$mpvDir" -y | Out-Null
-          $defFile = Join-Path $mpvDir "mpv.def"
-          if (-not (Test-Path $defFile)) { throw "mpv.def missing from mpv-dev archive" }
+
+          Write-Host "Archive contents:"
+          Get-ChildItem $mpvDir -Recurse | ForEach-Object { Write-Host "  $($_.FullName)" }
+
+          $dll = Get-ChildItem $mpvDir -Recurse -Filter "libmpv-2.dll" | Select-Object -First 1
+          if (-not $dll) { throw "libmpv-2.dll missing from mpv-dev archive" }
+
           $vsInstall = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
           $vcvars = Join-Path $vsInstall "VC\Auxiliary\Build\vcvars64.bat"
-          cmd /c "`"$vcvars`" && lib /def:`"$defFile`" /name:libmpv-2.dll /out:`"$mpvDir\mpv.lib`" /MACHINE:X64"
+
+          $defPath = Join-Path $mpvDir "mpv.def"
+          $exportsFile = Join-Path $mpvDir "exports.txt"
+          cmd /c "`"$vcvars`" >nul && dumpbin /exports `"$($dll.FullName)`" > `"$exportsFile`""
+          $exports = Get-Content $exportsFile |
+            ForEach-Object {
+              if ($_ -match '^\s+\d+\s+[0-9A-Fa-f]+\s+[0-9A-Fa-f]+\s+(\S+)') { $matches[1] }
+            }
+          if (-not $exports) { throw "Failed to parse DLL exports from dumpbin output" }
+          Write-Host "Found $($exports.Count) exports in libmpv-2.dll"
+          @("EXPORTS") + $exports | Set-Content -Path $defPath -Encoding ASCII
+
+          cmd /c "`"$vcvars`" && lib /def:`"$defPath`" /name:libmpv-2.dll /out:`"$mpvDir\mpv.lib`" /MACHINE:X64"
           if (-not (Test-Path (Join-Path $mpvDir "mpv.lib"))) { throw "Failed to generate mpv.lib" }
+
+          if ($dll.DirectoryName -ne $mpvDir) {
+            Copy-Item $dll.FullName (Join-Path $mpvDir "libmpv-2.dll") -Force
+          }
+
           echo "LIB=$mpvDir;$env:LIB" >> $env:GITHUB_ENV
           echo "MPV_DEV_DIR=$mpvDir" >> $env:GITHUB_ENV
 
@@ -150,6 +172,9 @@ jobs:
 
       - name: Install macOS build dependencies
         run: brew install mpv dylibbundler
+
+      - name: Configure Homebrew library path
+        run: echo "LIBRARY_PATH=$(brew --prefix)/lib" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
