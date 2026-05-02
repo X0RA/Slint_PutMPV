@@ -415,8 +415,12 @@ export component MediaPage inherits Rectangle {
     private property <bool> compact: root.width < 760px;
     private property <length> gutter: compact ? 20px : 36px;
     private property <length> inner-max: root.width - gutter * 2;
-    private property <length> content-w: inner-max;
-    private property <int> hub-cols: root.width < 560px ? 3 : root.width < 820px ? 4 : root.width < 1100px ? 5 : 6;
+    /// Large viewports: keep the hub in the center 60% so posters don't dominate ultra-wide layouts.
+    private property <bool> wide-column: root.width >= 1280px;
+    private property <length> content-w: wide-column ? (root.width * 0.6) : inner-max;
+    /// Extra columns only when `wide-column` is active so medium widths keep the previous 6-col cap.
+    private property <int> hub-cols: root.width < 560px ? 3 : root.width < 820px ? 4 : root.width < 1100px ? 5
+        : wide-column ? (content-w >= 1200px ? 8 : content-w >= 900px ? 7 : 6) : 6;
     private property <length> hub-gap: 18px;
     private property <length> hub-cell-w: (content-w - hub-gap * (hub-cols - 1)) / hub-cols;
 
