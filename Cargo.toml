@@ -31,3 +31,4 @@ rfd = { version = "0.14", default-features = false, features = ["tokio"] }
 
 [build-dependencies]
 slint-build = "1.16"
+winres = "0.1"
