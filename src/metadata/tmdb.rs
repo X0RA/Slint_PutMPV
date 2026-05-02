@@ -310,6 +310,8 @@ pub struct TVSeriesDetails {
     #[serde(default)]
     pub number_of_seasons: i32,
     #[serde(default)]
+    pub vote_average: f64,
+    #[serde(default)]
     pub seasons: Vec<Season>,
 }
 

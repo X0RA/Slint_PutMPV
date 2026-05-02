@@ -20,6 +20,13 @@ pub fn config_dir() -> Result<PathBuf> {
     Ok(dir)
 }
 
+pub fn poster_cache_dir() -> Result<PathBuf> {
+    let dir = config_dir()?.join("posters");
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("creating poster cache dir {}", dir.display()))?;
+    Ok(dir)
+}
+
 pub fn read_json<T: DeserializeOwned>(path: &Path) -> Result<Option<T>> {
     match std::fs::read(path) {
         Ok(bytes) if bytes.is_empty() => Ok(None),

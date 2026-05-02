@@ -12,6 +12,7 @@ export struct MediaItem {
     progress: float,
     is_tv: bool,
     initials: string,
+    file_id: string,
 }
 
 component HubPoster inherits Rectangle {
@@ -45,7 +46,7 @@ component HubPoster inherits Rectangle {
         background: @radial-gradient(circle, #ffffff28 0%, #00000000 65%);
     }
 
-    VerticalLayout {
+    if art.width == 0 : VerticalLayout {
         width: parent.width;
         height: parent.height;
         alignment: center;
@@ -199,6 +200,7 @@ component HubMediaCard inherits TouchArea {
                     padding-top: 12px;
                     padding-bottom: 14px;
                     spacing: 5px;
+                    alignment: start;
 
                     Text {
                         text: root.data.title;
@@ -418,36 +420,17 @@ export component MediaPage inherits Rectangle {
     private property <length> hub-gap: 18px;
     private property <length> hub-cell-w: (content-w - hub-gap * (hub-cols - 1)) / hub-cols;
 
-    in property <bool> has_unmatched: true;
-    in property <string> unmatched_title: "8 unmatched items";
-    in property <string> unmatched_detail: "3 movies and 5 shows still need metadata";
-    in property <bool> show_error_flash: true;
-    in property <string> error_flash_text: "Network timeout — try again.";
-    in property <bool> show_success_flash: true;
-    in property <string> success_flash_text: "Saved matches for 12 movies and 48 episodes.";
+    in property <bool> has_unmatched;
+    in property <string> unmatched_title;
+    in property <string> unmatched_detail;
+    in property <bool> show_error_flash;
+    in property <string> error_flash_text;
+    in property <bool> show_success_flash;
+    in property <string> success_flash_text;
 
 
-    in property <[MediaItem]> movies: [
-        { title: "Queen Margot", meta: "1994 · 2h 19m", rating: "7.2", resolution: "1080p", progress: 0, is_tv: false, initials: "QM" },
-        { title: "Split Second", meta: "1992 · 1h 30m", rating: "6.1", resolution: "1080p", progress: 1, is_tv: false, initials: "SS" },
-        { title: "Watchmen", meta: "2009 · 2h 42m", rating: "7.6", resolution: "1080p", progress: 0.62, is_tv: false, initials: "W" },
-        { title: "Labyrinth", meta: "1986 · 1h 41m", rating: "7.4", resolution: "1080p", progress: 0.15, is_tv: false, initials: "L" },
-        { title: "The Producers", meta: "1967 · 1h 28m", rating: "7.5", resolution: "1080p", progress: 1, is_tv: false, initials: "TP" },
-        { title: "The Human Condition III", meta: "1961 · 3h 10m", rating: "8.4", resolution: "1080p", progress: 0, is_tv: false, initials: "HC" },
-        { title: "Goyokin", meta: "1969 · 2h 4m", rating: "7.3", resolution: "720p", progress: 0, is_tv: false, initials: "G" },
-        { title: "Arrival", meta: "2016 · Movie", rating: "8.1", resolution: "1080p", progress: 0, is_tv: false, initials: "A" },
-    ];
-
-    in property <[MediaItem]> shows: [
-        { title: "The Simpsons", meta: "1S · 22E · 1989", rating: "8.0", resolution: "", progress: 0, is_tv: true, initials: "TS" },
-        { title: "Smiling Friends", meta: "1S · 8E · 2022", rating: "8.5", resolution: "", progress: 0, is_tv: true, initials: "SF" },
-        { title: "Legend of the Galactic Heroes", meta: "1S · 75E · 1988", rating: "9.0", resolution: "", progress: 0, is_tv: true, initials: "LG" },
-        { title: "Naruto", meta: "1S · 720E · 2002", rating: "8.4", resolution: "", progress: 0, is_tv: true, initials: "N" },
-        { title: "The Boys", meta: "1S · 8E · 2019", rating: "8.7", resolution: "", progress: 0, is_tv: true, initials: "TB" },
-        { title: "What We Do in the Shadows", meta: "1S · 10E · 2019", rating: "8.5", resolution: "", progress: 0, is_tv: true, initials: "WW" },
-        { title: "The Queen's Gambit", meta: "1S · 7E · 2020", rating: "8.6", resolution: "", progress: 0, is_tv: true, initials: "QG" },
-        { title: "Severance", meta: "2022 · 2 seasons", rating: "8.9", resolution: "", progress: 0, is_tv: true, initials: "S" },
-    ];
+    in property <[MediaItem]> movies;
+    in property <[MediaItem]> shows;
 
     callback scrape_unmatched();
     callback dismiss_error();
@@ -465,6 +448,7 @@ export component MediaPage inherits Rectangle {
         stack := VerticalLayout {
             width: root.width;
             spacing: 0px;
+            alignment: start;
 
             if root.has-banner-content : MetadataStrip {
                 gutter: root.gutter;
@@ -529,7 +513,7 @@ export component MediaPage inherits Rectangle {
                                 cell-width: root.hub-cell-w;
                                 data: item;
                                 open => {
-                                    root.media_item_clicked(item.title);
+                                    root.media_item_clicked(item.file_id);
                                 }
                             }
                         }
@@ -570,7 +554,7 @@ export component MediaPage inherits Rectangle {
                                 cell-width: root.hub-cell-w;
                                 data: item;
                                 open => {
-                                    root.media_item_clicked(item.title);
+                                    root.media_item_clicked(item.file_id);
                                 }
                             }
                         }
