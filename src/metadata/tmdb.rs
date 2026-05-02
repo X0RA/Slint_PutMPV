@@ -209,6 +209,13 @@ fn clean_query_with_year(query: &str) -> (String, Option<String>) {
     (whitespace.replace_all(clean.trim(), " ").to_string(), year)
 }
 
+fn null_string<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Genre {
     #[serde(default)]
@@ -221,17 +228,17 @@ pub struct Genre {
 pub struct MovieDetails {
     #[serde(default)]
     pub id: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub title: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub original_title: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub overview: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub release_date: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub poster_path: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub backdrop_path: String,
     #[serde(default)]
     pub runtime: i32,
@@ -249,7 +256,7 @@ pub struct ImageInfo {
     pub height: i32,
     #[serde(default)]
     pub iso_639_1: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub file_path: String,
     #[serde(default)]
     pub vote_average: f64,
@@ -273,17 +280,17 @@ pub struct MovieImages {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Season {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub air_date: String,
     #[serde(default)]
     pub episode_count: i32,
     #[serde(default)]
     pub id: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub overview: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub poster_path: String,
     #[serde(default)]
     pub season_number: i32,
@@ -293,17 +300,17 @@ pub struct Season {
 pub struct TVSeriesDetails {
     #[serde(default)]
     pub id: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub original_name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub overview: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub first_air_date: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub poster_path: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub backdrop_path: String,
     #[serde(default)]
     pub number_of_episodes: i32,
@@ -319,17 +326,17 @@ pub struct TVSeriesDetails {
 pub struct Episode {
     #[serde(default)]
     pub id: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub overview: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub air_date: String,
     #[serde(default)]
     pub episode_number: i32,
     #[serde(default)]
     pub season_number: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub still_path: String,
 }
 
@@ -337,19 +344,19 @@ pub struct Episode {
 pub struct TVSeasonDetails {
     #[serde(default)]
     pub id: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub air_date: String,
     #[serde(default)]
     pub episodes: Vec<Episode>,
     #[serde(default)]
     pub episode_count: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub overview: String,
     #[serde(default)]
     pub season_number: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub poster_path: String,
 }
 
@@ -365,17 +372,17 @@ pub struct TVEpisodeImages {
 pub struct MovieSearchResult {
     #[serde(default)]
     pub id: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub title: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub original_title: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub overview: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub poster_path: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub backdrop_path: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub release_date: String,
     #[serde(default)]
     pub vote_average: f64,
@@ -397,17 +404,17 @@ struct MovieSearchResponse {
 pub struct TVSearchResult {
     #[serde(default)]
     pub id: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub original_name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub overview: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub poster_path: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub backdrop_path: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_string")]
     pub first_air_date: String,
     #[serde(default)]
     pub vote_average: f64,
@@ -428,11 +435,91 @@ struct TVSearchResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn strips_trailing_year_from_query() {
         let (query, year) = clean_query_with_year("Alien 1979");
         assert_eq!(query, "Alien");
         assert_eq!(year.as_deref(), Some("1979"));
+    }
+
+    #[test]
+    fn tv_search_response_accepts_nullable_strings() {
+        let response: TVSearchResponse = serde_json::from_value(json!({
+            "page": 1,
+            "results": [{
+                "id": 46260,
+                "name": "Naruto",
+                "original_name": null,
+                "overview": null,
+                "poster_path": null,
+                "backdrop_path": null,
+                "first_air_date": null,
+                "vote_average": 8.3
+            }],
+            "total_pages": 1,
+            "total_results": 1
+        }))
+        .unwrap();
+
+        let result = &response.results[0];
+        assert_eq!(result.name, "Naruto");
+        assert_eq!(result.original_name, "");
+        assert_eq!(result.poster_path, "");
+        assert_eq!(result.first_air_date, "");
+    }
+
+    #[test]
+    fn movie_search_response_accepts_nullable_strings() {
+        let response: MovieSearchResponse = serde_json::from_value(json!({
+            "page": 1,
+            "results": [{
+                "id": 372058,
+                "title": "Your Name.",
+                "original_title": null,
+                "overview": null,
+                "poster_path": null,
+                "backdrop_path": null,
+                "release_date": null,
+                "vote_average": 8.5
+            }],
+            "total_pages": 1,
+            "total_results": 1
+        }))
+        .unwrap();
+
+        let result = &response.results[0];
+        assert_eq!(result.title, "Your Name.");
+        assert_eq!(result.original_title, "");
+        assert_eq!(result.release_date, "");
+    }
+
+    #[test]
+    fn season_details_accept_nullable_strings() {
+        let season: TVSeasonDetails = serde_json::from_value(json!({
+            "id": 12,
+            "air_date": null,
+            "episodes": [{
+                "id": 34,
+                "name": null,
+                "overview": null,
+                "air_date": null,
+                "episode_number": 142,
+                "season_number": 3,
+                "still_path": null
+            }],
+            "name": null,
+            "overview": null,
+            "season_number": 3,
+            "poster_path": null
+        }))
+        .unwrap();
+
+        assert_eq!(season.air_date, "");
+        assert_eq!(season.name, "");
+        assert_eq!(season.poster_path, "");
+        assert_eq!(season.episodes[0].name, "");
+        assert_eq!(season.episodes[0].still_path, "");
     }
 }

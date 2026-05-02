@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -539,6 +539,13 @@ enum MetadataFetchCandidate {
     },
 }
 
+#[derive(Debug, Default)]
+struct ShowMetadataMatchOutcome {
+    matched_episodes: usize,
+    missed: bool,
+    errors: Vec<String>,
+}
+
 fn stable_i32_id(value: &str) -> i32 {
     let mut hash: u32 = 2_166_136_261;
     for b in value.as_bytes() {
@@ -715,7 +722,12 @@ fn metadata_fetch_candidates(state: &MetadataUiState) -> Vec<MetadataFetchCandid
 fn make_initials(title: &str) -> slint::SharedString {
     let s: String = title
         .split_whitespace()
-        .filter(|w| w.chars().next().map(|c| c.is_alphanumeric()).unwrap_or(false))
+        .filter(|w| {
+            w.chars()
+                .next()
+                .map(|c| c.is_alphanumeric())
+                .unwrap_or(false)
+        })
         .take(3)
         .map(|w| w.chars().next().unwrap().to_uppercase().to_string())
         .collect::<Vec<_>>()
@@ -808,7 +820,9 @@ fn build_unmatched_candidates_from_tree(
             .flat_map(|s| s.episodes.iter())
             .filter(|ep| existing_ids.contains(&ep.file_id))
             .collect();
-        if !all_episodes.iter().any(|ep| matched.tv.contains_key(&ep.file_id))
+        if !all_episodes
+            .iter()
+            .any(|ep| matched.tv.contains_key(&ep.file_id))
             && !all_episodes.is_empty()
         {
             let episodes = all_episodes
@@ -837,6 +851,163 @@ fn collect_tree_file_ids(node: &DirectoryNode, ids: &mut std::collections::HashS
     }
 }
 
+async fn match_show_metadata(
+    title: &str,
+    episodes: &[EpisodeRefByFileID],
+    metadata_api: &metadata::MetadataAPI,
+    tmdb_api: &metadata::TMDBAPI,
+    tvmaze_api: &metadata::TVMazeAPI,
+) -> ShowMetadataMatchOutcome {
+    let mut outcome = ShowMetadataMatchOutcome::default();
+    if episodes.is_empty() {
+        outcome.missed = true;
+        return outcome;
+    }
+
+    let mut seasons = episodes
+        .iter()
+        .filter_map(|ep| (ep.season > 0).then_some(ep.season))
+        .collect::<BTreeSet<_>>();
+    let mut tmdb_resolved = HashMap::<String, i32>::new();
+    let mut tmdb_series_id = None;
+
+    match tmdb_api.search_tv(title, 1).await {
+        Ok(results) => {
+            if let Some(result) = results.first() {
+                tmdb_series_id = Some(result.id);
+                let initial_seasons = seasons.iter().copied().collect::<Vec<_>>();
+                let _ = metadata_api.seed_tv(result.id, &initial_seasons).await;
+
+                match metadata_api
+                    .resolve_tv_episodes_by_file_id(result.id, episodes)
+                    .await
+                {
+                    Ok(resolved) => tmdb_resolved.extend(resolved),
+                    Err(e) => outcome
+                        .errors
+                        .push(format!("{title}: TMDB episode resolution failed: {e}")),
+                }
+
+                let unresolved = unresolved_episode_refs(episodes, &tmdb_resolved);
+                if !unresolved.is_empty() {
+                    match metadata_api
+                        .resolve_absolute_episodes(result.id, &unresolved)
+                        .await
+                    {
+                        Ok(abs) => {
+                            tmdb_resolved.extend(abs.resolved);
+                            seasons.extend(abs.seasons);
+                        }
+                        Err(e) => outcome.errors.push(format!(
+                            "{title}: TMDB absolute episode remapping failed: {e}"
+                        )),
+                    }
+                }
+
+                if !tmdb_resolved.is_empty() {
+                    let matches = episode_match_items(&tmdb_resolved, "tmdb");
+                    outcome.matched_episodes += matches.len();
+                    if let Err(e) = metadata_api.bulk_store_matches_by_file_id(&matches) {
+                        outcome.errors.push(format!("{title}: {e}"));
+                    }
+                }
+            }
+        }
+        Err(e) => outcome
+            .errors
+            .push(format!("{title}: TMDB search failed: {e}")),
+    }
+
+    let unresolved_after_tmdb = unresolved_episode_refs(episodes, &tmdb_resolved);
+    if !unresolved_after_tmdb.is_empty() {
+        match tvmaze_api.search_shows(title).await {
+            Ok(results) => {
+                if let Some(result) = results.first() {
+                    let tvmaze_show_id = result.show.id;
+                    let mut tvmaze_resolved = match metadata_api
+                        .resolve_tvmaze_episodes_by_file_id(tvmaze_show_id, &unresolved_after_tmdb)
+                        .await
+                    {
+                        Ok(resolved) => resolved,
+                        Err(e) => {
+                            outcome
+                                .errors
+                                .push(format!("{title}: TVMaze episode resolution failed: {e}"));
+                            HashMap::new()
+                        }
+                    };
+
+                    let still_unresolved =
+                        unresolved_episode_refs(&unresolved_after_tmdb, &tvmaze_resolved);
+                    if !still_unresolved.is_empty() {
+                        match metadata_api
+                            .resolve_tvmaze_absolute_episodes(tvmaze_show_id, &still_unresolved)
+                            .await
+                        {
+                            Ok(abs) => {
+                                tvmaze_resolved.extend(abs.resolved);
+                                seasons.extend(abs.seasons);
+                            }
+                            Err(e) => outcome.errors.push(format!(
+                                "{title}: TVMaze absolute episode remapping failed: {e}"
+                            )),
+                        }
+                    }
+
+                    if !tvmaze_resolved.is_empty() {
+                        let matches = episode_match_items(&tvmaze_resolved, "tvmaze");
+                        outcome.matched_episodes += matches.len();
+                        if let Err(e) = metadata_api.bulk_store_matches_by_file_id(&matches) {
+                            outcome.errors.push(format!("{title}: {e}"));
+                        }
+                    }
+
+                    let final_seasons = seasons.iter().copied().collect::<Vec<_>>();
+                    let _ = metadata_api
+                        .seed_tvmaze(tvmaze_show_id, &final_seasons)
+                        .await;
+                }
+            }
+            Err(e) => outcome
+                .errors
+                .push(format!("{title}: TVMaze search failed: {e}")),
+        }
+    }
+
+    if let Some(series_id) = tmdb_series_id {
+        let final_seasons = seasons.iter().copied().collect::<Vec<_>>();
+        let _ = metadata_api.seed_tv(series_id, &final_seasons).await;
+    }
+
+    outcome.missed = outcome.matched_episodes == 0;
+    outcome
+}
+
+fn unresolved_episode_refs(
+    episodes: &[EpisodeRefByFileID],
+    resolved: &HashMap<String, i32>,
+) -> Vec<EpisodeRefByFileID> {
+    episodes
+        .iter()
+        .filter(|ep| !resolved.contains_key(&ep.file_id))
+        .cloned()
+        .collect()
+}
+
+fn episode_match_items(resolved: &HashMap<String, i32>, source: &str) -> Vec<MatchItemByFileID> {
+    resolved
+        .iter()
+        .filter_map(|(file_id, tmdb_id)| {
+            (*tmdb_id > 0).then(|| MatchItemByFileID {
+                file_id: file_id.clone(),
+                kind: "episode".to_string(),
+                tmdb_id: *tmdb_id,
+                source: source.to_string(),
+            })
+        })
+        .collect()
+}
+
 fn refresh_media_ui(
     app: &AppWindow,
     media_movies_model: &Rc<VecModel<MediaItem>>,
@@ -861,9 +1032,11 @@ fn refresh_media_ui(
     let mut movie_details_map: HashMap<i32, MovieDetails> = HashMap::new();
     for (id_str, sub) in &tmdb_cache.movies {
         if let Ok(mid) = id_str.parse::<i32>() {
-            let preferred = sub
-                .get("details_en-US")
-                .or_else(|| sub.keys().find(|k| k.starts_with("details_")).and_then(|k| sub.get(k)));
+            let preferred = sub.get("details_en-US").or_else(|| {
+                sub.keys()
+                    .find(|k| k.starts_with("details_"))
+                    .and_then(|k| sub.get(k))
+            });
             if let Some(entry) = preferred {
                 if let Ok(d) = serde_json::from_value::<MovieDetails>(entry.data.clone()) {
                     movie_details_map.insert(mid, d);
@@ -878,9 +1051,11 @@ fn refresh_media_ui(
     let mut series_details_map: HashMap<i32, TVSeriesDetails> = HashMap::new();
     for (id_str, sub) in &tmdb_cache.tv {
         if let Ok(series_id) = id_str.parse::<i32>() {
-            let preferred = sub
-                .get("details_en-US")
-                .or_else(|| sub.keys().find(|k| k.starts_with("details_")).and_then(|k| sub.get(k)));
+            let preferred = sub.get("details_en-US").or_else(|| {
+                sub.keys()
+                    .find(|k| k.starts_with("details_"))
+                    .and_then(|k| sub.get(k))
+            });
             if let Some(entry) = preferred {
                 if let Ok(d) = serde_json::from_value::<TVSeriesDetails>(entry.data.clone()) {
                     series_details_map.insert(series_id, d);
@@ -888,7 +1063,9 @@ fn refresh_media_ui(
             }
             for (key, entry) in sub {
                 if key.starts_with("season_") {
-                    if let Ok(season) = serde_json::from_value::<TVSeasonDetails>(entry.data.clone()) {
+                    if let Ok(season) =
+                        serde_json::from_value::<TVSeasonDetails>(entry.data.clone())
+                    {
                         for ep in &season.episodes {
                             if ep.id > 0 {
                                 episode_to_series.insert(ep.id, series_id);
@@ -964,7 +1141,12 @@ fn refresh_media_ui(
     // series_id → (TVSeriesDetails, matched_seasons: BTreeSet<i32>, matched_ep_count: usize, first_file_id: String)
     let mut show_groups: std::collections::BTreeMap<
         i32,
-        (TVSeriesDetails, std::collections::BTreeSet<i32>, usize, String),
+        (
+            TVSeriesDetails,
+            std::collections::BTreeSet<i32>,
+            usize,
+            String,
+        ),
     > = std::collections::BTreeMap::new();
     for (file_id, &episode_id) in &matched.tv {
         if !existing_file_ids.contains(file_id) {
@@ -976,25 +1158,29 @@ fn refresh_media_ui(
         let Some(details) = series_details_map.get(&series_id) else {
             continue;
         };
-        let entry = show_groups
-            .entry(series_id)
-            .or_insert_with(|| (details.clone(), std::collections::BTreeSet::new(), 0, file_id.clone()));
+        let entry = show_groups.entry(series_id).or_insert_with(|| {
+            (
+                details.clone(),
+                std::collections::BTreeSet::new(),
+                0,
+                file_id.clone(),
+            )
+        });
         // Find which season this episode belongs to via episode_id in season cache
-        let season_number = tmdb_cache
-            .tv
-            .get(&series_id.to_string())
-            .and_then(|sub| {
-                sub.iter()
-                    .filter(|(k, _)| k.starts_with("season_"))
-                    .find_map(|(_, e)| {
-                        serde_json::from_value::<TVSeasonDetails>(e.data.clone()).ok().and_then(|s| {
+        let season_number = tmdb_cache.tv.get(&series_id.to_string()).and_then(|sub| {
+            sub.iter()
+                .filter(|(k, _)| k.starts_with("season_"))
+                .find_map(|(_, e)| {
+                    serde_json::from_value::<TVSeasonDetails>(e.data.clone())
+                        .ok()
+                        .and_then(|s| {
                             s.episodes
                                 .iter()
                                 .any(|ep| ep.id == episode_id)
                                 .then_some(s.season_number)
                         })
-                    })
-            });
+                })
+        });
         if let Some(sn) = season_number {
             entry.1.insert(sn);
         }
@@ -1012,7 +1198,11 @@ fn refresh_media_ui(
             };
             let meta = format!(
                 "{season_count}S · {ep_count}E{}",
-                if year.is_empty() { String::new() } else { format!(" · {year}") }
+                if year.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · {year}")
+                }
             );
             let rating = if d.vote_average > 0.0 {
                 format!("{:.1}", d.vote_average)
@@ -1051,8 +1241,7 @@ fn refresh_media_ui(
         .movies
         .iter()
         .filter(|m| {
-            !matched.movies.contains_key(&m.file_id)
-                || !existing_file_ids.contains(&m.file_id)
+            !matched.movies.contains_key(&m.file_id) || !existing_file_ids.contains(&m.file_id)
         })
         .count();
     let unmatched_shows = lib
@@ -2627,6 +2816,7 @@ fn main() -> Result<()> {
         let metadata_state = metadata_state.clone();
         let metadata_api = metadata_api.clone();
         let tmdb_api = tmdb_api.clone();
+        let tvmaze_api = tvmaze_api.clone();
         let rt = rt.clone();
         move || {
             let candidates = {
@@ -2646,6 +2836,7 @@ fn main() -> Result<()> {
             let weak = weak.clone();
             let metadata_api = metadata_api.clone();
             let tmdb_api = tmdb_api.clone();
+            let tvmaze_api = tvmaze_api.clone();
             rt.spawn(async move {
                 let total = candidates.len();
                 let mut matched_movies = 0usize;
@@ -2683,44 +2874,19 @@ fn main() -> Result<()> {
                             }
                         }
                         MetadataFetchCandidate::Show { title, episodes } => {
-                            match tmdb_api.search_tv(&title, 1).await {
-                                Ok(results) => {
-                                    if let Some(result) = results.first() {
-                                        let seasons = episodes
-                                            .iter()
-                                            .map(|ep| ep.season)
-                                            .collect::<Vec<_>>();
-                                        let _ = metadata_api.seed_tv(result.id, &seasons).await;
-                                        match metadata_api
-                                            .resolve_tv_episodes_by_file_id(result.id, &episodes)
-                                            .await
-                                        {
-                                            Ok(resolved) if !resolved.is_empty() => {
-                                                let items = resolved
-                                                    .into_iter()
-                                                    .map(|(file_id, tmdb_id)| MatchItemByFileID {
-                                                        file_id,
-                                                        kind: "episode".to_string(),
-                                                        tmdb_id,
-                                                        source: "tmdb".to_string(),
-                                                    })
-                                                    .collect::<Vec<_>>();
-                                                matched_episodes += items.len();
-                                                if let Err(e) =
-                                                    metadata_api.bulk_store_matches_by_file_id(&items)
-                                                {
-                                                    errors.push(format!("{title}: {e}"));
-                                                }
-                                            }
-                                            Ok(_) => misses += 1,
-                                            Err(e) => errors.push(format!("{title}: {e}")),
-                                        }
-                                    } else {
-                                        misses += 1;
-                                    }
-                                }
-                                Err(e) => errors.push(format!("{title}: {e}")),
+                            let outcome = match_show_metadata(
+                                &title,
+                                &episodes,
+                                &metadata_api,
+                                &tmdb_api,
+                                &tvmaze_api,
+                            )
+                            .await;
+                            matched_episodes += outcome.matched_episodes;
+                            if outcome.missed {
+                                misses += 1;
                             }
+                            errors.extend(outcome.errors);
                         }
                     }
                 }
@@ -2765,7 +2931,9 @@ fn main() -> Result<()> {
     app.on_media_item_clicked({
         let weak = app.as_weak();
         move |file_id| {
-            let Some(app) = weak.upgrade() else { return; };
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
             if file_id.is_empty() {
                 app.set_view(VIEW_FILES);
                 return;
@@ -2782,6 +2950,7 @@ fn main() -> Result<()> {
         let matched_store = matched_store.clone();
         let metadata_api = metadata_api.clone();
         let tmdb_api = tmdb_api.clone();
+        let tvmaze_api = tvmaze_api.clone();
         let rt = rt.clone();
         move || {
             let candidates = {
@@ -2789,7 +2958,9 @@ fn main() -> Result<()> {
                 let matched = matched_store.get_matched_snapshot().unwrap_or_default();
                 build_unmatched_candidates_from_tree(&tree_guard, &matched)
             };
-            let Some(app) = weak.upgrade() else { return; };
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
             if candidates.is_empty() {
                 return;
             }
@@ -2798,6 +2969,7 @@ fn main() -> Result<()> {
             let weak = weak.clone();
             let metadata_api = metadata_api.clone();
             let tmdb_api = tmdb_api.clone();
+            let tvmaze_api = tvmaze_api.clone();
             rt.spawn(async move {
                 let mut matched_movies = 0usize;
                 let mut matched_episodes = 0usize;
@@ -2805,8 +2977,16 @@ fn main() -> Result<()> {
                 let mut errors = Vec::<String>::new();
                 for candidate in candidates {
                     match candidate {
-                        MetadataFetchCandidate::Movie { file_id, title, year } => {
-                            let query = if year > 0 { format!("{title} {year}") } else { title.clone() };
+                        MetadataFetchCandidate::Movie {
+                            file_id,
+                            title,
+                            year,
+                        } => {
+                            let query = if year > 0 {
+                                format!("{title} {year}")
+                            } else {
+                                title.clone()
+                            };
                             match tmdb_api.search_movie(&query, 1).await {
                                 Ok(results) => {
                                     if let Some(result) = results.first() {
@@ -2829,41 +3009,33 @@ fn main() -> Result<()> {
                             }
                         }
                         MetadataFetchCandidate::Show { title, episodes } => {
-                            match tmdb_api.search_tv(&title, 1).await {
-                                Ok(results) => {
-                                    if let Some(result) = results.first() {
-                                        let seasons = episodes.iter().map(|ep| ep.season).collect::<Vec<_>>();
-                                        let _ = metadata_api.seed_tv(result.id, &seasons).await;
-                                        match metadata_api.resolve_tv_episodes_by_file_id(result.id, &episodes).await {
-                                            Ok(resolved) if !resolved.is_empty() => {
-                                                let items = resolved.into_iter().map(|(file_id, tmdb_id)| MatchItemByFileID {
-                                                    file_id,
-                                                    kind: "episode".to_string(),
-                                                    tmdb_id,
-                                                    source: "tmdb".to_string(),
-                                                }).collect::<Vec<_>>();
-                                                matched_episodes += items.len();
-                                                if let Err(e) = metadata_api.bulk_store_matches_by_file_id(&items) {
-                                                    errors.push(format!("{title}: {e}"));
-                                                }
-                                            }
-                                            Ok(_) => misses += 1,
-                                            Err(e) => errors.push(format!("{title}: {e}")),
-                                        }
-                                    } else {
-                                        misses += 1;
-                                    }
-                                }
-                                Err(e) => errors.push(format!("{title}: {e}")),
+                            let outcome = match_show_metadata(
+                                &title,
+                                &episodes,
+                                &metadata_api,
+                                &tmdb_api,
+                                &tvmaze_api,
+                            )
+                            .await;
+                            matched_episodes += outcome.matched_episodes;
+                            if outcome.missed {
+                                misses += 1;
                             }
+                            errors.extend(outcome.errors);
                         }
                     }
                 }
                 let success_text = format!(
                     "Matched {} movie{} and {} episode{}{}.",
-                    matched_movies, if matched_movies == 1 { "" } else { "s" },
-                    matched_episodes, if matched_episodes == 1 { "" } else { "s" },
-                    if misses > 0 { format!(" ({misses} unresolved)") } else { String::new() }
+                    matched_movies,
+                    if matched_movies == 1 { "" } else { "s" },
+                    matched_episodes,
+                    if matched_episodes == 1 { "" } else { "s" },
+                    if misses > 0 {
+                        format!(" ({misses} unresolved)")
+                    } else {
+                        String::new()
+                    }
                 );
                 let error_text = errors.first().map(|e| e.clone()).unwrap_or_default();
                 let had_success = matched_movies > 0 || matched_episodes > 0;

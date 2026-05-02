@@ -145,19 +145,13 @@ impl MetadataAPI {
             if item.file_id.is_empty() || item.episode <= 0 {
                 continue;
             }
-            let Some(range) = ranges
-                .iter()
-                .find(|r| item.episode >= r.start_abs && item.episode <= r.end_abs)
+            let Some((season, relative_ep)) =
+                map_absolute_episode_to_tmdb_season(&ranges, item.episode)
             else {
                 continue;
             };
-            pending.push((
-                item.file_id.clone(),
-                range.season_number,
-                item.episode,
-                item.episode - range.start_abs + 1,
-            ));
-            needed.insert(range.season_number);
+            pending.push((item.file_id.clone(), season, item.episode, relative_ep));
+            needed.insert(season);
         }
         let mut lookup = HashMap::<i32, HashMap<i32, i32>>::new();
         for season in &needed {
@@ -177,8 +171,8 @@ impl MetadataAPI {
         let mut resolved = HashMap::new();
         for (file_id, season, abs_ep, rel_ep) in pending {
             if let Some(eps) = lookup.get(&season) {
-                if let Some(id) = eps.get(&abs_ep).or_else(|| eps.get(&rel_ep)) {
-                    resolved.insert(file_id, *id);
+                if let Some(id) = lookup_absolute_or_relative_episode(eps, abs_ep, rel_ep) {
+                    resolved.insert(file_id, id);
                 }
             }
         }
@@ -254,6 +248,27 @@ struct TMDBAbsoluteRange {
     end_abs: i32,
 }
 
+fn map_absolute_episode_to_tmdb_season(
+    ranges: &[TMDBAbsoluteRange],
+    episode: i32,
+) -> Option<(i32, i32)> {
+    let range = ranges
+        .iter()
+        .find(|r| episode >= r.start_abs && episode <= r.end_abs)?;
+    Some((range.season_number, episode - range.start_abs + 1))
+}
+
+fn lookup_absolute_or_relative_episode(
+    episodes: &HashMap<i32, i32>,
+    absolute_episode: i32,
+    relative_episode: i32,
+) -> Option<i32> {
+    episodes
+        .get(&absolute_episode)
+        .or_else(|| episodes.get(&relative_episode))
+        .copied()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct EpisodeRefByFileID {
     pub file_id: String,
@@ -300,5 +315,41 @@ mod tests {
         assert_eq!(ranges[0].end_abs, 2);
         assert_eq!(ranges[1].start_abs, 3);
         assert_eq!(ranges[1].end_abs, 5);
+    }
+
+    #[test]
+    fn tmdb_absolute_episode_maps_to_relative_season_episode() {
+        let ranges = build_tmdb_absolute_ranges(&[
+            Season {
+                season_number: 1,
+                episode_count: 50,
+                ..Season::default()
+            },
+            Season {
+                season_number: 2,
+                episode_count: 56,
+                ..Season::default()
+            },
+            Season {
+                season_number: 3,
+                episode_count: 54,
+                ..Season::default()
+            },
+        ]);
+
+        assert_eq!(
+            map_absolute_episode_to_tmdb_season(&ranges, 120),
+            Some((3, 14))
+        );
+    }
+
+    #[test]
+    fn tmdb_absolute_lookup_prefers_absolute_episode_number() {
+        let episodes = HashMap::from([(1, 1001), (142, 3142)]);
+
+        assert_eq!(
+            lookup_absolute_or_relative_episode(&episodes, 142, 1),
+            Some(3142)
+        );
     }
 }

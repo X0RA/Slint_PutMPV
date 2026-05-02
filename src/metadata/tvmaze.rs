@@ -336,6 +336,7 @@ pub struct TVMazeEpisode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn numbered_lookup_skips_unnumbered_episodes() {
@@ -353,5 +354,182 @@ mod tests {
         ]);
         assert_eq!(lookup.len(), 1);
         assert_eq!(lookup[&1], 1);
+    }
+
+    #[tokio::test]
+    async fn absolute_resolver_skips_unnumbered_specials() {
+        let api = cached_test_api("tvmaze_abs_specials");
+        api.cache
+            .set_cached_data(
+                "show_495_seasons",
+                json!([
+                    {"id": 176471, "number": 2002, "name": "#1 - #13"},
+                    {"id": 1948, "number": 2003, "name": "#14 - #64"},
+                    {"id": 1949, "number": 2004, "name": "#65 - #115"},
+                    {"id": 1950, "number": 2005, "name": "#116 - #165"},
+                    {"id": 1951, "number": 2006, "name": "#166 - #215"}
+                ]),
+            )
+            .unwrap();
+        seed_episodes(&api, 176471, 2002, 13, 45006, &[]);
+        seed_episodes(
+            &api,
+            1948,
+            2003,
+            51,
+            45019,
+            &[
+                (45226, "Naruto: Find the Four-Leaf Red Clover!"),
+                (45227, "Naruto: Mission: Protect the Waterfall Village!"),
+            ],
+        );
+        seed_episodes(
+            &api,
+            1949,
+            2004,
+            51,
+            45070,
+            &[(45230, "Naruto: Hidden Leaf Village Grand Sports Festival")],
+        );
+        seed_episodes(
+            &api,
+            1950,
+            2005,
+            50,
+            45121,
+            &[(
+                45231,
+                "Finally a Clash! Jounin vs. Genin! All-out Major League Tournament Brawl Begins!!",
+            )],
+        );
+        seed_episodes(&api, 1951, 2006, 50, 45171, &[]);
+
+        let result = api
+            .resolve_absolute_episodes(
+                495,
+                &[
+                    EpisodeRefByFileID {
+                        file_id: "165".to_string(),
+                        episode: 165,
+                        ..EpisodeRefByFileID::default()
+                    },
+                    EpisodeRefByFileID {
+                        file_id: "166".to_string(),
+                        episode: 166,
+                        ..EpisodeRefByFileID::default()
+                    },
+                    EpisodeRefByFileID {
+                        file_id: "169".to_string(),
+                        episode: 169,
+                        ..EpisodeRefByFileID::default()
+                    },
+                    EpisodeRefByFileID {
+                        file_id: "170".to_string(),
+                        episode: 170,
+                        ..EpisodeRefByFileID::default()
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.resolved["165"], 45170);
+        assert_eq!(result.resolved["166"], 45171);
+        assert_eq!(result.resolved["169"], 45174);
+        assert_eq!(result.resolved["170"], 45175);
+        assert_eq!(result.seasons, vec![2005, 2006]);
+    }
+
+    #[tokio::test]
+    async fn absolute_resolver_ignores_multiple_embedded_specials() {
+        let api = cached_test_api("tvmaze_abs_embedded_specials");
+        api.cache
+            .set_cached_data(
+                "show_999_seasons",
+                json!([
+                    {"id": 1001, "number": 1, "name": "Season 1"},
+                    {"id": 1002, "number": 2, "name": "Season 2"}
+                ]),
+            )
+            .unwrap();
+        seed_episodes(
+            &api,
+            1001,
+            1,
+            3,
+            11,
+            &[(21, "Special A"), (22, "Special B")],
+        );
+        seed_episodes(&api, 1002, 2, 2, 31, &[]);
+
+        let result = api
+            .resolve_absolute_episodes(
+                999,
+                &[
+                    EpisodeRefByFileID {
+                        file_id: "3".to_string(),
+                        episode: 3,
+                        ..EpisodeRefByFileID::default()
+                    },
+                    EpisodeRefByFileID {
+                        file_id: "4".to_string(),
+                        episode: 4,
+                        ..EpisodeRefByFileID::default()
+                    },
+                    EpisodeRefByFileID {
+                        file_id: "5".to_string(),
+                        episode: 5,
+                        ..EpisodeRefByFileID::default()
+                    },
+                ],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result.resolved["3"], 13);
+        assert_eq!(result.resolved["4"], 31);
+        assert_eq!(result.resolved["5"], 32);
+        assert_eq!(result.seasons, vec![1, 2]);
+    }
+
+    fn cached_test_api(name: &str) -> TVMazeAPI {
+        let path = std::env::temp_dir().join(format!("putmpv_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", &path);
+        TVMazeAPI::new(Arc::new(TVMazeStore::load().unwrap()))
+    }
+
+    fn seed_episodes(
+        api: &TVMazeAPI,
+        season_id: i32,
+        season_number: i32,
+        count: i32,
+        base_id: i32,
+        specials: &[(i32, &str)],
+    ) {
+        let mut episodes = (1..=count)
+            .map(|number| {
+                json!({
+                    "id": base_id + number - 1,
+                    "name": format!("Episode {number}"),
+                    "season": season_number,
+                    "number": number,
+                    "type": "regular"
+                })
+            })
+            .collect::<Vec<_>>();
+        episodes.extend(specials.iter().map(|(id, name)| {
+            json!({
+                "id": id,
+                "name": name,
+                "season": season_number,
+                "number": 0,
+                "type": "significant_special"
+            })
+        }));
+        api.cache
+            .set_cached_data(&format!("season_{season_id}_episodes"), json!(episodes))
+            .unwrap();
     }
 }

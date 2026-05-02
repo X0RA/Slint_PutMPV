@@ -30,7 +30,7 @@ static RESOLUTION_RE: Lazy<Regex> =
 static CODEC_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)\b(xvid|x264|h\.?264|avc|x265|h\.?265|hevc|av1)\b").unwrap());
 static QUALITY_RE: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)\b(WEB[ ._-]?DL|WEB[ ._-]?Rip|WEB|HDTV|Blu[ ._-]?Ray|BRRip|BDRip|HDRip|DVDRip|DVD[ ._-]?Rip|CAM|HDCAM|TS|HDTS|Telesync|Screener|DVDScr|R5|PPV|PDTV)\b").unwrap()
+    Regex::new(r"(?i)\b(WEB[ ._-]?DL|WEB[ ._-]?Rip|WEB|HDTV|Blu[ ._-]?Ray|(?:US|JP)?BD(?:[ ._-]?remux)?|BRRip|BDRip|HDRip|DVDRip|DVD[ ._-]?Rip|CAM|HDCAM|TS|HDTS|Telesync|Screener|DVDScr|R5|PPV|PDTV)\b").unwrap()
 });
 static AUDIO_RE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?i)\b(DDP?5\.1|DD5\.1|AC3|AAC|DTS|TrueHD|Atmos|MP3|FLAC)\b").unwrap()
@@ -472,7 +472,9 @@ fn standardise_quality(value: &str) -> String {
     match compact.as_str() {
         "webdl" | "webdlrip" | "hdrip" => "WEB-DL".to_string(),
         "webrip" | "web" => "WEBRip".to_string(),
-        "bluray" => "Blu-ray".to_string(),
+        "bluray" | "bd" | "usbd" | "jpbd" | "bdremux" | "usbdremux" | "jpbdremux" => {
+            "Blu-ray".to_string()
+        }
         "brrip" => "BRRip".to_string(),
         "bdrip" => "BDRip".to_string(),
         "dvdrip" | "dvdriprip" => "DVD-Rip".to_string(),
@@ -549,6 +551,30 @@ mod tests {
         assert_eq!(parsed.year, Some(2014));
         assert_eq!(parsed.quality, "WEB-DL");
         assert_eq!(parsed.codec, "H.264");
+    }
+
+    #[test]
+    fn parses_bd_quality_without_polluting_movie_title() {
+        let parsed = parse_name(
+            "[Judas] Kimi no Na Wa. (Your Name.) [BD 2160p 4K UHD][HEVC x265 10bit][Dual-Audio][Multi-Subs].mkv",
+            true,
+        );
+        assert_eq!(parsed.title, "Kimi no Na Wa");
+        assert_eq!(parsed.quality, "Blu-ray");
+        assert_eq!(parsed.resolution, "2160p");
+    }
+
+    #[test]
+    fn parses_bd_aliases_as_bluray_quality() {
+        for input in [
+            "Movie.Name.USBD.1080p.mkv",
+            "Movie.Name.JPBD.1080p.mkv",
+            "Movie.Name.BDremux.1080p.mkv",
+        ] {
+            let parsed = parse_name(input, true);
+            assert_eq!(parsed.title, "Movie Name", "input {input}");
+            assert_eq!(parsed.quality, "Blu-ray", "input {input}");
+        }
     }
 
     #[test]
