@@ -1,5 +1,5 @@
 import { Theme } from "../theme.slint";
-import { LogoMark } from "../components/icons.slint";
+import { Icon } from "../components/icons.slint";
 
 export component LoadingPage inherits Rectangle {
     in property <string> message: "Checking sign-in…";
@@ -13,11 +13,11 @@ export component LoadingPage inherits Rectangle {
         y: (parent.height - self.height) / 2 - 12px;
         background: transparent;
 
-        LogoMark {
+        Icon {
             x: (parent.width - self.width) / 2;
             y: 0px;
-            width: 40px;
-            height: 40px;
+            name: "putmpv";
+            icon_size: 40px;
         }
 
         Text {

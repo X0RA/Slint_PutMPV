@@ -1,6 +1,6 @@
 import { Theme } from "./theme.slint";
 import { TopNavButton, ButtonChip } from "./components/primitives.slint";
-import { LogoMark } from "./components/icons.slint";
+import { Icon } from "./components/icons.slint";
 import { LoadingPage } from "./pages/loading.slint";
 import { SplashPage } from "./pages/splash.slint";
 import { CodePage } from "./pages/code.slint";
@@ -206,9 +206,11 @@ export component AppWindow inherits Window {
         height: Theme.title_bar_height;
         background: Theme.bg;
 
-        LogoMark {
+        Icon {
             x: 18px;
             y: 14px;
+            name: "putmpv";
+            icon_size: 24px;
         }
 
         Text {

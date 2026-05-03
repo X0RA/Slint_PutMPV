@@ -1,6 +1,6 @@
 import { Theme } from "../theme.slint";
 import { ButtonChip } from "../components/primitives.slint";
-import { LogoMark, Icon } from "../components/icons.slint";
+import { Icon } from "../components/icons.slint";
 
 export component SplashPage inherits Rectangle {
     callback sign_in();
@@ -24,11 +24,11 @@ export component SplashPage inherits Rectangle {
             border-color: Theme.border_hi;
             background: Theme.surface;
 
-            LogoMark {
+            Icon {
                 x: (parent.width - self.width) / 2;
                 y: (parent.height - self.height) / 2;
-                width: 34px;
-                height: 34px;
+                name: "putmpv";
+                icon_size: 34px;
             }
         }
 

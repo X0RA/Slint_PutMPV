@@ -7,7 +7,7 @@ export component Icon inherits Image {
 
     width: root.icon_size;
     height: root.icon_size;
-    colorize: root.tint;
+    colorize: root.name == "putmpv" ? transparent : root.tint;
     image-fit: contain;
     source:
         root.name == "folder" ? @image-url("../assets/icons/folder.svg") :
@@ -55,50 +55,6 @@ export component Icon inherits Image {
         root.name == "more" ? @image-url("../assets/icons/more.svg") :
         root.name == "sort" ? @image-url("../assets/icons/sort.svg") :
         root.name == "arrow-up" ? @image-url("../assets/icons/arrow-up.svg") :
+        root.name == "putmpv" ? @image-url("../assets/icons/PutMPV.svg") :
         @image-url("../assets/icons/document.svg");
-}
-
-export component LogoMark inherits Rectangle {
-    width: 24px;
-    height: 24px;
-    background: transparent;
-
-    Rectangle {
-        x: 2px;
-        y: 3px;
-        width: 16px;
-        height: 16px;
-        border-radius: 5px;
-        background: Theme.accent;
-        opacity: 0.42;
-    }
-
-    Rectangle {
-        x: 3px;
-        y: 6px;
-        width: 14px;
-        height: 12px;
-        border-width: 1px;
-        border-color: Theme.accent;
-        border-radius: 2px;
-        background: transparent;
-    }
-
-    Rectangle {
-        x: 17px;
-        y: 7px;
-        width: 4px;
-        height: 10px;
-        border-radius: 2px;
-        background: Theme.warning;
-    }
-
-    Path {
-        x: 7px;
-        y: 8px;
-        width: 7px;
-        height: 8px;
-        fill: #0a0a10;
-        commands: "M0 0 L7 4 L0 8 Z";
-    }
 }
