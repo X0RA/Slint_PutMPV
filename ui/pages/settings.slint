@@ -1,6 +1,6 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
-import { SidebarSectionButton, ButtonChip, TextFieldBox, StatusBadge, RadioRow, Dropdown } from "../components/primitives.slint";
+import { SidebarSectionButton, ButtonChip, TextFieldBox, RadioRow, Dropdown } from "../components/primitives.slint";
 import { LocalDataRow } from "../types.slint";
 
 component SettingsHead inherits VerticalLayout {
@@ -136,18 +136,6 @@ export component SettingsPage inherits Rectangle {
     in-out property <int> sync_known_count: 0;
     in-out property <string> sync_active_profile;
 
-    in-out property <int> mpv_source: 0;
-    in-out property <string> mpv_active_path;
-    in-out property <string> mpv_system_path;
-    in-out property <string> mpv_custom_path;
-    in-out property <string> mpv_managed_path;
-    in-out property <bool> mpv_system_available: false;
-    in-out property <bool> mpv_custom_available: false;
-    in-out property <bool> mpv_managed_available: false;
-    in property <bool> mpv_show_managed: false;
-    in-out property <string> mpv_install_hint;
-    in-out property <bool> mpv_can_open_install_link: false;
-
     in property <[LocalDataRow]> local_data_rows;
     in-out property <bool> confirm_open: false;
     in-out property <string> local_data_status;
@@ -163,10 +151,6 @@ export component SettingsPage inherits Rectangle {
     callback sync_use_new();
     callback sync_now();
     callback sync_disable();
-    callback mpv_source_changed(source: int);
-    callback mpv_custom_path_edited();
-    callback mpv_browse_custom();
-    callback mpv_open_install_link();
     callback local_data_clear(index: int);
     callback local_data_confirm_clear();
     callback local_data_cancel_clear();
@@ -202,9 +186,7 @@ export component SettingsPage inherits Rectangle {
             Rectangle { height: 2px; }
             SidebarSectionButton { label: "Watch Sync"; subtitle: "Status & shared profiles"; icon_name: "refresh"; active: root.section == 1; clicked => { root.section = 1; root.settings_refresh(); root.sync_refresh_profiles(); } }
             Rectangle { height: 2px; }
-            SidebarSectionButton { label: "MPV Player"; subtitle: "Playback paths"; icon_name: "play"; active: root.section == 2; clicked => { root.section = 2; root.settings_refresh(); } }
-            Rectangle { height: 2px; }
-            SidebarSectionButton { label: "Local Data"; subtitle: "Caches & stores"; icon_name: "document"; active: root.section == 3; clicked => { root.section = 3; root.settings_refresh(); } }
+            SidebarSectionButton { label: "Local Data"; subtitle: "Caches & stores"; icon_name: "document"; active: root.section == 2; clicked => { root.section = 2; root.settings_refresh(); } }
             Rectangle { vertical-stretch: 1; }
         }
     }
@@ -364,83 +346,7 @@ export component SettingsPage inherits Rectangle {
                 if (root.sync_status != "") : InfoBanner { title: "Sync"; body: root.sync_status; }
             }
 
-            if (root.section == 2) : player-page := SectionContainer {
-                SettingsHead { title: "MPV Player"; description: "Installation path and source used for local playback."; }
-                Rectangle { height: 8px; }
-                Rectangle {
-                    height: active-card.preferred-height;
-                    border-radius: 10px;
-                    border-width: 1px;
-                    border-color: Theme.border;
-                    background: Theme.surface;
-                    clip: true;
-                    active-card := VerticalLayout {
-                        spacing: 0px;
-                        SettingsRow {
-                            label: "Active MPV path";
-                            hint: root.mpv_active_path == "" ? "No active player path configured." : root.mpv_active_path;
-                            show_divider: false;
-                            StatusBadge { label: root.mpv_active_path == "" ? "Not configured" : "Ready"; positive: root.mpv_active_path != ""; }
-                        }
-                    }
-                }
-                Rectangle {
-                    height: source-card.preferred-height;
-                    border-radius: 10px;
-                    border-width: 1px;
-                    border-color: Theme.border;
-                    background: Theme.surface;
-                    clip: true;
-                    source-card := VerticalLayout {
-                        spacing: 0px;
-                        CardHeader { title: "MPV Source"; description: "Choose how PutMPV finds the player."; }
-                        SettingsRow {
-                            label: "System install";
-                            hint: root.mpv_system_path == "" ? "No system player detected." : root.mpv_system_path;
-                            HorizontalLayout {
-                                spacing: 10px;
-                                RadioRow { label: "System"; checked: root.mpv_source == 0; clicked => { root.mpv_source = 0; root.mpv_source_changed(0); } }
-                                StatusBadge { label: root.mpv_system_available ? "Available" : "Missing"; positive: root.mpv_system_available; }
-                            }
-                        }
-                        SettingsRow {
-                            label: "Custom path";
-                            hint: "Point to a specific MPV executable.";
-                            HorizontalLayout {
-                                spacing: 10px;
-                                RadioRow { label: "Custom"; checked: root.mpv_source == 1; clicked => { root.mpv_source = 1; root.mpv_source_changed(1); } }
-                                StatusBadge { label: root.mpv_custom_available ? "Available" : "Missing"; positive: root.mpv_custom_available; }
-                            }
-                        }
-                        if (root.mpv_show_managed) : SettingsRow {
-                            label: "Managed install";
-                            hint: "Managed installer is not enabled in this pass.";
-                            HorizontalLayout {
-                                spacing: 10px;
-                                RadioRow { label: "Managed"; checked: root.mpv_source == 2; enabled: false; }
-                                StatusBadge { label: "Not yet"; positive: false; }
-                            }
-                        }
-                        Rectangle {
-                            height: 52px;
-                            background: transparent;
-                            HorizontalLayout {
-                                x: 22px;
-                                y: 8px;
-                                width: parent.width - 44px;
-                                spacing: 8px;
-                                alignment: stretch;
-                                TextFieldBox { horizontal-stretch: 1; placeholder: "No custom path set"; monospace: true; text <=> root.mpv_custom_path; edited => { root.mpv_custom_path_edited(); } }
-                                ButtonChip { label: "Browse..."; icon_name: "folder"; clicked => { root.mpv_browse_custom(); } }
-                            }
-                        }
-                    }
-                }
-                if (root.mpv_install_hint != "") : InfoBanner { title: "Install"; body: root.mpv_install_hint; }
-                if (root.mpv_can_open_install_link && root.mpv_active_path == "") : ButtonChip { label: "Open download page"; icon_name: "external"; clicked => { root.mpv_open_install_link(); } }
-            }
-
-            if (root.section == 3) : data-page := SectionContainer {
+            if (root.section == 2) : data-page := SectionContainer {
                 SettingsHead { title: "Local Data & Configuration"; description: "Filesystem paths for each JSON store. Clear caches or reset app configuration independently."; }
                 Rectangle { height: 8px; }
                 Rectangle {

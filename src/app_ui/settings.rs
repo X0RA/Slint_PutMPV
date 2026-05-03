@@ -1,6 +1,5 @@
-//! Settings page: TMDB keys, sync profiles, MPV detection, local data rows/clear.
+//! Settings page: TMDB keys, sync profiles, local data rows/clear.
 
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -14,7 +13,7 @@ use crate::storage::file_state::{count_played, FileStateStore};
 use crate::{AppWindow, LocalDataRow};
 
 use super::state::UiState;
-use super::util::{install_hint, mpv_source_from_index, path_label, source_to_index};
+use super::util::{path_label, source_to_index};
 use super::{Services, VIEW_SPLASH_AFTER_RESET};
 
 pub(crate) fn install(
@@ -51,10 +50,6 @@ pub(crate) fn install(
             let local_key = config.tmdb_local_key();
             let putio_key = config.tmdb_putio_key();
             let tmdb_source = source_to_index(&config.tmdb_source());
-            let mpv_custom_path = config.mpv_path();
-            let detection = crate::mpv::detect::MpvDetection::run((!mpv_custom_path.is_empty()).then(|| PathBuf::from(&mpv_custom_path)));
-            let active = crate::mpv::active_path(&config, &detection);
-            let (hint, can_open_link, _) = install_hint();
 
             app.set_tmdb_local_key(local_key.into());
             app.set_tmdb_putio_key(putio_key.into());
@@ -86,21 +81,6 @@ pub(crate) fn install(
             app.set_sync_played_count(count_played(state_entries.entries()) as i32);
             drop(state_entries);
 
-            app.set_mpv_source(source_to_index(&config.mpv_source()));
-            app.set_mpv_show_managed(cfg!(target_os = "windows"));
-            if !cfg!(target_os = "windows") && config.mpv_source() == "managed" {
-                app.set_mpv_source(0);
-            }
-            app.set_mpv_custom_path(mpv_custom_path.into());
-            app.set_mpv_system_available(detection.system.is_some());
-            app.set_mpv_custom_available(detection.custom.is_some());
-            app.set_mpv_managed_available(detection.managed.is_some());
-            app.set_mpv_system_path(detection.system.as_deref().map(path_label).unwrap_or_default().into());
-            app.set_mpv_managed_path(detection.managed.as_deref().map(path_label).unwrap_or_default().into());
-            app.set_mpv_active_path(active.as_deref().map(path_label).unwrap_or_default().into());
-            app.set_mpv_install_hint(if active.is_none() { hint.into() } else { "".into() });
-            app.set_mpv_can_open_install_link(can_open_link);
-
             let config_path = config.path();
             let file_state_path = file_state.read().unwrap().path();
             let files_path = files_store.path();
@@ -110,7 +90,7 @@ pub(crate) fn install(
             let rows = vec![
                 LocalDataRow {
                     name: "App configuration".into(),
-                    desc: "OAuth token, TMDB keys, MPV path and selected sync profile.".into(),
+                    desc: "OAuth token, TMDB keys and selected sync profile.".into(),
                     path: path_label(&config_path).into(),
                     enabled: true,
                 },
@@ -487,72 +467,6 @@ pub(crate) fn install(
             if let Some(app) = weak.upgrade() {
                 app.set_sync_status(message.into());
                 app.invoke_settings_refresh();
-            }
-        }
-    });
-
-    app.on_mpv_source_changed({
-        let weak = weak.clone();
-        let cfg = config.clone();
-        move |source| {
-            if source == 2 {
-                if let Some(app) = weak.upgrade() {
-                    app.set_mpv_source(source_to_index(&cfg.mpv_source()));
-                    app.invoke_settings_refresh();
-                }
-                return;
-            }
-            if let Err(e) = cfg.set_mpv_source(mpv_source_from_index(source)) {
-                warn!("save MPV source: {e}");
-            }
-            if let Some(app) = weak.upgrade() {
-                app.invoke_settings_refresh();
-            }
-        }
-    });
-
-    app.on_mpv_custom_path_edited({
-        let weak = weak.clone();
-        let cfg = config.clone();
-        move || {
-            let Some(app) = weak.upgrade() else {
-                return;
-            };
-            if let Err(e) = cfg.set_mpv_path(&app.get_mpv_custom_path()) {
-                warn!("save MPV custom path: {e}");
-            }
-            app.invoke_settings_refresh();
-        }
-    });
-
-    app.on_mpv_browse_custom({
-        let weak = weak.clone();
-        let cfg = config.clone();
-        let rt = rt.clone();
-        move || {
-            let weak = weak.clone();
-            let cfg = cfg.clone();
-            rt.spawn(async move {
-                if let Some(file) = rfd::AsyncFileDialog::new().pick_file().await {
-                    let path = file.path().to_string_lossy().to_string();
-                    let _ = cfg.set_mpv_path(&path);
-                    let _ = cfg.set_mpv_source("custom");
-                    let _ = weak.upgrade_in_event_loop(move |app| {
-                        app.set_mpv_custom_path(path.into());
-                        app.invoke_settings_refresh();
-                    });
-                }
-            });
-        }
-    });
-
-    app.on_mpv_open_install_link({
-        move || {
-            let (_, can_open, url) = install_hint();
-            if can_open && !url.is_empty() {
-                if let Err(e) = open::that(url) {
-                    warn!("could not open install link: {e}");
-                }
             }
         }
     });

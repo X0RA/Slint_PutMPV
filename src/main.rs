@@ -14,7 +14,6 @@ use storage::tvmaze_store::TVMazeStore;
 mod app_ui;
 mod fileparser;
 mod metadata;
-mod mpv;
 mod player;
 mod putio;
 mod storage;

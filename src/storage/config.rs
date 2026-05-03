@@ -21,10 +21,6 @@ pub struct ConfigFile {
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub tmdb_api_key_source: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub mpv_path: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub mpv_source: String,
-    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub file_state_sync_profile_slug: String,
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub file_state_sync_profile_name: String,
@@ -67,8 +63,6 @@ impl ConfigStore {
                     tmdb_api_key: String::new(),
                     tmdb_api_key_putio: String::new(),
                     tmdb_api_key_source: String::new(),
-                    mpv_path: String::new(),
-                    mpv_source: String::new(),
                     file_state_sync_profile_slug: String::new(),
                     file_state_sync_profile_name: String::new(),
                     files_mode: 0,
@@ -145,36 +139,6 @@ impl ConfigStore {
         let source = if source == "putio" { "putio" } else { "local" };
         let mut guard = self.inner.lock().unwrap();
         guard.tmdb_api_key_source = source.to_string();
-        write_atomic(&self.path, &*guard)
-    }
-
-    pub fn mpv_path(&self) -> String {
-        self.inner.lock().unwrap().mpv_path.clone()
-    }
-
-    pub fn set_mpv_path(&self, path: &str) -> Result<()> {
-        let mut guard = self.inner.lock().unwrap();
-        guard.mpv_path = path.to_string();
-        write_atomic(&self.path, &*guard)
-    }
-
-    pub fn mpv_source(&self) -> String {
-        let source = self.inner.lock().unwrap().mpv_source.clone();
-        if matches!(source.as_str(), "custom" | "managed") {
-            source
-        } else {
-            "system".to_string()
-        }
-    }
-
-    pub fn set_mpv_source(&self, source: &str) -> Result<()> {
-        let source = match source {
-            "custom" => "custom",
-            "managed" => "managed",
-            _ => "system",
-        };
-        let mut guard = self.inner.lock().unwrap();
-        guard.mpv_source = source.to_string();
         write_atomic(&self.path, &*guard)
     }
 

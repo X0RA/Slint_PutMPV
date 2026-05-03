@@ -675,7 +675,7 @@ pub(crate) fn install(
         let embedded_player = embedded_player.clone();
         move |action, id| {
             info!("menu action: {action} on {id}");
-            if action.as_str() != "play" && action.as_str() != "play-mpv" {
+            if action.as_str() != "play" {
                 return;
             }
 

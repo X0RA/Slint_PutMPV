@@ -64,17 +64,6 @@ export component AppWindow inherits Window {
     in-out property <int> sync_played_count: 0;
     in-out property <int> sync_known_count: 0;
     in-out property <string> sync_active_profile;
-    in-out property <int> mpv_source: 0;
-    in-out property <string> mpv_active_path;
-    in-out property <string> mpv_system_path;
-    in-out property <string> mpv_custom_path;
-    in-out property <string> mpv_managed_path;
-    in-out property <bool> mpv_system_available: false;
-    in-out property <bool> mpv_custom_available: false;
-    in-out property <bool> mpv_managed_available: false;
-    in-out property <bool> mpv_show_managed: false;
-    in-out property <string> mpv_install_hint;
-    in-out property <bool> mpv_can_open_install_link: false;
     in-out property <image> player_texture;
     in-out property <string> player_title;
     in-out property <float> player_texture_width: self.width / 1phx;
@@ -164,10 +153,6 @@ export component AppWindow inherits Window {
     callback sync_use_new();
     callback sync_now();
     callback sync_disable();
-    callback mpv_source_changed(source: int);
-    callback mpv_custom_path_edited();
-    callback mpv_browse_custom();
-    callback mpv_open_install_link();
     callback player_close();
     callback player_toggle_play();
     callback player_seek(seconds: float);
@@ -427,17 +412,6 @@ export component AppWindow inherits Window {
         sync_played_count <=> root.sync_played_count;
         sync_known_count <=> root.sync_known_count;
         sync_active_profile <=> root.sync_active_profile;
-        mpv_source <=> root.mpv_source;
-        mpv_active_path <=> root.mpv_active_path;
-        mpv_system_path <=> root.mpv_system_path;
-        mpv_custom_path <=> root.mpv_custom_path;
-        mpv_managed_path <=> root.mpv_managed_path;
-        mpv_system_available <=> root.mpv_system_available;
-        mpv_custom_available <=> root.mpv_custom_available;
-        mpv_managed_available <=> root.mpv_managed_available;
-        mpv_show_managed <=> root.mpv_show_managed;
-        mpv_install_hint <=> root.mpv_install_hint;
-        mpv_can_open_install_link <=> root.mpv_can_open_install_link;
         local_data_rows: root.local_data_rows;
         confirm_open <=> root.confirm_open;
         local_data_status <=> root.local_data_status;
@@ -452,10 +426,6 @@ export component AppWindow inherits Window {
         sync_use_new => { root.sync_use_new(); }
         sync_now => { root.sync_now(); }
         sync_disable => { root.sync_disable(); }
-        mpv_source_changed(source) => { root.mpv_source_changed(source); }
-        mpv_custom_path_edited => { root.mpv_custom_path_edited(); }
-        mpv_browse_custom => { root.mpv_browse_custom(); }
-        mpv_open_install_link => { root.mpv_open_install_link(); }
         local_data_clear(index) => { root.local_data_clear(index); }
         local_data_confirm_clear => { root.local_data_confirm_clear(); }
         local_data_cancel_clear => { root.local_data_cancel_clear(); }
