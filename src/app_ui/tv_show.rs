@@ -13,7 +13,10 @@ use crate::storage::matched_store::MatchedStore;
 use crate::storage::tmdb_store::{CacheEntry, TMDBStore};
 use crate::{AppWindow, TvDetailItem, TvEpisodeCredit, TvEpisodeRow, TvHeroBadge, TvSeasonTab};
 
-use super::media::{collect_tree_file_ids, download_posters, load_cached_poster};
+use super::media::{
+    collect_tree_file_ids, download_backdrop_hd, download_posters, load_cached_backdrop,
+    load_cached_poster,
+};
 use super::models::UiModels;
 use super::state::UiState;
 use super::util::truncate_id;
@@ -426,7 +429,7 @@ pub(crate) fn refresh_tv_show_ui(
     app.set_tv_show_stats_line(stats_line.as_str().into());
 
     let backdrop = if !details.backdrop_path.is_empty() {
-        load_cached_poster(&details.backdrop_path).unwrap_or_default()
+        load_cached_backdrop(&details.backdrop_path).unwrap_or_default()
     } else {
         Default::default()
     };
@@ -611,10 +614,15 @@ pub(crate) fn refresh_tv_show_ui(
     app.set_tv_show_first_file_id(first_file_id.as_str().into());
     tv_episodes_model.set_vec(ep_rows);
 
-    let mut missing_fetch = Vec::new();
-    if !details.backdrop_path.is_empty() && load_cached_poster(&details.backdrop_path).is_none() {
-        missing_fetch.push(details.backdrop_path.clone());
+    // Backdrop is fetched at w1280; everything else at w342.
+    if !details.backdrop_path.is_empty() {
+        let bp = details.backdrop_path.clone();
+        rt.spawn(async move {
+            download_backdrop_hd(bp).await;
+        });
     }
+
+    let mut missing_fetch = Vec::new();
     if !details.poster_path.is_empty() && load_cached_poster(&details.poster_path).is_none() {
         missing_fetch.push(details.poster_path.clone());
     }

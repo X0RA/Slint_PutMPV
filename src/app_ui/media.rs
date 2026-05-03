@@ -46,9 +46,28 @@ pub(crate) fn poster_cache_path(poster_path: &str) -> Option<std::path::PathBuf>
     Some(crate::storage::poster_cache_dir().ok()?.join(filename))
 }
 
+/// Cache path for w1280 images (stored in an `hd/` subdirectory).
+fn poster_cache_path_hd(poster_path: &str) -> Option<std::path::PathBuf> {
+    let filename = poster_path.trim_start_matches('/');
+    if filename.is_empty() {
+        return None;
+    }
+    Some(crate::storage::poster_cache_dir().ok()?.join("hd").join(filename))
+}
+
 pub(crate) fn load_cached_poster(poster_path: &str) -> Option<slint::Image> {
     let path = poster_cache_path(poster_path)?;
     slint::Image::load_from_path(&path).ok()
+}
+
+/// Load a backdrop at w1280 quality; falls back to w342 if not yet cached.
+pub(crate) fn load_cached_backdrop(poster_path: &str) -> Option<slint::Image> {
+    if let Some(path) = poster_cache_path_hd(poster_path) {
+        if let Ok(img) = slint::Image::load_from_path(&path) {
+            return Some(img);
+        }
+    }
+    load_cached_poster(poster_path)
 }
 
 pub(crate) async fn download_posters(poster_paths: Vec<String>) {
@@ -79,6 +98,36 @@ pub(crate) async fn download_posters(poster_paths: Vec<String>) {
             },
             Err(e) => warn!("Failed to fetch poster {poster_path}: {e}"),
         }
+    }
+}
+
+/// Download a backdrop at w1280 into the `hd/` cache subdirectory.
+pub(crate) async fn download_backdrop_hd(poster_path: String) {
+    let Some(cache_path) = poster_cache_path_hd(&poster_path) else {
+        return;
+    };
+    if cache_path.exists() {
+        return;
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .user_agent("PutMPV/1.0")
+        .build()
+        .unwrap_or_else(|_| reqwest::Client::new());
+    let url = format!("https://image.tmdb.org/t/p/w1280{poster_path}");
+    match client.get(&url).send().await {
+        Ok(resp) => match resp.bytes().await {
+            Ok(bytes) => {
+                if let Some(parent) = cache_path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if let Err(e) = std::fs::write(&cache_path, &bytes) {
+                    warn!("Failed to write HD backdrop cache {}: {e}", cache_path.display());
+                }
+            }
+            Err(e) => warn!("Failed to read HD backdrop bytes for {poster_path}: {e}"),
+        },
+        Err(e) => warn!("Failed to fetch HD backdrop {poster_path}: {e}"),
     }
 }
 

@@ -28,35 +28,31 @@ component HeroPill inherits Rectangle {
     }
 }
 
-/// Two-line detail cell: muted label above, bold value below. No border.
-component DetailCell inherits Rectangle {
-    in property <string> label;
-    in property <string> value;
+/// Paired column: two stacked label/value items share one equal-width column slot.
+component DetailColumn inherits Rectangle {
+    in property <string> label1;
+    in property <string> value1;
+    in property <string> label2;
+    in property <string> value2;
     horizontal-stretch: 1;
     min-width: 0;
     background: transparent;
 
     VerticalLayout {
-        spacing: 3px;
+        padding-right: 16px;
+        spacing: 12px;
         alignment: start;
-        padding-right: 12px;
 
-        Text {
-            text: root.label;
-            color: Theme.text_mute;
-            font-size: 11px;
-            font-weight: 500;
-            overflow: elide;
-            font-family: Theme.ui_font;
+        VerticalLayout {
+            spacing: 3px;
+            Text { text: root.label1; color: Theme.text_mute; font-size: 11px; font-weight: 500; overflow: elide; font-family: Theme.ui_font; }
+            Text { text: root.value1; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; font-family: Theme.ui_font; }
         }
 
-        Text {
-            text: root.value;
-            color: Theme.text;
-            font-size: 13px;
-            font-weight: 600;
-            overflow: elide;
-            font-family: Theme.ui_font;
+        if root.label2 != "" : VerticalLayout {
+            spacing: 3px;
+            Text { text: root.label2; color: Theme.text_mute; font-size: 11px; font-weight: 500; overflow: elide; font-family: Theme.ui_font; }
+            Text { text: root.value2; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; font-family: Theme.ui_font; }
         }
     }
 }
@@ -395,30 +391,17 @@ export component TvShowPage inherits Rectangle {
                     font-family: Theme.ui_font;
                 }
 
-                // Row 1 — exactly 6 slots (Rating · Type · Status · Avg.runtime · Seasons · Episodes)
-                if root.detail_items.length >= 6 : HorizontalLayout {
-                    spacing: 0px;
-                    width: content-w;
-
-                    DetailCell { label: root.detail_items[0].label; value: root.detail_items[0].value; }
-                    DetailCell { label: root.detail_items[1].label; value: root.detail_items[1].value; }
-                    DetailCell { label: root.detail_items[2].label; value: root.detail_items[2].value; }
-                    DetailCell { label: root.detail_items[3].label; value: root.detail_items[3].value; }
-                    DetailCell { label: root.detail_items[4].label; value: root.detail_items[4].value; }
-                    DetailCell { label: root.detail_items[5].label; value: root.detail_items[5].value; }
-                }
-
-                // Row 2 — exactly 6 slots (Spoken · Origin · Original · Popularity · Language · Networks)
+                // 6 paired columns — top item (row 1) + bottom item (row 2) share one slot
                 if root.detail_items.length >= 12 : HorizontalLayout {
                     spacing: 0px;
                     width: content-w;
 
-                    DetailCell { label: root.detail_items[6].label; value: root.detail_items[6].value; }
-                    DetailCell { label: root.detail_items[7].label; value: root.detail_items[7].value; }
-                    DetailCell { label: root.detail_items[8].label; value: root.detail_items[8].value; }
-                    DetailCell { label: root.detail_items[9].label; value: root.detail_items[9].value; }
-                    DetailCell { label: root.detail_items[10].label; value: root.detail_items[10].value; }
-                    DetailCell { label: root.detail_items[11].label; value: root.detail_items[11].value; }
+                    DetailColumn { label1: root.detail_items[0].label; value1: root.detail_items[0].value; label2: root.detail_items[6].label; value2: root.detail_items[6].value; }
+                    DetailColumn { label1: root.detail_items[1].label; value1: root.detail_items[1].value; label2: root.detail_items[7].label; value2: root.detail_items[7].value; }
+                    DetailColumn { label1: root.detail_items[2].label; value1: root.detail_items[2].value; label2: root.detail_items[8].label; value2: root.detail_items[8].value; }
+                    DetailColumn { label1: root.detail_items[3].label; value1: root.detail_items[3].value; label2: root.detail_items[9].label; value2: root.detail_items[9].value; }
+                    DetailColumn { label1: root.detail_items[4].label; value1: root.detail_items[4].value; label2: root.detail_items[10].label; value2: root.detail_items[10].value; }
+                    DetailColumn { label1: root.detail_items[5].label; value1: root.detail_items[5].value; label2: root.detail_items[11].label; value2: root.detail_items[11].value; }
                 }
 
                 // Divider
