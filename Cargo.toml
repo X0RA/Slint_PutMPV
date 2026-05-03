@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-slint = "1.16"
+slint = { version = "1.16", default-features = false, features = [
+    "std",
+    "compat-1-2",
+    "backend-winit-wayland",
+    "renderer-femtovg",
+] }
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
 serde = { version = "1", features = ["derive"] }
@@ -32,3 +37,18 @@ rfd = { version = "0.14", default-features = false, features = ["tokio"] }
 [build-dependencies]
 slint-build = "1.16"
 winres = "0.1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = "symbols"
+
+[profile.dev-fast]
+inherits = "dev"
+opt-level = 0
+debug = 0
+lto = false
+incremental = true
+codegen-units = 256
