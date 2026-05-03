@@ -168,37 +168,12 @@ fn matched_episodes_in_season(
 
 fn build_episode_credits(ep: &Episode, missing_profiles: &mut Vec<String>) -> Vec<TvEpisodeCredit> {
     let mut out: Vec<TvEpisodeCredit> = Vec::new();
-    for c in &ep.crew {
-        let job = c.job.trim();
-        if job != "Director" && job != "Writer" {
-            continue;
-        }
-        if out.len() >= 8 {
-            break;
-        }
-        let photo = if !c.profile_path.is_empty() {
-            match load_cached_poster(&c.profile_path) {
-                Some(img) => img,
-                None => {
-                    missing_profiles.push(c.profile_path.clone());
-                    Default::default()
-                }
-            }
-        } else {
-            Default::default()
-        };
-        out.push(TvEpisodeCredit {
-            name: c.name.as_str().into(),
-            role: job.into(),
-            photo,
-        });
-    }
-    for g in &ep.guest_stars {
-        if out.len() >= 8 {
+    for g in ep.guest_stars.iter().take(4) {
+        if out.len() >= 4 {
             break;
         }
         let role = if !g.character.trim().is_empty() {
-            format!("Guest · {}", g.character.trim())
+            g.character.trim().to_string()
         } else {
             "Guest Star".to_string()
         };
@@ -218,6 +193,33 @@ fn build_episode_credits(ep: &Episode, missing_profiles: &mut Vec<String>) -> Ve
             role: role.as_str().into(),
             photo,
         });
+    }
+    let mut crew_added = 0usize;
+    for c in &ep.crew {
+        let job = c.job.trim();
+        if job.is_empty() || c.name.trim().is_empty() {
+            continue;
+        }
+        if out.len() >= 8 || crew_added >= 4 {
+            break;
+        }
+        let photo = if !c.profile_path.is_empty() {
+            match load_cached_poster(&c.profile_path) {
+                Some(img) => img,
+                None => {
+                    missing_profiles.push(c.profile_path.clone());
+                    Default::default()
+                }
+            }
+        } else {
+            Default::default()
+        };
+        out.push(TvEpisodeCredit {
+            name: c.name.as_str().into(),
+            role: job.into(),
+            photo,
+        });
+        crew_added += 1;
     }
     out
 }
@@ -680,6 +682,7 @@ pub(crate) fn refresh_tv_show_ui(
             air
         );
         app.set_tv_show_season_block_meta(meta.as_str().into());
+        app.set_tv_show_season_block_overview(sd.overview.as_str().into());
 
         let sposter = if !sd.poster_path.is_empty() {
             load_cached_poster(&sd.poster_path).unwrap_or_default()
@@ -690,6 +693,7 @@ pub(crate) fn refresh_tv_show_ui(
     } else {
         app.set_tv_show_season_block_title("".into());
         app.set_tv_show_season_block_meta("".into());
+        app.set_tv_show_season_block_overview("".into());
         app.set_tv_show_season_block_poster(Default::default());
     }
 

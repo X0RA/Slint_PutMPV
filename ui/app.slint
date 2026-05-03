@@ -132,6 +132,7 @@ export component AppWindow inherits Window {
     in-out property <int> tv_show_season_idx: 0;
     in-out property <string> tv_show_season_block_title: "";
     in-out property <string> tv_show_season_block_meta: "";
+    in-out property <string> tv_show_season_block_overview: "";
     in-out property <image> tv_show_season_block_poster;
     in-out property <[TvEpisodeRow]> tv_show_episodes;
     in-out property <int> tv_show_series_id: 0;
@@ -357,6 +358,7 @@ export component AppWindow inherits Window {
         selected_season_idx <=> root.tv_show_season_idx;
         season_block_title: root.tv_show_season_block_title;
         season_block_meta: root.tv_show_season_block_meta;
+        season_block_overview: root.tv_show_season_block_overview;
         season_block_poster: root.tv_show_season_block_poster;
         episodes: root.tv_show_episodes;
         back_clicked => { root.tv_show_back(); }

@@ -66,16 +66,22 @@ component HeroPill inherits Rectangle {
 component DetailDlCell inherits Rectangle {
     in property <string> line;
     horizontal-stretch: 1;
+    height: 30px;
     min-width: 0px;
-    background: transparent;
+    background: Theme.surface_hi;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.border;
 
     Text {
-        width: parent.width;
+        x: 10px;
+        width: parent.width - 20px;
+        y: (parent.height - self.height) / 2;
         text: root.line;
         color: Theme.text;
         font-size: 11px;
         font-weight: 500;
-        wrap: word-wrap;
+        overflow: elide;
         font-family: Theme.ui_font;
     }
 }
@@ -83,17 +89,20 @@ component DetailDlCell inherits Rectangle {
 /// Guest / crew portrait chip on an episode card.
 component EpisodeCreditCard inherits Rectangle {
     in property <TvEpisodeCredit> credit;
-    width: 78px;
+    width: 64px;
+    height: 116px;
     background: transparent;
+    clip: true;
 
     VerticalLayout {
-        spacing: 5px;
+        spacing: 4px;
         alignment: center;
         width: parent.width;
+        height: parent.height;
 
         Rectangle {
-            width: 48px;
-            height: 56px;
+            width: 56px;
+            height: 72px;
             border-radius: 7px;
             clip: true;
             background: Theme.surface_higher;
@@ -125,8 +134,8 @@ component EpisodeCreditCard inherits Rectangle {
             color: Theme.text;
             font-size: 10px;
             font-weight: 600;
-            wrap: word-wrap;
             width: parent.width;
+            overflow: elide;
             horizontal-alignment: center;
             font-family: Theme.ui_font;
         }
@@ -135,8 +144,8 @@ component EpisodeCreditCard inherits Rectangle {
             text: credit.role;
             color: Theme.text_mute;
             font-size: 9px;
-            wrap: word-wrap;
             width: parent.width;
+            overflow: elide;
             horizontal-alignment: center;
             font-family: Theme.ui_font;
         }
@@ -168,6 +177,7 @@ export component TvShowPage inherits Rectangle {
     in-out property <int> selected_season_idx: 0;
     in property <string> season_block_title;
     in property <string> season_block_meta;
+    in property <string> season_block_overview;
     in property <image> season_block_poster;
     in property <[TvEpisodeRow]> episodes;
 
@@ -182,11 +192,14 @@ export component TvShowPage inherits Rectangle {
 
     private property <bool> compact: root.width < 760px;
     private property <length> gutter: compact ? 16px : 32px;
-    /// Shorter cinematic band (reference UI); not full 16:9 poster height.
-    private property <length> hero-band-h: min(max(root.width * 28 / 100, 260px), 380px);
+    private property <length> content-w: root.width - gutter * 2;
+    /// Tall hero like the Svelte page, while still leaving following content visible.
+    private property <length> hero-band-h: compact ? 440px : min(max(root.height * 56 / 100, 440px), 620px);
     /// Inner column max ~56rem (reference).
     private property <length> hero-col-w: min(root.width - gutter * 2, 896px);
     private property <length> overview-max-w: min(768px, hero-col-w);
+    private property <length> episode-still-w: compact ? 100px : 128px;
+    private property <length> episode-action-w: compact ? 156px : 236px;
 
     ScrollView {
         width: parent.width;
@@ -207,8 +220,8 @@ export component TvShowPage inherits Rectangle {
                 // Taller image box + vertical center = “middle slice” of backdrop (object-position feel).
                 if backdrop.width > 0 : Image {
                     width: parent.width;
-                    height: parent.height * 150 / 100;
-                    y: (parent.height - self.height) / 2;
+                    height: parent.height;
+                    y: 0px;
                     source: root.backdrop;
                     image-fit: cover;
                 }
@@ -219,8 +232,8 @@ export component TvShowPage inherits Rectangle {
                     background: @linear-gradient(165deg, Theme.surface_higher 0%, #050508 100%);
                     if hero_poster.width > 0 : Image {
                         width: parent.width;
-                        height: parent.height * 150 / 100;
-                        y: (parent.height - self.height) / 2;
+                        height: parent.height;
+                        y: 0px;
                         source: root.hero_poster;
                         image-fit: cover;
                         opacity: 0.35;
@@ -230,7 +243,7 @@ export component TvShowPage inherits Rectangle {
                 Rectangle {
                     width: parent.width;
                     height: parent.height;
-                    background: @linear-gradient(90deg, #0a0a10f0 0%, #0a0a10a0 40%, #0a0a1070 100%);
+                    background: @linear-gradient(90deg, #0a0a10f5 0%, #0a0a10b8 35%, #0a0a108c 100%);
                 }
 
                 Rectangle {
@@ -244,7 +257,7 @@ export component TvShowPage inherits Rectangle {
                     height: parent.height;
                     padding-left: gutter;
                     padding-right: gutter;
-                    padding-bottom: compact ? 16px : 32px;
+                    padding-bottom: compact ? 24px : 48px;
                     padding-top: 0px;
                     alignment: end;
 
@@ -253,17 +266,33 @@ export component TvShowPage inherits Rectangle {
                         width: min(hero-col-w, parent.width);
                         alignment: start;
 
-                        TouchArea {
-                            clicked => {
-                                root.back_clicked();
+                        Rectangle {
+                            width: 112px;
+                            height: 22px;
+                            background: transparent;
+
+                            Icon {
+                                x: 0px;
+                                y: (parent.height - self.height) / 2 + 1px;
+                                name: "arrow-left";
+                                icon_size: 11px;
+                                tint: Theme.accent_hi;
                             }
 
                             Text {
-                                text: "← Back to Media";
+                                x: 17px;
+                                y: (parent.height - self.height) / 2;
+                                text: "Back to Media";
                                 color: Theme.accent_hi;
                                 font-size: 12.5px;
                                 font-weight: 600;
                                 font-family: Theme.ui_font;
+                            }
+
+                            TouchArea {
+                                clicked => {
+                                    root.back_clicked();
+                                }
                             }
                         }
 
@@ -325,9 +354,10 @@ export component TvShowPage inherits Rectangle {
                             }
                         }
 
-                        if show_credits_strip : VerticalLayout {
-                            spacing: 6px;
+                        if show_credits_strip : HorizontalLayout {
+                            spacing: 16px;
                             alignment: start;
+                            width: parent.width;
 
                             if has_creators : HorizontalLayout {
                                 spacing: 8px;
@@ -393,41 +423,13 @@ export component TvShowPage inherits Rectangle {
                             }
                         }
 
-                        if has_hero_badges : VerticalLayout {
-                            spacing: 6px;
+                        if has_hero_badges : HorizontalLayout {
+                            spacing: 8px;
                             width: parent.width;
+                            alignment: start;
 
-                            HorizontalLayout {
-                                spacing: 8px;
-                                alignment: start;
-
-                                for tag[idx] in root.hero_badges: Rectangle {
-                                    if idx < 4: HeroPill {
-                                        badge: tag;
-                                    }
-                                }
-                            }
-
-                            HorizontalLayout {
-                                spacing: 8px;
-                                alignment: start;
-
-                                for tag[idx] in root.hero_badges: Rectangle {
-                                    if idx >= 4 && idx < 8: HeroPill {
-                                        badge: tag;
-                                    }
-                                }
-                            }
-
-                            HorizontalLayout {
-                                spacing: 8px;
-                                alignment: start;
-
-                                for tag[idx] in root.hero_badges: Rectangle {
-                                    if idx >= 8 && idx < 12: HeroPill {
-                                        badge: tag;
-                                    }
-                                }
+                            for tag in root.hero_badges: HeroPill {
+                                badge: tag;
                             }
                         }
                     }
@@ -452,25 +454,25 @@ export component TvShowPage inherits Rectangle {
                 }
 
                 Rectangle {
-                    width: root.width - gutter * 2;
+                    width: content-w;
                     background: Theme.surface;
                     border-radius: Theme.radius_lg;
                     border-width: 1px;
                     border-color: Theme.border;
 
                     VerticalLayout {
-                        padding-top: 12px;
-                        padding-bottom: 16px;
-                        padding-left: 12px;
-                        padding-right: 12px;
-                        spacing: 12px;
+                        padding-top: 16px;
+                        padding-bottom: 18px;
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 14px;
 
                         VerticalLayout {
-                            spacing: 8px;
+                            spacing: 10px;
                             width: parent.width;
 
                             HorizontalLayout {
-                                spacing: 10px;
+                                spacing: 18px;
                                 width: parent.width;
 
                                 for line[idx] in root.detail_lines: Rectangle {
@@ -482,7 +484,7 @@ export component TvShowPage inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                spacing: 10px;
+                                spacing: 18px;
                                 width: parent.width;
 
                                 for line[idx] in root.detail_lines: Rectangle {
@@ -494,7 +496,7 @@ export component TvShowPage inherits Rectangle {
                             }
 
                             HorizontalLayout {
-                                spacing: 10px;
+                                spacing: 18px;
                                 width: parent.width;
 
                                 for line[idx] in root.detail_lines: Rectangle {
@@ -504,22 +506,17 @@ export component TvShowPage inherits Rectangle {
                                     }
                                 }
                             }
-
-                            HorizontalLayout {
-                                spacing: 10px;
-                                width: parent.width;
-
-                                for line[idx] in root.detail_lines: Rectangle {
-                                    horizontal-stretch: idx >= 12 && idx < 16 ? 1 : 0;
-                                    if idx >= 12 && idx < 16: DetailDlCell {
-                                        line: line;
-                                    }
-                                }
-                            }
                         }
 
-                        if locale_spoken != "" || locale_origin != "" : VerticalLayout {
-                            spacing: 8px;
+                        Rectangle {
+                            width: parent.width;
+                            height: 1px;
+                            background: Theme.border;
+                        }
+
+                        if locale_spoken != "" || locale_origin != "" : HorizontalLayout {
+                            spacing: 24px;
+                            width: parent.width;
 
                             if locale_spoken != "" : HorizontalLayout {
                                 spacing: 8px;
@@ -562,6 +559,7 @@ export component TvShowPage inherits Rectangle {
 
                         if original_title != "" : HorizontalLayout {
                             spacing: 8px;
+                            width: parent.width;
 
                             Text {
                                 text: "Original";
@@ -583,6 +581,7 @@ export component TvShowPage inherits Rectangle {
 
                         if networks.length > 0 : VerticalLayout {
                             spacing: 6px;
+                            width: parent.width;
 
                             Text {
                                 text: "Networks";
@@ -595,6 +594,7 @@ export component TvShowPage inherits Rectangle {
                             HorizontalLayout {
                                 spacing: 6px;
                                 alignment: start;
+                                width: parent.width;
 
                                 for net[idx] in root.networks: Rectangle {
                                     border-radius: 6px;
@@ -622,6 +622,7 @@ export component TvShowPage inherits Rectangle {
 
                         if air_last != "" || air_next != "" : VerticalLayout {
                             spacing: 6px;
+                            width: parent.width;
 
                             if air_last != "" : Text {
                                 text: root.air_last;
@@ -676,7 +677,7 @@ export component TvShowPage inherits Rectangle {
                 }
 
                 if season_block_title != "" || season_block_meta != "" : Rectangle {
-                    width: parent.width;
+                    width: content-w;
                     background: Theme.surface;
                     border-radius: Theme.radius_lg;
                     border-width: 1px;
@@ -686,10 +687,11 @@ export component TvShowPage inherits Rectangle {
                         padding: 14px;
                         spacing: 14px;
                         alignment: start;
+                        width: parent.width;
 
                         Rectangle {
-                            width: 56px;
-                            height: 84px;
+                            width: 72px;
+                            height: 108px;
                             border-radius: 6px;
                             clip: true;
                             background: Theme.surface_higher;
@@ -725,12 +727,20 @@ export component TvShowPage inherits Rectangle {
                                 wrap: word-wrap;
                                 font-family: Theme.ui_font;
                             }
+
+                            if season_block_overview != "" : Text {
+                                text: root.season_block_overview;
+                                color: Theme.text_dim;
+                                font-size: 14px;
+                                wrap: word-wrap;
+                                font-family: Theme.ui_font;
+                            }
                         }
                     }
                 }
 
                 VerticalLayout {
-                    width: min(parent.width, root.hero-col-w);
+                    width: content-w;
                     spacing: 12px;
 
                     for ep[idx] in root.episodes: Rectangle {
@@ -748,10 +758,11 @@ export component TvShowPage inherits Rectangle {
                             HorizontalLayout {
                                 spacing: 14px;
                                 alignment: start;
+                                width: content-w - 28px;
 
                                 Rectangle {
-                                    width: 120px;
-                                    height: 68px;
+                                    width: episode-still-w;
+                                    height: compact ? 56px : 80px;
                                     vertical-stretch: 0;
                                     border-radius: 6px;
                                     clip: true;
@@ -768,116 +779,79 @@ export component TvShowPage inherits Rectangle {
                                 }
 
                                 VerticalLayout {
-                                    horizontal-stretch: 1;
-                                    min-width: 0px;
+                                    width: max(160px, content-w - 28px - episode-still-w - episode-action-w - 28px);
                                     spacing: 10px;
                                     alignment: start;
 
+                                    Text {
+                                        text: ep.ep_num + ". " + ep.title;
+                                        color: Theme.text;
+                                        font-size: 15px;
+                                        font-weight: 700;
+                                        wrap: word-wrap;
+                                        font-family: Theme.ui_font;
+                                    }
+
                                     HorizontalLayout {
-                                        spacing: 12px;
+                                        spacing: 6px;
                                         alignment: start;
 
-                                        VerticalLayout {
-                                            horizontal-stretch: 1;
-                                            min-width: 0px;
-                                            spacing: 6px;
-                                            alignment: start;
+                                        if ep.air_date != "" : Text {
+                                            color: Theme.text_mute;
+                                            font-size: 11.5px;
+                                            font-family: Theme.ui_font;
+                                            text: ep.air_date;
+                                        }
 
-                                            Text {
-                                                text: ep.ep_num + ". " + ep.title;
-                                                color: Theme.text;
-                                                font-size: 15px;
-                                                font-weight: 700;
-                                                wrap: word-wrap;
-                                                font-family: Theme.ui_font;
+                                        if ep.air_date != "" && (ep.duration_label != "" || ep.rating_label != "") : Text {
+                                            color: Theme.text_mute;
+                                            font-size: 11.5px;
+                                            font-family: Theme.ui_font;
+                                            text: "·";
+                                        }
+
+                                        if ep.duration_label != "" : HorizontalLayout {
+                                            spacing: 4px;
+                                            alignment: center;
+
+                                            Icon {
+                                                name: "clock";
+                                                icon_size: 11px;
+                                                tint: Theme.text_mute;
+                                                y: (parent.height - self.height) / 2;
                                             }
 
-                                            HorizontalLayout {
-                                                spacing: 6px;
-                                                alignment: start;
-
-                                                if ep.air_date != "" : Text {
-                                                    color: Theme.text_mute;
-                                                    font-size: 11.5px;
-                                                    font-family: Theme.ui_font;
-                                                    text: ep.air_date;
-                                                }
-
-                                                if ep.air_date != "" && (ep.duration_label != "" || ep.rating_label != "") : Text {
-                                                    color: Theme.text_mute;
-                                                    font-size: 11.5px;
-                                                    font-family: Theme.ui_font;
-                                                    text: "·";
-                                                }
-
-                                                if ep.duration_label != "" : HorizontalLayout {
-                                                    spacing: 4px;
-                                                    alignment: center;
-
-                                                    Icon {
-                                                        name: "clock";
-                                                        icon_size: 11px;
-                                                        tint: Theme.text_mute;
-                                                        y: (parent.height - self.height) / 2;
-                                                    }
-
-                                                    Text {
-                                                        color: Theme.text_mute;
-                                                        font-size: 11.5px;
-                                                        font-family: Theme.ui_font;
-                                                        text: ep.duration_label;
-                                                    }
-                                                }
-
-                                                if ep.duration_label != "" && ep.rating_label != "" : Text {
-                                                    color: Theme.text_mute;
-                                                    font-size: 11.5px;
-                                                    font-family: Theme.ui_font;
-                                                    text: "·";
-                                                }
-
-                                                if ep.rating_label != "" : HorizontalLayout {
-                                                    spacing: 4px;
-                                                    alignment: center;
-
-                                                    Icon {
-                                                        name: "star";
-                                                        icon_size: 11px;
-                                                        tint: Theme.accent;
-                                                        y: (parent.height - self.height) / 2;
-                                                    }
-
-                                                    Text {
-                                                        color: Theme.text_dim;
-                                                        font-size: 11.5px;
-                                                        font-family: Theme.mono_font;
-                                                        text: ep.rating_label;
-                                                    }
-                                                }
+                                            Text {
+                                                color: Theme.text_mute;
+                                                font-size: 11.5px;
+                                                font-family: Theme.ui_font;
+                                                text: ep.duration_label;
                                             }
                                         }
 
-                                        VerticalLayout {
-                                            horizontal-stretch: 0;
-                                            spacing: 8px;
-                                            alignment: end;
+                                        if ep.duration_label != "" && ep.rating_label != "" : Text {
+                                            color: Theme.text_mute;
+                                            font-size: 11.5px;
+                                            font-family: Theme.ui_font;
+                                            text: "·";
+                                        }
 
-                                            if ep.file_id != "" : ButtonChip {
-                                                primary: true;
-                                                label: "Play";
-                                                icon_name: "play";
-                                                clicked => {
-                                                    root.play_episode(ep.file_id);
-                                                }
+                                        if ep.rating_label != "" : HorizontalLayout {
+                                            spacing: 4px;
+                                            alignment: center;
+
+                                            Icon {
+                                                name: "star";
+                                                icon_size: 11px;
+                                                tint: Theme.accent;
+                                                y: (parent.height - self.height) / 2;
                                             }
 
-                                            if ep.file_id != "" : ButtonChip {
-                                                primary: false;
-                                                label: "Subtitles";
-                                                icon_name: "subtitles";
-                                                clicked => {
-                                                    root.subtitles_clicked(ep.file_id);
-                                                }
+                                            Text {
+                                                color: Theme.text_dim;
+                                                font-size: 11.5px;
+                                                font-family: Theme.mono_font;
+                                                text: ep.rating_label;
                                             }
                                         }
                                     }
@@ -888,6 +862,30 @@ export component TvShowPage inherits Rectangle {
                                         font-size: 12.5px;
                                         wrap: word-wrap;
                                         font-family: Theme.ui_font;
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    width: episode-action-w;
+                                    spacing: 8px;
+                                    alignment: end;
+
+                                    if ep.file_id != "" : ButtonChip {
+                                        primary: true;
+                                        label: "Play";
+                                        icon_name: "play";
+                                        clicked => {
+                                            root.play_episode(ep.file_id);
+                                        }
+                                    }
+
+                                    if ep.file_id != "" : ButtonChip {
+                                        primary: false;
+                                        label: "Subtitles";
+                                        icon_name: "subtitles";
+                                        clicked => {
+                                            root.subtitles_clicked(ep.file_id);
+                                        }
                                     }
                                 }
                             }
