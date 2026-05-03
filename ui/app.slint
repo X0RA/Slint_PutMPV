@@ -5,7 +5,6 @@ import { LoadingPage } from "./pages/loading.slint";
 import { SplashPage } from "./pages/splash.slint";
 import { CodePage } from "./pages/code.slint";
 import { FilesPage } from "./pages/files.slint";
-import { MetadataPage } from "./pages/metadata.slint";
 import { SettingsPage } from "./pages/settings.slint";
 import { MediaPage, MediaItem } from "./pages/media.slint";
 import { TvShowPage } from "./pages/tvshow.slint";
@@ -211,8 +210,7 @@ export component AppWindow inherits Window {
 
             TopNavButton { label: "Files"; icon_name: "folder"; active: root.view == 3; clicked => { root.view = 3; } }
             TopNavButton { label: "Media"; icon_name: "media"; active: root.view == 4 || root.view == 8; clicked => { root.view = 4; root.media_refresh(); } }
-            TopNavButton { label: "Metadata"; icon_name: "metadata"; active: root.view == 5; clicked => { root.view = 5; root.metadata_criteria_changed(); } }
-            TopNavButton { label: "Settings"; icon_name: "settings"; active: root.view == 6; clicked => { root.view = 6; root.settings_refresh(); if (root.settings_section == 1) { root.sync_refresh_profiles(); } } }
+            TopNavButton { label: "Settings"; icon_name: "settings"; active: root.view == 6; clicked => { root.view = 6; root.settings_refresh(); if (root.settings_section == 1) { root.sync_refresh_profiles(); } if (root.settings_section == 3) { root.metadata_criteria_changed(); } } }
             Rectangle { width: 13px; Rectangle { x: 6px; y: (parent.height - self.height) / 2; width: 1px; height: 20px; background: Theme.border; } }
             ButtonChip { label: "Logout"; icon_name: "logout"; clicked => { root.logout(); } }
         }
@@ -371,30 +369,6 @@ export component AppWindow inherits Window {
         exit_fullscreen => { root.player_exit_fullscreen(); }
     }
 
-    if (root.view == 5) : metadata := MetadataPage {
-        x: 0px;
-        y: Theme.title_bar_height;
-        width: parent.width;
-        height: parent.height - Theme.title_bar_height;
-        items: root.metadata_items;
-        query <=> root.metadata_query;
-        filter_index <=> root.metadata_filter;
-        hide_matched <=> root.metadata_hide_matched;
-        total_count: root.metadata_total_count;
-        selected_count: root.metadata_selected_count;
-        unmatched_count: root.metadata_unmatched_count;
-        tv_count: root.metadata_tv_count;
-        movie_count: root.metadata_movie_count;
-        status: root.metadata_status;
-        busy: root.metadata_busy;
-        toggle_item(id) => { root.metadata_toggle_item(id); }
-        toggle_expand(id) => { root.metadata_toggle_expand(id); }
-        select_unmatched => { root.metadata_select_unmatched(); }
-        clear_selection => { root.metadata_clear_selection(); }
-        fetch_metadata => { root.metadata_fetch(); }
-        criteria_changed => { root.metadata_criteria_changed(); }
-    }
-
     if (root.view == 6) : settings := SettingsPage {
         x: 0px;
         y: Theme.title_bar_height;
@@ -415,6 +389,17 @@ export component AppWindow inherits Window {
         local_data_rows: root.local_data_rows;
         confirm_open <=> root.confirm_open;
         local_data_status <=> root.local_data_status;
+        metadata_items: root.metadata_items;
+        metadata_query <=> root.metadata_query;
+        metadata_filter_index <=> root.metadata_filter;
+        metadata_hide_matched <=> root.metadata_hide_matched;
+        metadata_total_count: root.metadata_total_count;
+        metadata_selected_count: root.metadata_selected_count;
+        metadata_unmatched_count: root.metadata_unmatched_count;
+        metadata_tv_count: root.metadata_tv_count;
+        metadata_movie_count: root.metadata_movie_count;
+        metadata_status: root.metadata_status;
+        metadata_busy: root.metadata_busy;
         settings_refresh => { root.settings_refresh(); }
         tmdb_source_changed(source) => { root.tmdb_source_changed(source); }
         tmdb_save_local => { root.tmdb_save_local(); }
@@ -429,5 +414,11 @@ export component AppWindow inherits Window {
         local_data_clear(index) => { root.local_data_clear(index); }
         local_data_confirm_clear => { root.local_data_confirm_clear(); }
         local_data_cancel_clear => { root.local_data_cancel_clear(); }
+        metadata_toggle_item(id) => { root.metadata_toggle_item(id); }
+        metadata_toggle_expand(id) => { root.metadata_toggle_expand(id); }
+        metadata_select_unmatched => { root.metadata_select_unmatched(); }
+        metadata_clear_selection => { root.metadata_clear_selection(); }
+        metadata_fetch => { root.metadata_fetch(); }
+        metadata_criteria_changed => { root.metadata_criteria_changed(); }
     }
 }

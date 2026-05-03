@@ -1,8 +1,8 @@
 import { ScrollView } from "std-widgets.slint";
-import { Theme } from "../theme.slint";
-import { MetadataItem } from "../types.slint";
-import { ButtonChip, StatusBadge, IconButton, RefreshIconButton } from "../components/primitives.slint";
-import { Icon } from "../components/icons.slint";
+import { Theme } from "../../theme.slint";
+import { MetadataItem } from "../../types.slint";
+import { ButtonChip, StatusBadge, RefreshIconButton } from "../primitives.slint";
+import { Icon } from "../icons.slint";
 
 component SelectMark inherits Rectangle {
     in property <bool> selected: false;
@@ -349,7 +349,7 @@ component MovieRow inherits Rectangle {
     }
 }
 
-export component MetadataPage inherits Rectangle {
+export component MetadataSettingsPanel inherits Rectangle {
     in property <[MetadataItem]> items;
     in property <int> total_count: 0;
     in property <int> selected_count: 0;

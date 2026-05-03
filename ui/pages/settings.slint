@@ -1,7 +1,8 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { SidebarSectionButton, ButtonChip, TextFieldBox, RadioRow, Dropdown } from "../components/primitives.slint";
-import { LocalDataRow } from "../types.slint";
+import { MetadataSettingsPanel } from "../components/settings/metadata.slint";
+import { LocalDataRow, MetadataItem } from "../types.slint";
 
 component SettingsHead inherits VerticalLayout {
     in property <string> title;
@@ -140,6 +141,18 @@ export component SettingsPage inherits Rectangle {
     in-out property <bool> confirm_open: false;
     in-out property <string> local_data_status;
 
+    in property <[MetadataItem]> metadata_items;
+    in property <int> metadata_total_count: 0;
+    in property <int> metadata_selected_count: 0;
+    in property <int> metadata_unmatched_count: 0;
+    in property <int> metadata_tv_count: 0;
+    in property <int> metadata_movie_count: 0;
+    in property <string> metadata_status: "";
+    in property <bool> metadata_busy: false;
+    in-out property <string> metadata_query;
+    in-out property <int> metadata_filter_index;
+    in-out property <bool> metadata_hide_matched;
+
     callback settings_refresh();
     callback tmdb_source_changed(source: int);
     callback tmdb_save_local();
@@ -154,6 +167,12 @@ export component SettingsPage inherits Rectangle {
     callback local_data_clear(index: int);
     callback local_data_confirm_clear();
     callback local_data_cancel_clear();
+    callback metadata_criteria_changed();
+    callback metadata_toggle_item(id: int);
+    callback metadata_toggle_expand(id: int);
+    callback metadata_select_unmatched();
+    callback metadata_clear_selection();
+    callback metadata_fetch();
 
     background: Theme.bg;
 
@@ -186,9 +205,35 @@ export component SettingsPage inherits Rectangle {
             Rectangle { height: 2px; }
             SidebarSectionButton { label: "Watch Sync"; subtitle: "Status & shared profiles"; icon_name: "refresh"; active: root.section == 1; clicked => { root.section = 1; root.settings_refresh(); root.sync_refresh_profiles(); } }
             Rectangle { height: 2px; }
+            SidebarSectionButton { label: "Metadata"; subtitle: "Match files with TMDB"; icon_name: "metadata"; active: root.section == 3; clicked => { root.section = 3; root.metadata_criteria_changed(); } }
+            Rectangle { height: 2px; }
             SidebarSectionButton { label: "Local Data"; subtitle: "Caches & stores"; icon_name: "document"; active: root.section == 2; clicked => { root.section = 2; root.settings_refresh(); } }
             Rectangle { vertical-stretch: 1; }
         }
+    }
+
+    if (root.section == 3) : metadata-page := MetadataSettingsPanel {
+        x: 240px;
+        y: 0px;
+        width: parent.width - 240px;
+        height: parent.height;
+        items: root.metadata_items;
+        query <=> root.metadata_query;
+        filter_index <=> root.metadata_filter_index;
+        hide_matched <=> root.metadata_hide_matched;
+        total_count: root.metadata_total_count;
+        selected_count: root.metadata_selected_count;
+        unmatched_count: root.metadata_unmatched_count;
+        tv_count: root.metadata_tv_count;
+        movie_count: root.metadata_movie_count;
+        status: root.metadata_status;
+        busy: root.metadata_busy;
+        toggle_item(id) => { root.metadata_toggle_item(id); }
+        toggle_expand(id) => { root.metadata_toggle_expand(id); }
+        select_unmatched => { root.metadata_select_unmatched(); }
+        clear_selection => { root.metadata_clear_selection(); }
+        fetch_metadata => { root.metadata_fetch(); }
+        criteria_changed => { root.metadata_criteria_changed(); }
     }
 
     content := ScrollView {
@@ -196,6 +241,7 @@ export component SettingsPage inherits Rectangle {
         y: 0px;
         width: parent.width - 240px;
         height: parent.height;
+        visible: root.section != 3;
         viewport-width: self.visible-width;
         viewport-height: max(self.visible-height, current-section.preferred-height);
 
