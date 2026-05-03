@@ -1,6 +1,7 @@
-import { PlayerTrack } from "../types.slint";
+import { PlayerPlaylistItem, PlayerTrack } from "../types.slint";
 import { PlayerTopBar } from "../components/player/player_top_bar.slint";
 import { PlayerControlsBar } from "../components/player/player_controls_bar.slint";
+import { PlayerPlaylistPanel } from "../components/player/player_playlist_panel.slint";
 
 export component PlayerPage inherits FocusScope {
     in property <image> texture;
@@ -17,6 +18,8 @@ export component PlayerPage inherits FocusScope {
     in-out property <string> selected_subtitle: "";
     in property <[PlayerTrack]> audio_tracks;
     in-out property <string> selected_audio: "";
+    in property <[PlayerPlaylistItem]> playlist_items;
+    in property <string> playlist_current_id: "";
     in property <string> subtitle_text: "";
     in-out property <int> subtitle_render_mode: 0;
     in-out property <bool> fullscreen: false;
@@ -29,10 +32,12 @@ export component PlayerPage inherits FocusScope {
     callback toggle_captions();
     callback subtitle_render_mode_changed(mode: int);
     callback select_audio(track_id: string);
+    callback playlist_play(file_id: string);
     callback toggle_fullscreen();
     callback exit_fullscreen();
 
     in-out property <bool> controls_visible: true;
+    in-out property <bool> playlist_open: false;
 
     focus-on-click: true;
     focus-on-tab-navigation: false;
@@ -65,7 +70,7 @@ export component PlayerPage inherits FocusScope {
 
     hide-timer := Timer {
         interval: 3000ms;
-        running: root.controls_visible;
+        running: root.controls_visible && !root.playlist_open;
         triggered => {
             root.controls_visible = false;
         }
@@ -107,7 +112,11 @@ export component PlayerPage inherits FocusScope {
         keys: @keys(Escape);
         activated => {
             root.reveal_controls();
-            root.exit_fullscreen();
+            if (root.playlist_open) {
+                root.playlist_open = false;
+            } else {
+                root.exit_fullscreen();
+            }
         }
     }
 
@@ -142,6 +151,7 @@ export component PlayerPage inherits FocusScope {
         clicked => {
             root.reveal_controls();
             controls.close_menus();
+            root.playlist_open = false;
         }
     }
 
@@ -228,6 +238,20 @@ export component PlayerPage inherits FocusScope {
         toggle_fullscreen => {
             root.reveal_controls();
             root.toggle_fullscreen();
+        }
+        playlist_open <=> root.playlist_open;
+        toggle_playlist => {
+            root.reveal_controls();
+            root.playlist_open = !root.playlist_open;
+        }
+    }
+
+    playlist-overlay := PlayerPlaylistPanel {
+        open <=> root.playlist_open;
+        items: root.playlist_items;
+        current_id: root.playlist_current_id;
+        play_item(file_id) => {
+            root.playlist_play(file_id);
         }
     }
 }

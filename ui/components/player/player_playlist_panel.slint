@@ -1,0 +1,170 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../../theme.slint";
+import { Icon } from "../icons.slint";
+import { PlayerPlaylistItem } from "../../types.slint";
+
+component PlaylistRow inherits Rectangle {
+    in property <string> title-text;
+    in property <string> meta-text;
+    in property <bool> current: false;
+    callback clicked();
+
+    height: 56px;
+    border-radius: Theme.radius_sm;
+    background: root.current ? #ffffff10 : (row-ta.has-hover ? #ffffff08 : transparent);
+
+    VerticalLayout {
+        x: 14px;
+        y: 10px;
+        width: parent.width - 28px;
+        spacing: 3px;
+        alignment: start;
+
+        Text {
+            text: root.title-text;
+            color: root.current ? #f0f0f4 : #a3a3ad;
+            font-size: 13px;
+            font-weight: root.current ? 600 : 400;
+            font-family: Theme.ui_font;
+            overflow: elide;
+        }
+
+        Text {
+            text: root.meta-text;
+            color: #6b6b76;
+            font-size: 11px;
+            font-family: Theme.ui_font;
+            overflow: elide;
+        }
+    }
+
+    if (root.current) : Icon {
+        x: parent.width - 28px;
+        y: (parent.height - self.height) / 2;
+        name: "play";
+        icon_size: 14px;
+        tint: #9a9aa3;
+    }
+
+    row-ta := TouchArea {
+        width: 100%;
+        height: 100%;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component PlayerPlaylistPanel inherits Rectangle {
+    in-out property <bool> open: false;
+    in property <[PlayerPlaylistItem]> items;
+    in property <string> current_id: "";
+    callback play_item(string);
+
+    width: 100%;
+    height: 100%;
+    clip: true;
+    background: transparent;
+
+    backdrop := Rectangle {
+        width: 100%;
+        height: 100%;
+        background: #000000a3;
+        opacity: root.open ? 1 : 0;
+
+        backdrop-ta := TouchArea {
+            enabled: root.open;
+            clicked => {
+                root.open = false;
+            }
+        }
+
+        animate opacity {
+            duration: 140ms;
+            easing: ease-out;
+        }
+    }
+
+    panel := Rectangle {
+        y: 0px;
+        width: min(360px, root.width * 42 / 100);
+        height: parent.height;
+        x: root.open ? parent.width - self.width : parent.width;
+        background: #0e0e10;
+
+        header := Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: 52px;
+            background: #141416;
+
+            Text {
+                x: 16px;
+                y: 0px;
+                width: parent.width - 32px;
+                height: parent.height;
+                text: "Playlist";
+                color: #c8c8d0;
+                font-size: 15px;
+                font-weight: 600;
+                font-family: Theme.ui_font;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                x: 0px;
+                y: parent.height - 1px;
+                width: parent.width;
+                height: 1px;
+                background: #25252b;
+            }
+        }
+
+        ScrollView {
+            x: 0px;
+            y: 52px;
+            width: parent.width;
+            height: parent.height - 52px;
+            viewport-width: self.visible-width;
+            viewport-height: max(self.visible-height, list-col.preferred-height + 20px);
+
+            list-col := VerticalLayout {
+                x: 8px;
+                y: 10px;
+                width: parent.width - 16px;
+                spacing: 6px;
+
+                for item in root.items: PlaylistRow {
+                    title-text: item.title;
+                    meta-text: item.meta;
+                    current: item.file_id == root.current_id;
+                    clicked => {
+                        root.play_item(item.file_id);
+                    }
+                }
+            }
+        }
+
+        Rectangle {
+            x: parent.width - 1px;
+            y: 0px;
+            width: 1px;
+            height: parent.height;
+            background: #2a2a30;
+        }
+
+        Rectangle {
+            x: 0px;
+            y: parent.height - 1px;
+            width: parent.width;
+            height: 1px;
+            background: #2a2a30;
+        }
+
+        animate x {
+            duration: 180ms;
+            easing: ease-out;
+        }
+    }
+}

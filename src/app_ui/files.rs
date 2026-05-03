@@ -10,6 +10,7 @@ use tracing::{info, warn};
 
 use crate::putio::types::{DirectoryNode, PutIoFile, UnifiedDirectoryTree};
 use crate::putio::{self};
+use crate::player::PlaybackQueueItem;
 use crate::{AppWindow, FileItem, PathSegment};
 
 use super::models::UiModels;
@@ -272,6 +273,39 @@ fn search_entries(
     out
 }
 
+fn sort_display_rows(
+    rows: &mut [(DisplayEntry, String)],
+    sort: i32,
+    descending: bool,
+) {
+    match sort {
+        1 => rows.sort_by(|a, b| {
+            a.0.file
+                .name
+                .to_lowercase()
+                .cmp(&b.0.file.name.to_lowercase())
+        }),
+        2 => rows.sort_by(|a, b| a.0.aggregate_size.cmp(&b.0.aggregate_size)),
+        3 => rows.sort_by(|a, b| {
+            a.0.file
+                .created_at
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.0.file.created_at.as_deref().unwrap_or(""))
+        }),
+        _ => rows.sort_by(|a, b| {
+            a.0.file
+                .updated_at
+                .as_deref()
+                .unwrap_or("")
+                .cmp(b.0.file.updated_at.as_deref().unwrap_or(""))
+        }),
+    }
+    if descending {
+        rows.reverse();
+    }
+}
+
 fn put_to_file_item(entry: &DisplayEntry, location: &str) -> FileItem {
     let file = &entry.file;
     let is_folder = file.file_type == "FOLDER";
@@ -326,6 +360,57 @@ fn put_to_file_item(entry: &DisplayEntry, location: &str) -> FileItem {
         is_media,
         is_watched: false,
     }
+}
+
+fn queue_item_from_file(file: &PutIoFile) -> PlaybackQueueItem {
+    PlaybackQueueItem {
+        file_id: file.id,
+        title: file.name.clone(),
+        meta: format_size(file.size),
+    }
+}
+
+fn files_playback_queue(
+    app: &AppWindow,
+    tree: &UnifiedDirectoryTree,
+    current_folder: u64,
+    selected_id: i32,
+) -> Option<(Vec<PlaybackQueueItem>, u64)> {
+    let selected = children_for_folder(tree, current_folder)
+        .into_iter()
+        .find(|entry| truncate_id(entry.file.id) == selected_id)
+        .or_else(|| find_entry_by_id(&tree.root, selected_id).map(|(entry, _)| entry))?;
+
+    let mut rows = if app.get_files_query().is_empty() {
+        let location = String::new();
+        children_for_folder(tree, current_folder)
+            .into_iter()
+            .map(|entry| (entry, location.clone()))
+            .collect::<Vec<_>>()
+    } else {
+        let query = app.get_files_query().to_lowercase();
+        search_entries(tree, &query)
+            .into_iter()
+            .map(|(entry, stack)| (entry, location_text(&stack)))
+            .collect::<Vec<_>>()
+    };
+    sort_display_rows(
+        &mut rows,
+        app.get_files_sort(),
+        app.get_files_sort_descending(),
+    );
+
+    let mut queue = rows
+        .into_iter()
+        .filter(|(entry, _)| entry.file.file_type == "VIDEO")
+        .map(|(entry, _)| queue_item_from_file(&entry.file))
+        .collect::<Vec<_>>();
+
+    if !queue.iter().any(|item| item.file_id == selected.file.id) {
+        queue = vec![queue_item_from_file(&selected.file)];
+    }
+
+    Some((queue, selected.file.id))
 }
 
 fn location_text(stack: &[(u64, String)]) -> String {
@@ -390,33 +475,11 @@ pub(crate) fn install(
                     .map(|(entry, stack)| (entry, location_text(&stack)))
                     .collect::<Vec<_>>()
             };
-            let descending = app.get_files_sort_descending();
-            match app.get_files_sort() {
-                1 => rows.sort_by(|a, b| {
-                    a.0.file
-                        .name
-                        .to_lowercase()
-                        .cmp(&b.0.file.name.to_lowercase())
-                }),
-                2 => rows.sort_by(|a, b| a.0.aggregate_size.cmp(&b.0.aggregate_size)),
-                3 => rows.sort_by(|a, b| {
-                    a.0.file
-                        .created_at
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.0.file.created_at.as_deref().unwrap_or(""))
-                }),
-                _ => rows.sort_by(|a, b| {
-                    a.0.file
-                        .updated_at
-                        .as_deref()
-                        .unwrap_or("")
-                        .cmp(b.0.file.updated_at.as_deref().unwrap_or(""))
-                }),
-            }
-            if descending {
-                rows.reverse();
-            }
+            sort_display_rows(
+                &mut rows,
+                app.get_files_sort(),
+                app.get_files_sort_descending(),
+            );
 
             let mut folder_count = 0i32;
             let mut file_count = 0i32;
@@ -685,20 +748,16 @@ pub(crate) fn install(
             };
 
             let tree_borrow = tree.read().unwrap();
-            let found = children_for_folder(&tree_borrow, *current_folder.borrow())
-                .into_iter()
-                .find(|entry| truncate_id(entry.file.id) == id)
-                .or_else(|| find_entry_by_id(&tree_borrow.root, id).map(|(entry, _)| entry));
-            let Some(entry) = found else {
+            let Some((queue, file_id)) =
+                files_playback_queue(&app, &tree_borrow, *current_folder.borrow(), id)
+            else {
                 app.set_player_title("Could not find the selected media file.".into());
                 app.set_view(VIEW_PLAYER);
                 return;
             };
-            let file_id = entry.file.id;
-            let title = entry.file.name.clone();
             drop(tree_borrow);
 
-            embedded_player.play(&app, file_id, title);
+            embedded_player.play_queue(&app, queue, file_id);
         }
     });
 }

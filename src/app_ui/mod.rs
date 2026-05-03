@@ -163,6 +163,7 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
         &ctx.state,
         &ctx.models,
         &ctx.services.rt,
+        &ctx.embedded_player,
     );
 
     tv_show::install(
@@ -171,5 +172,6 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
         &ctx.state,
         &ctx.models,
         &ctx.services.rt,
+        &ctx.embedded_player,
     );
 }

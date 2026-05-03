@@ -5,10 +5,11 @@ use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
 use crate::metadata::tmdb::{Episode, TVSeasonDetails, TVSeriesDetails};
-use slint::{ComponentHandle, VecModel};
+use slint::{ComponentHandle, Model, VecModel};
 use tokio::runtime::Runtime;
 
 use crate::putio::types::UnifiedDirectoryTree;
+use crate::player::PlaybackQueueItem;
 use crate::storage::matched_store::MatchedStore;
 use crate::storage::tmdb_store::{CacheEntry, TMDBStore};
 use crate::{AppWindow, TvDetailItem, TvEpisodeCredit, TvEpisodeRow, TvHeroBadge, TvSeasonTab};
@@ -650,11 +651,13 @@ pub(crate) fn install(
     state: &UiState,
     models: &UiModels,
     rt: &Arc<Runtime>,
+    embedded_player: &crate::player::EmbeddedPlayer,
 ) {
     let weak = app.as_weak();
     let tree = state.tree.clone();
     let matched_store = services.matched_store.clone();
     let tmdb_store = services.tmdb_store.clone();
+    let embedded_player = embedded_player.clone();
 
     app.on_tv_show_back({
         let weak = weak.clone();
@@ -701,6 +704,9 @@ pub(crate) fn install(
 
     app.on_tv_show_play_episode({
         let weak = weak.clone();
+        let tv_show_episodes_model = models.tv_episodes.clone();
+        let tv_show_seasons_model = models.tv_seasons.clone();
+        let embedded_player = embedded_player.clone();
         move |file_id| {
             let s = file_id.to_string();
             if s.is_empty() {
@@ -708,7 +714,36 @@ pub(crate) fn install(
             }
             if let Ok(id) = s.parse::<u64>() {
                 if let Some(app) = weak.upgrade() {
-                    app.invoke_files_menu_action("play".into(), truncate_id(id));
+                    let season_number = tv_show_seasons_model
+                        .row_data(app.get_tv_show_season_idx().max(0) as usize)
+                        .map(|season| season.season_number)
+                        .unwrap_or(0);
+                    let rows = (0..tv_show_episodes_model.row_count())
+                        .filter_map(|idx| tv_show_episodes_model.row_data(idx))
+                        .collect::<Vec<_>>();
+                    let start = rows
+                        .iter()
+                        .position(|row| row.file_id == file_id)
+                        .unwrap_or(0);
+                    let queue = rows
+                        .into_iter()
+                        .skip(start)
+                        .filter_map(|row| {
+                            row.file_id.as_str().parse::<u64>().ok().map(|file_id| {
+                                let mut meta = format!("S{season_number:02} E{:02}", row.ep_num);
+                                if !row.duration_label.is_empty() {
+                                    meta.push_str(" · ");
+                                    meta.push_str(row.duration_label.as_str());
+                                }
+                                PlaybackQueueItem {
+                                    file_id,
+                                    title: row.title.to_string(),
+                                    meta,
+                                }
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    embedded_player.play_queue(&app, queue, id);
                 }
             }
         }

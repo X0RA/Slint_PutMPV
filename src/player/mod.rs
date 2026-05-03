@@ -1,7 +1,7 @@
 mod app;
 mod gl;
 
-pub use app::EmbeddedPlayer;
+pub use app::{EmbeddedPlayer, PlaybackQueueItem};
 
 use std::ffi::{c_void, CStr, CString};
 use std::rc::Rc;

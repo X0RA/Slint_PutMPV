@@ -4,13 +4,14 @@ use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
 use serde_json;
-use slint::{ComponentHandle, VecModel};
+use slint::{ComponentHandle, Model, VecModel};
 use std::collections::HashMap;
 use tokio::runtime::Runtime;
 use tracing::warn;
 
 use crate::fileparser;
 use crate::metadata::tmdb::{MovieDetails, TVSeasonDetails, TVSeriesDetails};
+use crate::player::PlaybackQueueItem;
 use crate::putio::types::DirectoryNode;
 use crate::storage::file_state::FileStateStore;
 use crate::storage::matched_store::MatchedStore;
@@ -20,7 +21,7 @@ use crate::{AppWindow, MediaItem};
 use super::metadata_ui::{build_unmatched_candidates_from_tree, fetch_metadata_candidates};
 use super::models::UiModels;
 use super::state::UiState;
-use super::util::{format_runtime, make_initials, truncate_id};
+use super::util::{format_runtime, make_initials};
 use super::{Services, VIEW_FILES, VIEW_TV_SHOW};
 
 pub(crate) fn collect_tree_file_ids(
@@ -424,6 +425,7 @@ pub(crate) fn install(
     state: &UiState,
     models: &UiModels,
     rt: &Arc<Runtime>,
+    embedded_player: &crate::player::EmbeddedPlayer,
 ) {
     let weak = app.as_weak();
     let tree = state.tree.clone();
@@ -432,6 +434,7 @@ pub(crate) fn install(
     let metadata_api = services.metadata_api.clone();
     let tmdb_api = services.tmdb_api.clone();
     let tvmaze_api = services.tvmaze_api.clone();
+    let embedded_player = embedded_player.clone();
 
     app.on_media_refresh({
         let refresh = media_refresh.clone();
@@ -447,6 +450,8 @@ pub(crate) fn install(
         let tv_show_episodes_model = models.tv_episodes.clone();
         let tv_show_hero_badges_model = models.tv_hero_badges.clone();
         let tv_show_detail_items_model = models.tv_detail_items.clone();
+        let media_movies_model = models.media_movies.clone();
+        let embedded_player = embedded_player.clone();
         let rt = rt.clone();
         move |file_id| {
             let Some(app) = weak.upgrade() else {
@@ -477,7 +482,20 @@ pub(crate) fn install(
                 }
             }
             if let Ok(id) = file_id.parse::<u64>() {
-                app.invoke_files_menu_action("play".into(), truncate_id(id));
+                let movie = (0..media_movies_model.row_count())
+                    .filter_map(|idx| media_movies_model.row_data(idx))
+                    .find(|item| item.file_id == file_id)
+                    .map(|item| PlaybackQueueItem {
+                        file_id: id,
+                        title: item.title.to_string(),
+                        meta: item.meta.to_string(),
+                    })
+                    .unwrap_or_else(|| PlaybackQueueItem {
+                        file_id: id,
+                        title: file_id.to_string(),
+                        meta: String::new(),
+                    });
+                embedded_player.play_queue(&app, vec![movie], id);
             }
         }
     });

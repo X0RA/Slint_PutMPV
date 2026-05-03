@@ -29,6 +29,9 @@ export component PlayerControlsBar inherits Rectangle {
     callback subtitle_render_mode_changed(mode: int);
     callback select_audio(track_id: string);
     callback toggle_fullscreen();
+    callback toggle_playlist();
+
+    in-out property <bool> playlist_open: false;
 
     height: 120px;
     background: @linear-gradient(0deg, #000000e6 0%, #00000099 58%, #00000000 100%);
@@ -126,7 +129,7 @@ export component PlayerControlsBar inherits Rectangle {
     right := HorizontalLayout {
         x: parent.width - self.width - 20px;
         y: 74px;
-        width: 124px;
+        width: 162px;
         height: 30px;
         spacing: 8px;
         alignment: end;
@@ -143,6 +146,7 @@ export component PlayerControlsBar inherits Rectangle {
             toggled(open) => {
                 if (open) {
                     root.audio_open = false;
+                    root.playlist_open = false;
                 }
             }
             render_mode_changed(mode) => {
@@ -163,6 +167,7 @@ export component PlayerControlsBar inherits Rectangle {
             toggled(open) => {
                 if (open) {
                     root.subtitle_open = false;
+                    root.playlist_open = false;
                 }
             }
             select(track_id) => {
@@ -172,7 +177,17 @@ export component PlayerControlsBar inherits Rectangle {
         }
 
         PlayerIconButton {
+            icon_name: "playlist";
+            small_icon: true;
+            clicked => {
+                root.close_menus();
+                root.toggle_playlist();
+            }
+        }
+
+        PlayerIconButton {
             icon_name: "maximize";
+            compact_icon: true;
             clicked => {
                 root.close_menus();
                 root.toggle_fullscreen();

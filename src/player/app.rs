@@ -5,6 +5,7 @@ use std::{
 
 use libmpv2::{
     events::{Event, PropertyData},
+    mpv_end_file_reason,
     Mpv,
 };
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
@@ -13,7 +14,7 @@ use tracing::warn;
 
 use crate::putio::{self, PutioClient};
 use crate::storage::config::ConfigStore;
-use crate::{AppWindow, PlayerTrack};
+use crate::{AppWindow, PlayerPlaylistItem, PlayerTrack};
 
 use super::{PlayerEngine, PlayerRenderer};
 
@@ -23,6 +24,15 @@ struct PlayerPlaybackState {
     tried_fallback: bool,
     fallback_url: Option<String>,
     last_subtitle_track: Option<SharedString>,
+    queue: Vec<PlaybackQueueItem>,
+    current_index: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlaybackQueueItem {
+    pub file_id: u64,
+    pub title: String,
+    pub meta: String,
 }
 
 #[derive(Clone)]
@@ -58,10 +68,26 @@ impl EmbeddedPlayer {
             register_renderer(app, engine, player_view);
         }
         if let Some(engine) = engine.clone() {
-            register_events(app, engine, playback_state.clone());
+            register_events(
+                app,
+                engine,
+                playback_state.clone(),
+                client.clone(),
+                config.clone(),
+                rt.clone(),
+                player_view,
+            );
         }
         if let Some(engine) = engine.clone() {
-            register_callbacks(app, engine, playback_state.clone());
+            register_callbacks(
+                app,
+                engine,
+                playback_state.clone(),
+                client.clone(),
+                config.clone(),
+                rt.clone(),
+                player_view,
+            );
         }
 
         let player = Self {
@@ -77,57 +103,37 @@ impl EmbeddedPlayer {
         player
     }
 
-    pub fn play(&self, app: &AppWindow, file_id: u64, title: String) {
+    pub fn play_queue(&self, app: &AppWindow, queue: Vec<PlaybackQueueItem>, file_id: u64) {
         let Some(engine) = self.engine.clone() else {
             app.set_player_title("Embedded mpv player is unavailable.".into());
             app.set_view(self.player_view);
             return;
         };
 
-        let token = self.config.oauth_token();
-        if token.is_empty() {
-            app.set_player_title("Sign in before playing media.".into());
-            app.set_view(self.player_view);
+        if queue.is_empty() {
             return;
         }
 
-        let fallback_url = putio::stream::fallback_mp4_stream_url(&token, file_id);
+        let index = queue.iter().position(|item| item.file_id == file_id).unwrap_or(0);
+        set_playlist_model(app, &queue, index);
+
         {
             let mut state = self.playback_state.lock().unwrap();
-            state.active = true;
-            state.tried_fallback = false;
-            state.fallback_url = Some(fallback_url.clone());
-            state.last_subtitle_track = None;
+            state.queue = queue.clone();
+            state.current_index = Some(index);
         }
 
-        app.set_player_title(format!("Opening {title}...").into());
-        reset_player_state(app);
-        if let Err(e) = engine.set_sub_visibility(true) {
-            warn!("could not reset embedded mpv subtitle visibility: {e}");
-        }
-        app.set_view(self.player_view);
-
-        let weak = app.as_weak();
-        let client = self.client.clone();
-        let playback_title = title.clone();
-        self.rt.spawn(async move {
-            let message = match putio::stream::resolve_play_url(&client, &token, file_id).await {
-                Ok(url) => match engine.load(&url) {
-                    Ok(()) => playback_title,
-                    Err(e) => format!("Could not start embedded playback: {e}"),
-                },
-                Err(e) => match engine.load(&fallback_url) {
-                    Ok(()) => playback_title,
-                    Err(load_err) => {
-                        format!("Could not resolve original stream: {e}; fallback failed: {load_err}")
-                    }
-                },
-            };
-            let _ = weak.upgrade_in_event_loop(move |app| {
-                app.set_player_title(message.into());
-                app.window().request_redraw();
-            });
-        });
+        start_queue_item(
+            app,
+            engine,
+            self.playback_state.clone(),
+            self.client.clone(),
+            self.config.clone(),
+            self.rt.clone(),
+            self.player_view,
+            queue[index].clone(),
+            index,
+        );
     }
 
     fn register_close(&self, app: &AppWindow) {
@@ -146,8 +152,14 @@ impl EmbeddedPlayer {
                 state.active = false;
                 state.tried_fallback = false;
                 state.fallback_url = None;
+                state.queue.clear();
+                state.current_index = None;
             }
             if let Some(app) = weak.upgrade() {
+                app.set_player_playlist_current_id("".into());
+                app.set_player_playlist_items(ModelRc::from(Rc::new(VecModel::from(
+                    Vec::<PlayerPlaylistItem>::new(),
+                ))));
                 app.set_view(files_view);
             }
         });
@@ -209,6 +221,10 @@ fn register_events(
     app: &AppWindow,
     engine: Arc<PlayerEngine>,
     playback_state: Arc<Mutex<PlayerPlaybackState>>,
+    client: PutioClient,
+    config: Arc<ConfigStore>,
+    rt: Arc<Runtime>,
+    player_view: i32,
 ) {
     match engine.create_event_client() {
         Ok(mut event_client) => {
@@ -218,8 +234,42 @@ fn register_events(
             let weak = app.as_weak();
             std::thread::spawn(move || loop {
                 match event_client.wait_event(1.0) {
-                    Some(Ok(Event::EndFile(_))) => {
-                        playback_state.lock().unwrap().active = false;
+                    Some(Ok(Event::EndFile(reason))) => {
+                        if reason == mpv_end_file_reason::Eof {
+                            let next = {
+                                let state = playback_state.lock().unwrap();
+                                let next_index = state.current_index.map(|idx| idx + 1);
+                                next_index.and_then(|idx| {
+                                    state.queue.get(idx).cloned().map(|item| (idx, item))
+                                })
+                            };
+                            if let Some((idx, item)) = next {
+                                let _ = weak.upgrade_in_event_loop({
+                                    let engine = engine.clone();
+                                    let playback_state = playback_state.clone();
+                                    let client = client.clone();
+                                    let config = config.clone();
+                                    let rt = rt.clone();
+                                    move |app| {
+                                        start_queue_item(
+                                            &app,
+                                            engine,
+                                            playback_state,
+                                            client,
+                                            config,
+                                            rt,
+                                            player_view,
+                                            item,
+                                            idx,
+                                        );
+                                    }
+                                });
+                            } else {
+                                playback_state.lock().unwrap().active = false;
+                            }
+                        } else {
+                            playback_state.lock().unwrap().active = false;
+                        }
                     }
                     Some(Ok(Event::FileLoaded | Event::AudioReconfig)) => {
                         let tracks = read_tracks(&event_client);
@@ -285,6 +335,10 @@ fn register_callbacks(
     app: &AppWindow,
     engine: Arc<PlayerEngine>,
     playback_state: Arc<Mutex<PlayerPlaybackState>>,
+    client: PutioClient,
+    config: Arc<ConfigStore>,
+    rt: Arc<Runtime>,
+    player_view: i32,
 ) {
     let weak = app.as_weak();
     let engine_for_play = engine.clone();
@@ -398,10 +452,44 @@ fn register_callbacks(
         }
     });
 
-    let engine_for_audio = engine;
+    let engine_for_audio = engine.clone();
     app.on_player_select_audio(move |track_id| {
         if let Err(e) = engine_for_audio.set_aid(track_id.as_str()) {
             warn!("could not select embedded mpv audio track: {e}");
+        }
+    });
+
+    let weak = app.as_weak();
+    let engine_for_playlist = engine.clone();
+    let playlist_state = playback_state.clone();
+    app.on_player_playlist_play(move |file_id| {
+        let Ok(file_id) = file_id.as_str().parse::<u64>() else {
+            return;
+        };
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        let item = {
+            let state = playlist_state.lock().unwrap();
+            state
+                .queue
+                .iter()
+                .enumerate()
+                .find(|(_, item)| item.file_id == file_id)
+                .map(|(idx, item)| (idx, item.clone()))
+        };
+        if let Some((idx, item)) = item {
+            start_queue_item(
+                &app,
+                engine_for_playlist.clone(),
+                playlist_state.clone(),
+                client.clone(),
+                config.clone(),
+                rt.clone(),
+                player_view,
+                item,
+                idx,
+            );
         }
     });
 
@@ -425,6 +513,81 @@ fn register_callbacks(
             app.window().set_fullscreen(false);
         }
     });
+}
+
+#[allow(clippy::too_many_arguments)]
+fn start_queue_item(
+    app: &AppWindow,
+    engine: Arc<PlayerEngine>,
+    playback_state: Arc<Mutex<PlayerPlaybackState>>,
+    client: PutioClient,
+    config: Arc<ConfigStore>,
+    rt: Arc<Runtime>,
+    player_view: i32,
+    item: PlaybackQueueItem,
+    index: usize,
+) {
+    let token = config.oauth_token();
+    if token.is_empty() {
+        app.set_player_title("Sign in before playing media.".into());
+        app.set_view(player_view);
+        return;
+    }
+
+    let fallback_url = putio::stream::fallback_mp4_stream_url(&token, item.file_id);
+    {
+        let mut state = playback_state.lock().unwrap();
+        state.active = true;
+        state.tried_fallback = false;
+        state.fallback_url = Some(fallback_url.clone());
+        state.last_subtitle_track = None;
+        state.current_index = Some(index);
+    }
+
+    app.set_player_playlist_current_id(item.file_id.to_string().into());
+    app.set_player_title(format!("Opening {}...", item.title).into());
+    reset_player_state(app);
+    if let Err(e) = engine.set_sub_visibility(true) {
+        warn!("could not reset embedded mpv subtitle visibility: {e}");
+    }
+    app.set_view(player_view);
+
+    let weak = app.as_weak();
+    let playback_title = item.title.clone();
+    let file_id = item.file_id;
+    rt.spawn(async move {
+        let message = match putio::stream::resolve_play_url(&client, &token, file_id).await {
+            Ok(url) => match engine.load(&url) {
+                Ok(()) => playback_title,
+                Err(e) => format!("Could not start embedded playback: {e}"),
+            },
+            Err(e) => match engine.load(&fallback_url) {
+                Ok(()) => playback_title,
+                Err(load_err) => {
+                    format!("Could not resolve original stream: {e}; fallback failed: {load_err}")
+                }
+            },
+        };
+        let _ = weak.upgrade_in_event_loop(move |app| {
+            app.set_player_title(message.into());
+            app.window().request_redraw();
+        });
+    });
+}
+
+fn set_playlist_model(app: &AppWindow, queue: &[PlaybackQueueItem], current_index: usize) {
+    let rows = queue
+        .iter()
+        .map(|item| PlayerPlaylistItem {
+            file_id: item.file_id.to_string().into(),
+            title: item.title.as_str().into(),
+            meta: item.meta.as_str().into(),
+        })
+        .collect::<Vec<_>>();
+    app.set_player_playlist_items(ModelRc::from(Rc::new(VecModel::from(rows))));
+    if let Some(current) = queue.get(current_index) {
+        app.set_player_playlist_current_id(current.file_id.to_string().into());
+    }
 }
 
 fn reset_player_state(app: &AppWindow) {
