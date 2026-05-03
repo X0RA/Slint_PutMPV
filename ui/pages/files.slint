@@ -361,7 +361,7 @@ component DetailPanel inherits Rectangle {
     }
 }
 
-export component FilesPage inherits Rectangle {
+export component FilesPage inherits FocusScope {
     in property <[FileItem]> items;
     in property <[PathSegment]> path_segments;
     in property <bool> has_parent;
@@ -387,7 +387,25 @@ export component FilesPage inherits Rectangle {
     callback menu_action(action: string, id: int);
     callback play_item(id: int);
 
-    background: Theme.bg;
+    focus-on-click: true;
+    focus-on-tab-navigation: false;
+
+    init => {
+        root.focus();
+    }
+
+    KeyBinding {
+        keys: @keys(Control + K);
+        activated => {
+            files_search.focus_input();
+        }
+    }
+
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: Theme.bg;
+    }
 
     private property <length> page_padding: self.width >= 980px ? 32px : 20px;
     private property <bool> detail_docked: self.width >= 1220px;
