@@ -3,6 +3,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap};
 use std::rc::Rc;
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, RwLock};
 
 use slint::{ComponentHandle, VecModel};
@@ -72,6 +73,62 @@ pub(crate) enum MetadataFetchCandidate {
         title: String,
         episodes: Vec<EpisodeRefByFileID>,
     },
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct MetadataFetchSummary {
+    pub total: usize,
+    pub matched_movies: usize,
+    pub matched_episodes: usize,
+    pub misses: usize,
+    pub errors: Vec<String>,
+}
+
+impl MetadataFetchSummary {
+    pub(crate) fn metadata_status(&self) -> String {
+        let mut message = format!(
+            "Fetched {} item{}: matched {} movie{} and {} episode{}.",
+            self.total,
+            if self.total == 1 { "" } else { "s" },
+            self.matched_movies,
+            if self.matched_movies == 1 { "" } else { "s" },
+            self.matched_episodes,
+            if self.matched_episodes == 1 { "" } else { "s" }
+        );
+        if self.misses > 0 {
+            message.push_str(&format!(" {} had no automatic match.", self.misses));
+        }
+        if !self.errors.is_empty() {
+            message.push_str(&format!(
+                " {} error{}.",
+                self.errors.len(),
+                if self.errors.len() == 1 { "" } else { "s" }
+            ));
+            if let Some(first) = self.errors.first() {
+                message.push_str(&format!(" First: {first}"));
+            }
+        }
+        message
+    }
+
+    pub(crate) fn media_success_text(&self) -> String {
+        format!(
+            "Matched {} movie{} and {} episode{}{}.",
+            self.matched_movies,
+            if self.matched_movies == 1 { "" } else { "s" },
+            self.matched_episodes,
+            if self.matched_episodes == 1 { "" } else { "s" },
+            if self.misses > 0 {
+                format!(" ({} unresolved)", self.misses)
+            } else {
+                String::new()
+            }
+        )
+    }
+
+    pub(crate) fn had_success(&self) -> bool {
+        self.matched_movies > 0 || self.matched_episodes > 0
+    }
 }
 
 #[derive(Debug, Default)]
@@ -264,18 +321,15 @@ pub(crate) fn build_unmatched_candidates_from_tree(
         }
     }
     for show in lib.shows.values() {
-        let all_episodes: Vec<_> = show
+        let unmatched_episodes: Vec<_> = show
             .seasons
             .values()
             .flat_map(|s| s.episodes.iter())
             .filter(|ep| existing_ids.contains(&ep.file_id))
+            .filter(|ep| !matched.tv.contains_key(&ep.file_id))
             .collect();
-        if !all_episodes
-            .iter()
-            .any(|ep| matched.tv.contains_key(&ep.file_id))
-            && !all_episodes.is_empty()
-        {
-            let episodes = all_episodes
+        if !unmatched_episodes.is_empty() {
+            let episodes = unmatched_episodes
                 .iter()
                 .map(|ep| EpisodeRefByFileID {
                     file_id: ep.file_id.clone(),
@@ -449,6 +503,66 @@ pub(crate) async fn match_show_metadata(
     outcome
 }
 
+pub(crate) async fn fetch_metadata_candidates(
+    candidates: Vec<MetadataFetchCandidate>,
+    metadata_api: Arc<metadata::MetadataAPI>,
+    tmdb_api: Arc<metadata::TMDBAPI>,
+    tvmaze_api: Arc<metadata::TVMazeAPI>,
+) -> MetadataFetchSummary {
+    let mut summary = MetadataFetchSummary {
+        total: candidates.len(),
+        ..MetadataFetchSummary::default()
+    };
+
+    for candidate in candidates {
+        match candidate {
+            MetadataFetchCandidate::Movie {
+                file_id,
+                title,
+                year,
+            } => {
+                let query = if year > 0 {
+                    format!("{title} {year}")
+                } else {
+                    title.clone()
+                };
+                match tmdb_api.search_movie(&query, 1).await {
+                    Ok(results) => {
+                        if let Some(result) = results.first() {
+                            let _ = metadata_api.seed_movies(&[result.id]).await;
+                            let item = MatchItemByFileID {
+                                file_id,
+                                kind: "movie".to_string(),
+                                tmdb_id: result.id,
+                                source: "tmdb".to_string(),
+                            };
+                            match metadata_api.bulk_store_matches_by_file_id(&[item]) {
+                                Ok(()) => summary.matched_movies += 1,
+                                Err(e) => summary.errors.push(format!("{title}: {e}")),
+                            }
+                        } else {
+                            summary.misses += 1;
+                        }
+                    }
+                    Err(e) => summary.errors.push(format!("{title}: {e}")),
+                }
+            }
+            MetadataFetchCandidate::Show { title, episodes } => {
+                let outcome =
+                    match_show_metadata(&title, &episodes, &metadata_api, &tmdb_api, &tvmaze_api)
+                        .await;
+                summary.matched_episodes += outcome.matched_episodes;
+                if outcome.missed {
+                    summary.misses += 1;
+                }
+                summary.errors.extend(outcome.errors);
+            }
+        }
+    }
+
+    summary
+}
+
 pub(crate) fn refresh_metadata_ui(
     app: &AppWindow,
     model: &Rc<VecModel<MetadataItem>>,
@@ -544,6 +658,10 @@ pub(crate) fn install(
 ) {
     let weak = app.as_weak();
     let metadata_state = state.metadata_state.clone();
+    let tree = state.tree.clone();
+    let auto_metadata_attempted = state.auto_metadata_attempted.clone();
+    let auto_metadata_fetching = state.auto_metadata_fetching.clone();
+    let matched_store = services.matched_store.clone();
     let metadata_api = services.metadata_api.clone();
     let tmdb_api = services.tmdb_api.clone();
     let tvmaze_api = services.tvmaze_api.clone();
@@ -616,81 +734,23 @@ pub(crate) fn install(
                 return;
             }
             app.set_metadata_busy(true);
-            app.set_metadata_status(format!("Fetching metadata for {} selected item{}...", candidates.len(), if candidates.len() == 1 { "" } else { "s" }).into());
+            app.set_metadata_status(
+                format!(
+                    "Fetching metadata for {} selected item{}...",
+                    candidates.len(),
+                    if candidates.len() == 1 { "" } else { "s" }
+                )
+                .into(),
+            );
 
             let weak = weak.clone();
             let metadata_api = metadata_api.clone();
             let tmdb_api = tmdb_api.clone();
             let tvmaze_api = tvmaze_api.clone();
             rt.spawn(async move {
-                let total = candidates.len();
-                let mut matched_movies = 0usize;
-                let mut matched_episodes = 0usize;
-                let mut misses = 0usize;
-                let mut errors = Vec::<String>::new();
-
-                for candidate in candidates {
-                    match candidate {
-                        MetadataFetchCandidate::Movie { file_id, title, year } => {
-                            let query = if year > 0 {
-                                format!("{title} {year}")
-                            } else {
-                                title.clone()
-                            };
-                            match tmdb_api.search_movie(&query, 1).await {
-                                Ok(results) => {
-                                    if let Some(result) = results.first() {
-                                        let _ = metadata_api.seed_movies(&[result.id]).await;
-                                        let item = MatchItemByFileID {
-                                            file_id,
-                                            kind: "movie".to_string(),
-                                            tmdb_id: result.id,
-                                            source: "tmdb".to_string(),
-                                        };
-                                        match metadata_api.bulk_store_matches_by_file_id(&[item]) {
-                                            Ok(()) => matched_movies += 1,
-                                            Err(e) => errors.push(format!("{title}: {e}")),
-                                        }
-                                    } else {
-                                        misses += 1;
-                                    }
-                                }
-                                Err(e) => errors.push(format!("{title}: {e}")),
-                            }
-                        }
-                        MetadataFetchCandidate::Show { title, episodes } => {
-                            let outcome = match_show_metadata(
-                                &title,
-                                &episodes,
-                                &metadata_api,
-                                &tmdb_api,
-                                &tvmaze_api,
-                            )
-                            .await;
-                            matched_episodes += outcome.matched_episodes;
-                            if outcome.missed {
-                                misses += 1;
-                            }
-                            errors.extend(outcome.errors);
-                        }
-                    }
-                }
-
-                let mut message = format!(
-                    "Fetched {total} item{}: matched {matched_movies} movie{} and {matched_episodes} episode{}.",
-                    if total == 1 { "" } else { "s" },
-                    if matched_movies == 1 { "" } else { "s" },
-                    if matched_episodes == 1 { "" } else { "s" }
-                );
-                if misses > 0 {
-                    message.push_str(&format!(" {misses} had no automatic match."));
-                }
-                if !errors.is_empty() {
-                    message.push_str(&format!(" {} error{}.", errors.len(), if errors.len() == 1 { "" } else { "s" }));
-                    if let Some(first) = errors.first() {
-                        message.push_str(&format!(" First: {first}"));
-                    }
-                }
+                let summary =
+                    fetch_metadata_candidates(candidates, metadata_api, tmdb_api, tvmaze_api).await;
+                let message = summary.metadata_status();
 
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     app.set_metadata_busy(false);
@@ -706,5 +766,102 @@ pub(crate) fn install(
     app.on_metadata_criteria_changed({
         let refresh = metadata_refresh.clone();
         move || refresh()
+    });
+
+    app.on_auto_metadata_fetch_after_refresh({
+        let weak = weak.clone();
+        let tree = tree.clone();
+        let matched_store = matched_store.clone();
+        let attempted = auto_metadata_attempted.clone();
+        let fetching = auto_metadata_fetching.clone();
+        let metadata_api = metadata_api.clone();
+        let tmdb_api = tmdb_api.clone();
+        let tvmaze_api = tvmaze_api.clone();
+        let rt = rt.clone();
+        move || {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            if !app.get_auto_metadata_fetch_enabled() || app.get_metadata_busy() {
+                return;
+            }
+            if fetching.swap(true, Ordering::Relaxed) {
+                return;
+            }
+
+            let raw_candidates = {
+                let tree_guard = tree.read().unwrap();
+                let matched = matched_store.get_matched_snapshot().unwrap_or_default();
+                build_unmatched_candidates_from_tree(&tree_guard, &matched)
+            };
+
+            let mut attempted_guard = attempted.borrow_mut();
+            let mut candidates = Vec::new();
+            for candidate in raw_candidates {
+                match candidate {
+                    MetadataFetchCandidate::Movie {
+                        file_id,
+                        title,
+                        year,
+                    } => {
+                        if attempted_guard.insert(file_id.clone()) {
+                            candidates.push(MetadataFetchCandidate::Movie {
+                                file_id,
+                                title,
+                                year,
+                            });
+                        }
+                    }
+                    MetadataFetchCandidate::Show { title, episodes } => {
+                        let fresh_episodes = episodes
+                            .into_iter()
+                            .filter(|ep| attempted_guard.insert(ep.file_id.clone()))
+                            .collect::<Vec<_>>();
+                        if !fresh_episodes.is_empty() {
+                            candidates.push(MetadataFetchCandidate::Show {
+                                title,
+                                episodes: fresh_episodes,
+                            });
+                        }
+                    }
+                }
+            }
+            drop(attempted_guard);
+
+            if candidates.is_empty() {
+                fetching.store(false, Ordering::Relaxed);
+                return;
+            }
+
+            app.set_metadata_status(
+                format!(
+                    "Automatically fetching metadata for {} unmatched item{}...",
+                    candidates.len(),
+                    if candidates.len() == 1 { "" } else { "s" }
+                )
+                .into(),
+            );
+
+            let weak = weak.clone();
+            let fetching = fetching.clone();
+            let metadata_api = metadata_api.clone();
+            let tmdb_api = tmdb_api.clone();
+            let tvmaze_api = tvmaze_api.clone();
+            rt.spawn(async move {
+                let summary =
+                    fetch_metadata_candidates(candidates, metadata_api, tmdb_api, tvmaze_api).await;
+                let message = format!(
+                    "Automatic metadata fetch complete. {}",
+                    summary.metadata_status()
+                );
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    app.set_metadata_status(message.into());
+                    app.invoke_metadata_criteria_changed();
+                    app.invoke_settings_refresh();
+                    app.invoke_media_refresh();
+                });
+                fetching.store(false, Ordering::Relaxed);
+            });
+        }
     });
 }

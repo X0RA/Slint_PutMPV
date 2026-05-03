@@ -30,6 +30,8 @@ pub struct ConfigFile {
     pub files_sort: i32,
     #[serde(default = "default_files_sort_descending")]
     pub files_sort_descending: bool,
+    #[serde(default)]
+    pub auto_metadata_fetch: bool,
 }
 
 fn default_client_id() -> u32 {
@@ -68,6 +70,7 @@ impl ConfigStore {
                     files_mode: 0,
                     files_sort: 0,
                     files_sort_descending: true,
+                    auto_metadata_fetch: false,
                 };
                 write_atomic(&path, &c)?;
                 c
@@ -201,11 +204,22 @@ impl ConfigStore {
         write_atomic(&self.path, &*guard)
     }
 
+    pub fn auto_metadata_fetch(&self) -> bool {
+        self.inner.lock().unwrap().auto_metadata_fetch
+    }
+
+    pub fn set_auto_metadata_fetch(&self, enabled: bool) -> Result<()> {
+        let mut guard = self.inner.lock().unwrap();
+        guard.auto_metadata_fetch = enabled;
+        write_atomic(&self.path, &*guard)
+    }
+
     pub fn reset_to_defaults(&self) -> Result<()> {
         let mut guard = self.inner.lock().unwrap();
         *guard = ConfigFile {
             put_client_id: DEFAULT_PUT_CLIENT_ID,
             files_sort_descending: true,
+            auto_metadata_fetch: false,
             ..ConfigFile::default()
         };
         write_atomic(&self.path, &*guard)

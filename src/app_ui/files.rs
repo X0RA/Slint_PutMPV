@@ -543,6 +543,7 @@ pub(crate) fn install(
                         let _ = weak.upgrade_in_event_loop(|app| {
                             app.invoke_request_refresh();
                             app.invoke_metadata_criteria_changed();
+                            app.invoke_auto_metadata_fetch_after_refresh();
                         });
                     }
                     Err(e) => warn!("manual tree refresh failed: {e}"),

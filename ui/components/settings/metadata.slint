@@ -349,6 +349,69 @@ component MovieRow inherits Rectangle {
     }
 }
 
+component CheckToggle inherits Rectangle {
+    in property <bool> checked: false;
+    callback clicked();
+
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    border-width: 1.5px;
+    border-color: checked ? Theme.accent : Theme.border_hi;
+    background: checked ? Theme.accent : transparent;
+
+    if (root.checked) : Icon {
+        x: 4px;
+        y: 4px;
+        name: "check";
+        icon_size: 10px;
+        tint: Theme.bg;
+    }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component AutoFetchRow inherits Rectangle {
+    in property <bool> enabled: false;
+    callback toggled(bool);
+
+    height: 42px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.surface;
+
+    CheckToggle {
+        x: 14px;
+        y: (parent.height - self.height) / 2;
+        checked: root.enabled;
+        clicked => { root.toggled(!root.enabled); }
+    }
+
+    Text {
+        x: 44px;
+        y: 0px;
+        width: parent.width - 58px;
+        height: parent.height;
+        text: "Automatically fetch metadata for newly discovered unmatched files";
+        color: Theme.text_dim;
+        font-size: 12px;
+        font-weight: 500;
+        font-family: Theme.ui_font;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    TouchArea {
+        x: 38px;
+        width: parent.width - 38px;
+        height: parent.height;
+        clicked => { root.toggled(!root.enabled); }
+    }
+}
+
 export component MetadataSettingsPanel inherits Rectangle {
     in property <[MetadataItem]> items;
     in property <int> total_count: 0;
@@ -358,6 +421,7 @@ export component MetadataSettingsPanel inherits Rectangle {
     in property <int> movie_count: 0;
     in property <string> status: "";
     in property <bool> busy: false;
+    in property <bool> auto_fetch_enabled: false;
     in-out property <string> query;
     in-out property <int> filter_index;
     in-out property <bool> hide_matched;
@@ -367,11 +431,12 @@ export component MetadataSettingsPanel inherits Rectangle {
     callback select_unmatched();
     callback clear_selection();
     callback fetch_metadata();
+    callback auto_fetch_changed(bool);
 
     background: Theme.bg;
 
     private property <length> page_padding: self.width >= 980px ? 32px : 20px;
-    private property <length> header_bottom: 154px;
+    private property <length> header_bottom: 206px;
     private property <bool> tv_open: true;
     private property <bool> movie_open: true;
 
@@ -438,7 +503,7 @@ export component MetadataSettingsPanel inherits Rectangle {
 
     toolbar := Rectangle {
         x: page_padding;
-        y: 96px;
+        y: 148px;
         width: parent.width - page_padding * 2;
         height: 34px;
         background: transparent;
@@ -515,6 +580,14 @@ export component MetadataSettingsPanel inherits Rectangle {
             clicked => { root.fetch_metadata(); }
         }
 
+    }
+
+    AutoFetchRow {
+        x: page_padding;
+        y: 92px;
+        width: parent.width - page_padding * 2;
+        enabled: root.auto_fetch_enabled;
+        toggled(enabled) => { root.auto_fetch_changed(enabled); }
     }
 
     content := ScrollView {

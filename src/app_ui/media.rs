@@ -10,7 +10,6 @@ use tokio::runtime::Runtime;
 use tracing::warn;
 
 use crate::fileparser;
-use crate::metadata;
 use crate::metadata::tmdb::{MovieDetails, TVSeasonDetails, TVSeriesDetails};
 use crate::putio::types::DirectoryNode;
 use crate::storage::file_state::FileStateStore;
@@ -18,9 +17,7 @@ use crate::storage::matched_store::MatchedStore;
 use crate::storage::tmdb_store::TMDBStore;
 use crate::{AppWindow, MediaItem};
 
-use super::metadata_ui::{
-    build_unmatched_candidates_from_tree, match_show_metadata, MetadataFetchCandidate,
-};
+use super::metadata_ui::{build_unmatched_candidates_from_tree, fetch_metadata_candidates};
 use super::models::UiModels;
 use super::state::UiState;
 use super::util::{format_runtime, make_initials, truncate_id};
@@ -52,7 +49,12 @@ fn poster_cache_path_hd(poster_path: &str) -> Option<std::path::PathBuf> {
     if filename.is_empty() {
         return None;
     }
-    Some(crate::storage::poster_cache_dir().ok()?.join("hd").join(filename))
+    Some(
+        crate::storage::poster_cache_dir()
+            .ok()?
+            .join("hd")
+            .join(filename),
+    )
 }
 
 pub(crate) fn load_cached_poster(poster_path: &str) -> Option<slint::Image> {
@@ -122,7 +124,10 @@ pub(crate) async fn download_backdrop_hd(poster_path: String) {
                     let _ = std::fs::create_dir_all(parent);
                 }
                 if let Err(e) = std::fs::write(&cache_path, &bytes) {
-                    warn!("Failed to write HD backdrop cache {}: {e}", cache_path.display());
+                    warn!(
+                        "Failed to write HD backdrop cache {}: {e}",
+                        cache_path.display()
+                    );
                 }
             }
             Err(e) => warn!("Failed to read HD backdrop bytes for {poster_path}: {e}"),
@@ -504,75 +509,12 @@ pub(crate) fn install(
             let tmdb_api = tmdb_api.clone();
             let tvmaze_api = tvmaze_api.clone();
             rt.spawn(async move {
-                let mut matched_movies = 0usize;
-                let mut matched_episodes = 0usize;
-                let mut misses = 0usize;
-                let mut errors = Vec::<String>::new();
-                for candidate in candidates {
-                    match candidate {
-                        MetadataFetchCandidate::Movie {
-                            file_id,
-                            title,
-                            year,
-                        } => {
-                            let query = if year > 0 {
-                                format!("{title} {year}")
-                            } else {
-                                title.clone()
-                            };
-                            match tmdb_api.search_movie(&query, 1).await {
-                                Ok(results) => {
-                                    if let Some(result) = results.first() {
-                                        let _ = metadata_api.seed_movies(&[result.id]).await;
-                                        let item = metadata::api::MatchItemByFileID {
-                                            file_id,
-                                            kind: "movie".to_string(),
-                                            tmdb_id: result.id,
-                                            source: "tmdb".to_string(),
-                                        };
-                                        match metadata_api.bulk_store_matches_by_file_id(&[item]) {
-                                            Ok(()) => matched_movies += 1,
-                                            Err(e) => errors.push(format!("{title}: {e}")),
-                                        }
-                                    } else {
-                                        misses += 1;
-                                    }
-                                }
-                                Err(e) => errors.push(format!("{title}: {e}")),
-                            }
-                        }
-                        MetadataFetchCandidate::Show { title, episodes } => {
-                            let outcome = match_show_metadata(
-                                &title,
-                                &episodes,
-                                &metadata_api,
-                                &tmdb_api,
-                                &tvmaze_api,
-                            )
-                            .await;
-                            matched_episodes += outcome.matched_episodes;
-                            if outcome.missed {
-                                misses += 1;
-                            }
-                            errors.extend(outcome.errors);
-                        }
-                    }
-                }
-                let success_text = format!(
-                    "Matched {} movie{} and {} episode{}{}.",
-                    matched_movies,
-                    if matched_movies == 1 { "" } else { "s" },
-                    matched_episodes,
-                    if matched_episodes == 1 { "" } else { "s" },
-                    if misses > 0 {
-                        format!(" ({misses} unresolved)")
-                    } else {
-                        String::new()
-                    }
-                );
-                let error_text = errors.first().map(|e| e.clone()).unwrap_or_default();
-                let had_success = matched_movies > 0 || matched_episodes > 0;
-                let had_errors = !errors.is_empty();
+                let summary =
+                    fetch_metadata_candidates(candidates, metadata_api, tmdb_api, tvmaze_api).await;
+                let success_text = summary.media_success_text();
+                let error_text = summary.errors.first().cloned().unwrap_or_default();
+                let had_success = summary.had_success();
+                let had_errors = !summary.errors.is_empty();
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     if had_success {
                         app.set_media_show_success_flash(true);

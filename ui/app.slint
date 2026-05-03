@@ -51,6 +51,7 @@ export component AppWindow inherits Window {
     in-out property <int> metadata_movie_count: 0;
     in-out property <string> metadata_status;
     in-out property <bool> metadata_busy: false;
+    in-out property <bool> auto_metadata_fetch_enabled: false;
     in-out property <int> settings_section: 0;
     in-out property <string> tmdb_local_key;
     in-out property <string> tmdb_putio_key;
@@ -140,6 +141,8 @@ export component AppWindow inherits Window {
     callback metadata_clear_selection();
     callback metadata_fetch();
     callback metadata_criteria_changed();
+    callback auto_metadata_fetch_changed(bool);
+    callback auto_metadata_fetch_after_refresh();
     callback request_refresh();
     callback settings_refresh();
     callback tmdb_source_changed(source: int);
@@ -400,6 +403,7 @@ export component AppWindow inherits Window {
         metadata_movie_count: root.metadata_movie_count;
         metadata_status: root.metadata_status;
         metadata_busy: root.metadata_busy;
+        auto_metadata_fetch_enabled: root.auto_metadata_fetch_enabled;
         settings_refresh => { root.settings_refresh(); }
         tmdb_source_changed(source) => { root.tmdb_source_changed(source); }
         tmdb_save_local => { root.tmdb_save_local(); }
@@ -420,5 +424,6 @@ export component AppWindow inherits Window {
         metadata_clear_selection => { root.metadata_clear_selection(); }
         metadata_fetch => { root.metadata_fetch(); }
         metadata_criteria_changed => { root.metadata_criteria_changed(); }
+        auto_metadata_fetch_changed(enabled) => { root.auto_metadata_fetch_changed(enabled); }
     }
 }

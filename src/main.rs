@@ -48,6 +48,7 @@ fn main() -> Result<()> {
     app.set_files_mode(config.files_mode());
     app.set_files_sort(config.files_sort());
     app.set_files_sort_descending(config.files_sort_descending());
+    app.set_auto_metadata_fetch_enabled(config.auto_metadata_fetch());
     app.set_view(app_ui::VIEW_LOADING);
     app.set_loading_message("Checking sign-in…".into());
 

@@ -54,6 +54,7 @@ pub(crate) fn install(
             app.set_tmdb_local_key(local_key.into());
             app.set_tmdb_putio_key(putio_key.into());
             app.set_tmdb_source(tmdb_source);
+            app.set_auto_metadata_fetch_enabled(config.auto_metadata_fetch());
 
             let profiles = sync_profiles.read().unwrap();
             let labels = profiles
@@ -255,6 +256,22 @@ pub(crate) fn install(
                     app.invoke_settings_refresh();
                 });
             });
+        }
+    });
+
+    app.on_auto_metadata_fetch_changed({
+        let weak = weak.clone();
+        let cfg = config.clone();
+        move |enabled| {
+            if let Some(app) = weak.upgrade() {
+                app.set_auto_metadata_fetch_enabled(enabled);
+            }
+            if let Err(e) = cfg.set_auto_metadata_fetch(enabled) {
+                warn!("save automatic metadata preference: {e}");
+            }
+            if let Some(app) = weak.upgrade() {
+                app.invoke_settings_refresh();
+            }
         }
     });
 

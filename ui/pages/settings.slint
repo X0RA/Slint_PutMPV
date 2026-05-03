@@ -149,6 +149,7 @@ export component SettingsPage inherits Rectangle {
     in property <int> metadata_movie_count: 0;
     in property <string> metadata_status: "";
     in property <bool> metadata_busy: false;
+    in property <bool> auto_metadata_fetch_enabled: false;
     in-out property <string> metadata_query;
     in-out property <int> metadata_filter_index;
     in-out property <bool> metadata_hide_matched;
@@ -173,6 +174,7 @@ export component SettingsPage inherits Rectangle {
     callback metadata_select_unmatched();
     callback metadata_clear_selection();
     callback metadata_fetch();
+    callback auto_metadata_fetch_changed(bool);
 
     background: Theme.bg;
 
@@ -228,12 +230,14 @@ export component SettingsPage inherits Rectangle {
         movie_count: root.metadata_movie_count;
         status: root.metadata_status;
         busy: root.metadata_busy;
+        auto_fetch_enabled: root.auto_metadata_fetch_enabled;
         toggle_item(id) => { root.metadata_toggle_item(id); }
         toggle_expand(id) => { root.metadata_toggle_expand(id); }
         select_unmatched => { root.metadata_select_unmatched(); }
         clear_selection => { root.metadata_clear_selection(); }
         fetch_metadata => { root.metadata_fetch(); }
         criteria_changed => { root.metadata_criteria_changed(); }
+        auto_fetch_changed(enabled) => { root.auto_metadata_fetch_changed(enabled); }
     }
 
     content := ScrollView {
