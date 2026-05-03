@@ -157,6 +157,7 @@ impl EmbeddedPlayer {
             }
             if let Some(app) = weak.upgrade() {
                 app.set_player_playlist_current_id("".into());
+                set_playlist_nav_state(&app, 0, None);
                 app.set_player_playlist_items(ModelRc::from(Rc::new(VecModel::from(
                     Vec::<PlayerPlaylistItem>::new(),
                 ))));
@@ -462,6 +463,9 @@ fn register_callbacks(
     let weak = app.as_weak();
     let engine_for_playlist = engine.clone();
     let playlist_state = playback_state.clone();
+    let play_client = client.clone();
+    let play_config = config.clone();
+    let play_rt = rt.clone();
     app.on_player_playlist_play(move |file_id| {
         let Ok(file_id) = file_id.as_str().parse::<u64>() else {
             return;
@@ -483,6 +487,55 @@ fn register_callbacks(
                 &app,
                 engine_for_playlist.clone(),
                 playlist_state.clone(),
+                play_client.clone(),
+                play_config.clone(),
+                play_rt.clone(),
+                player_view,
+                item,
+                idx,
+            );
+        }
+    });
+
+    let weak = app.as_weak();
+    let engine_for_playlist_previous = engine.clone();
+    let previous_state = playback_state.clone();
+    let previous_client = client.clone();
+    let previous_config = config.clone();
+    let previous_rt = rt.clone();
+    app.on_player_playlist_previous(move || {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        let item = adjacent_queue_item(&previous_state, -1);
+        if let Some((idx, item)) = item {
+            start_queue_item(
+                &app,
+                engine_for_playlist_previous.clone(),
+                previous_state.clone(),
+                previous_client.clone(),
+                previous_config.clone(),
+                previous_rt.clone(),
+                player_view,
+                item,
+                idx,
+            );
+        }
+    });
+
+    let weak = app.as_weak();
+    let engine_for_playlist_next = engine.clone();
+    let next_state = playback_state.clone();
+    app.on_player_playlist_next(move || {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        let item = adjacent_queue_item(&next_state, 1);
+        if let Some((idx, item)) = item {
+            start_queue_item(
+                &app,
+                engine_for_playlist_next.clone(),
+                next_state.clone(),
                 client.clone(),
                 config.clone(),
                 rt.clone(),
@@ -545,6 +598,8 @@ fn start_queue_item(
     }
 
     app.set_player_playlist_current_id(item.file_id.to_string().into());
+    let queue_len = playback_state.lock().unwrap().queue.len();
+    set_playlist_nav_state(app, queue_len, Some(index));
     app.set_player_title(format!("Opening {}...", item.title).into());
     reset_player_state(app);
     if let Err(e) = engine.set_sub_visibility(true) {
@@ -588,6 +643,24 @@ fn set_playlist_model(app: &AppWindow, queue: &[PlaybackQueueItem], current_inde
     if let Some(current) = queue.get(current_index) {
         app.set_player_playlist_current_id(current.file_id.to_string().into());
     }
+    set_playlist_nav_state(app, queue.len(), Some(current_index));
+}
+
+fn set_playlist_nav_state(app: &AppWindow, queue_len: usize, current_index: Option<usize>) {
+    let has_previous = current_index.is_some_and(|idx| idx > 0 && idx < queue_len);
+    let has_next = current_index.is_some_and(|idx| idx + 1 < queue_len);
+    app.set_player_playlist_has_previous(has_previous);
+    app.set_player_playlist_has_next(has_next);
+}
+
+fn adjacent_queue_item(
+    playback_state: &Arc<Mutex<PlayerPlaybackState>>,
+    offset: isize,
+) -> Option<(usize, PlaybackQueueItem)> {
+    let state = playback_state.lock().unwrap();
+    let current = state.current_index?;
+    let next = current.checked_add_signed(offset)?;
+    state.queue.get(next).cloned().map(|item| (next, item))
 }
 
 fn reset_player_state(app: &AppWindow) {

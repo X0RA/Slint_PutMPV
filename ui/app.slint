@@ -82,6 +82,8 @@ export component AppWindow inherits Window {
     in-out property <string> player_selected_audio: "";
     in-out property <[PlayerPlaylistItem]> player_playlist_items;
     in-out property <string> player_playlist_current_id: "";
+    in-out property <bool> player_playlist_has_previous: false;
+    in-out property <bool> player_playlist_has_next: false;
     in-out property <string> player_subtitle_text: "";
     in-out property <int> player_subtitle_render_mode: 0;
     in-out property <bool> player_fullscreen: false;
@@ -167,6 +169,8 @@ export component AppWindow inherits Window {
     callback player_subtitle_render_mode_changed(mode: int);
     callback player_select_audio(track_id: string);
     callback player_playlist_play(file_id: string);
+    callback player_playlist_previous();
+    callback player_playlist_next();
     callback player_toggle_fullscreen();
     callback player_exit_fullscreen();
     callback local_data_clear(index: int);
@@ -361,6 +365,8 @@ export component AppWindow inherits Window {
         selected_audio <=> root.player_selected_audio;
         playlist_items <=> root.player_playlist_items;
         playlist_current_id <=> root.player_playlist_current_id;
+        playlist_has_previous <=> root.player_playlist_has_previous;
+        playlist_has_next <=> root.player_playlist_has_next;
         subtitle_text <=> root.player_subtitle_text;
         subtitle_render_mode <=> root.player_subtitle_render_mode;
         fullscreen <=> root.player_fullscreen;
@@ -374,6 +380,8 @@ export component AppWindow inherits Window {
         subtitle_render_mode_changed(mode) => { root.player_subtitle_render_mode_changed(mode); }
         select_audio(track_id) => { root.player_select_audio(track_id); }
         playlist_play(file_id) => { root.player_playlist_play(file_id); }
+        playlist_previous => { root.player_playlist_previous(); }
+        playlist_next => { root.player_playlist_next(); }
         toggle_fullscreen => { root.player_toggle_fullscreen(); }
         exit_fullscreen => { root.player_exit_fullscreen(); }
     }

@@ -20,6 +20,8 @@ export component PlayerControlsBar inherits Rectangle {
     in-out property <int> subtitle_render_mode: 0;
     in property <[PlayerTrack]> audio_tracks;
     in-out property <string> selected_audio: "";
+    in property <bool> playlist_has_previous: false;
+    in property <bool> playlist_has_next: false;
     callback toggle_play();
     callback seek(seconds: float);
     callback set_volume(volume: float);
@@ -28,6 +30,8 @@ export component PlayerControlsBar inherits Rectangle {
     callback toggle_captions();
     callback subtitle_render_mode_changed(mode: int);
     callback select_audio(track_id: string);
+    callback playlist_previous();
+    callback playlist_next();
     callback toggle_fullscreen();
     callback toggle_playlist();
 
@@ -94,13 +98,20 @@ export component PlayerControlsBar inherits Rectangle {
             x: 0px;
             y: 5px;
             icon_name: "skip-back";
-            clicked => { root.close_menus(); }
+            enabled: root.playlist_has_previous;
+            clicked => {
+                root.close_menus();
+                root.playlist_previous();
+            }
         }
         PlayerIconButton {
             x: 40px;
             y: 5px;
-            icon_name: "rewind";
-            clicked => { root.close_menus(); }
+            icon_name: "rw_10_seconds";
+            clicked => {
+                root.close_menus();
+                root.seek(max(0, root.position - 10));
+            }
         }
         PlayerIconButton {
             x: 92px;
@@ -115,14 +126,21 @@ export component PlayerControlsBar inherits Rectangle {
         PlayerIconButton {
             x: 144px;
             y: 5px;
-            icon_name: "fast-forward";
-            clicked => { root.close_menus(); }
+            icon_name: "ff_10_seconds";
+            clicked => {
+                root.close_menus();
+                root.seek(root.duration > 0 ? min(root.duration, root.position + 10) : root.position + 10);
+            }
         }
         PlayerIconButton {
             x: 184px;
             y: 5px;
             icon_name: "skip-forward";
-            clicked => { root.close_menus(); }
+            enabled: root.playlist_has_next;
+            clicked => {
+                root.close_menus();
+                root.playlist_next();
+            }
         }
     }
 
