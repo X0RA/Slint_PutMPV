@@ -4,14 +4,14 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
-use crate::metadata::tmdb::{Episode, TVSeasonDetails, TVSeriesDetails, TvEpisodeAirRef};
+use crate::metadata::tmdb::{Episode, TVSeasonDetails, TVSeriesDetails};
 use slint::{ComponentHandle, VecModel};
 use tokio::runtime::Runtime;
 
 use crate::putio::types::UnifiedDirectoryTree;
 use crate::storage::matched_store::MatchedStore;
 use crate::storage::tmdb_store::{CacheEntry, TMDBStore};
-use crate::{AppWindow, TvCreatorChip, TvEpisodeCredit, TvEpisodeRow, TvHeroBadge, TvSeasonTab};
+use crate::{AppWindow, TvDetailItem, TvEpisodeCredit, TvEpisodeRow, TvHeroBadge, TvSeasonTab};
 
 use super::media::{collect_tree_file_ids, download_posters, load_cached_poster};
 use super::models::UiModels;
@@ -36,14 +36,6 @@ pub(crate) fn load_tv_season_details_from_sub(
     None
 }
 
-fn tv_creator_initial(name: &str) -> String {
-    name.trim()
-        .chars()
-        .next()
-        .map(|c| c.to_uppercase().collect::<String>())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "?".to_string())
-}
 
 fn tv_status_badge_label(status: &str) -> Option<String> {
     if status.is_empty() {
@@ -77,36 +69,6 @@ fn tv_status_detail_label(status: &str) -> String {
     }
 }
 
-fn tv_episode_air_label(ep: &TvEpisodeAirRef) -> String {
-    let s = ep.season_number;
-    let e = ep.episode_number;
-    let t = ep.name.trim();
-    if t.is_empty() {
-        format!("S{s}E{e}")
-    } else {
-        format!("S{s}E{e} • {t}")
-    }
-}
-
-fn tv_detail_air_line(prefix: &str, ep: &TvEpisodeAirRef) -> String {
-    let label = tv_episode_air_label(ep);
-    let date = tv_format_air_date(&ep.air_date);
-    if date.is_empty() {
-        format!("{prefix} · {label}")
-    } else {
-        format!("{prefix} · {label} · {date}")
-    }
-}
-
-fn tv_format_air_date(iso: &str) -> String {
-    if iso.len() >= 10 {
-        iso[..10].replace('-', " · ")
-    } else if iso.is_empty() {
-        String::new()
-    } else {
-        iso.to_string()
-    }
-}
 
 fn format_us_long_date(iso: &str) -> String {
     const MONTHS: [&str; 12] = [
@@ -276,9 +238,7 @@ pub(crate) fn refresh_tv_show_ui(
     tv_seasons_model: &Rc<VecModel<TvSeasonTab>>,
     tv_episodes_model: &Rc<VecModel<TvEpisodeRow>>,
     tv_hero_badges_model: &Rc<VecModel<TvHeroBadge>>,
-    tv_hero_creators_model: &Rc<VecModel<TvCreatorChip>>,
-    tv_detail_lines_model: &Rc<VecModel<slint::SharedString>>,
-    tv_networks_model: &Rc<VecModel<slint::SharedString>>,
+    tv_detail_items_model: &Rc<VecModel<TvDetailItem>>,
     rt: &Arc<Runtime>,
 ) {
     use std::collections::HashSet;
@@ -305,19 +265,11 @@ pub(crate) fn refresh_tv_show_ui(
         tv_seasons_model.set_vec(vec![]);
         tv_episodes_model.set_vec(vec![]);
         tv_hero_badges_model.set_vec(vec![]);
-        tv_hero_creators_model.set_vec(vec![]);
-        tv_detail_lines_model.set_vec(vec![]);
-        tv_networks_model.set_vec(vec![]);
+        tv_detail_items_model.set_vec(vec![]);
         app.set_tv_show_has_hero_badges(false);
-        app.set_tv_show_has_creators(false);
-        app.set_tv_show_show_credits_strip(false);
         app.set_tv_show_series_details_visible(false);
-        app.set_tv_show_locale_spoken("".into());
-        app.set_tv_show_locale_origin("".into());
-        app.set_tv_show_original_title("".into());
-        app.set_tv_show_air_last("".into());
-        app.set_tv_show_air_next("".into());
         app.set_tv_show_stats_line("".into());
+        app.set_tv_show_first_file_id("".into());
         app.set_tv_show_title("Show not in cache".into());
         app.set_tv_show_overview("".into());
         return;
@@ -333,19 +285,11 @@ pub(crate) fn refresh_tv_show_ui(
             tv_seasons_model.set_vec(vec![]);
             tv_episodes_model.set_vec(vec![]);
             tv_hero_badges_model.set_vec(vec![]);
-            tv_hero_creators_model.set_vec(vec![]);
-            tv_detail_lines_model.set_vec(vec![]);
-            tv_networks_model.set_vec(vec![]);
+            tv_detail_items_model.set_vec(vec![]);
             app.set_tv_show_has_hero_badges(false);
-            app.set_tv_show_has_creators(false);
-            app.set_tv_show_show_credits_strip(false);
             app.set_tv_show_series_details_visible(false);
-            app.set_tv_show_locale_spoken("".into());
-            app.set_tv_show_locale_origin("".into());
-            app.set_tv_show_original_title("".into());
-            app.set_tv_show_air_last("".into());
-            app.set_tv_show_air_next("".into());
             app.set_tv_show_stats_line("".into());
+            app.set_tv_show_first_file_id("".into());
             app.set_tv_show_title("Details unavailable".into());
             return;
         };
@@ -355,19 +299,11 @@ pub(crate) fn refresh_tv_show_ui(
                 tv_seasons_model.set_vec(vec![]);
                 tv_episodes_model.set_vec(vec![]);
                 tv_hero_badges_model.set_vec(vec![]);
-                tv_hero_creators_model.set_vec(vec![]);
-                tv_detail_lines_model.set_vec(vec![]);
-                tv_networks_model.set_vec(vec![]);
+                tv_detail_items_model.set_vec(vec![]);
                 app.set_tv_show_has_hero_badges(false);
-                app.set_tv_show_has_creators(false);
-                app.set_tv_show_show_credits_strip(false);
                 app.set_tv_show_series_details_visible(false);
-                app.set_tv_show_locale_spoken("".into());
-                app.set_tv_show_locale_origin("".into());
-                app.set_tv_show_original_title("".into());
-                app.set_tv_show_air_last("".into());
-                app.set_tv_show_air_next("".into());
                 app.set_tv_show_stats_line("".into());
+                app.set_tv_show_first_file_id("".into());
                 app.set_tv_show_title("Details unavailable".into());
                 return;
             }
@@ -481,32 +417,7 @@ pub(crate) fn refresh_tv_show_ui(
     tv_hero_badges_model.set_vec(hero_badges.clone());
     app.set_tv_show_has_hero_badges(!hero_badges.is_empty());
 
-    let mut creator_chips: Vec<TvCreatorChip> = Vec::new();
-    let mut missing_profiles: Vec<String> = Vec::new();
-    for p in details.created_by.iter().take(2) {
-        let initial = tv_creator_initial(&p.name);
-        let photo = if !p.profile_path.is_empty() {
-            match load_cached_poster(&p.profile_path) {
-                Some(img) => img,
-                None => {
-                    missing_profiles.push(p.profile_path.clone());
-                    Default::default()
-                }
-            }
-        } else {
-            Default::default()
-        };
-        creator_chips.push(TvCreatorChip {
-            name: p.name.as_str().into(),
-            initial: initial.as_str().into(),
-            photo,
-        });
-    }
-    tv_hero_creators_model.set_vec(creator_chips);
-    let has_creators = !details.created_by.is_empty();
-    app.set_tv_show_has_creators(has_creators);
-    let show_credits = has_creators || !stats_line.is_empty();
-    app.set_tv_show_show_credits_strip(show_credits);
+    let missing_profiles: Vec<String> = Vec::new();
     app.set_tv_show_title(details.name.as_str().into());
     app.set_tv_show_tagline(details.tagline.as_str().into());
     app.set_tv_show_rating_label(rating_label.as_str().into());
@@ -528,134 +439,87 @@ pub(crate) fn refresh_tv_show_ui(
     app.set_tv_show_hero_poster(hero_poster);
     app.set_tv_show_series_id(series_id);
 
-    let mut detail_lines: Vec<slint::SharedString> = Vec::new();
-    let push_detail = |lines: &mut Vec<slint::SharedString>, label: &str, value: &str| {
-        let v = value.trim();
+    // Build exactly 12 detail_items (6 per row) so columns stay aligned.
+    // Empty label+value acts as a transparent spacer in the grid.
+    let slot = |label: &str, value: String| -> TvDetailItem {
+        let v = value.trim().to_string();
         if v.is_empty() || v == "—" {
-            return;
+            TvDetailItem { label: "".into(), value: "".into() }
+        } else {
+            TvDetailItem { label: label.into(), value: v.into() }
         }
-        lines.push(format!("{label} · {v}").into());
     };
 
-    if details.vote_average > 0.0 {
+    // Row 1: Rating · Type · Status · Avg. runtime · Seasons · Episodes
+    let rating_val = if details.vote_average > 0.0 {
         let mut r = format!("{:.1}/10", details.vote_average);
-        if details.vote_count > 0 {
-            r.push_str(&format!(" ({})", details.vote_count));
-        }
-        push_detail(&mut detail_lines, "Rating", &r);
-    }
+        if details.vote_count > 0 { r.push_str(&format!(" ({})", details.vote_count)); }
+        r
+    } else { String::new() };
 
     let type_s = if !details.series_type.trim().is_empty() {
         details.series_type.trim().to_string()
-    } else if details.number_of_seasons <= 1
-        && details.number_of_episodes <= 20
+    } else if details.number_of_seasons <= 1 && details.number_of_episodes <= 20
         && details.number_of_episodes > 0
     {
         "Miniseries".to_string()
     } else {
         "Series".to_string()
     };
-    push_detail(&mut detail_lines, "Type", &type_s);
 
-    if !details.status.is_empty() {
-        push_detail(
-            &mut detail_lines,
-            "Status",
-            &tv_status_detail_label(&details.status),
-        );
-    }
-
-    if !details.episode_run_time.is_empty() {
+    let runtime_val = if !details.episode_run_time.is_empty() {
         let sum: i32 = details.episode_run_time.iter().sum();
         let n = details.episode_run_time.len() as i32;
         let avg = ((f64::from(sum)) / (f64::from(n))).round() as i32;
-        push_detail(&mut detail_lines, "Avg. runtime", &format!("{avg}m"));
-    }
+        format!("{avg}m")
+    } else { String::new() };
 
-    if details.number_of_seasons > 0 {
-        push_detail(
-            &mut detail_lines,
-            "Seasons",
-            &format!("{}", details.number_of_seasons),
-        );
-    }
-    if details.number_of_episodes > 0 {
-        push_detail(
-            &mut detail_lines,
-            "Episodes",
-            &format!("{}", details.number_of_episodes),
-        );
-    }
-    if details.popularity > 0.0 {
-        push_detail(
-            &mut detail_lines,
-            "Popularity",
-            &format!("{:.1}", details.popularity),
-        );
-    }
+    let seasons_val = if details.number_of_seasons > 0 {
+        format!("{}", details.number_of_seasons)
+    } else { String::new() };
 
-    let lang_disp = tv_original_language_display(&details);
-    if !lang_disp.is_empty() {
-        push_detail(&mut detail_lines, "Language", &lang_disp);
-    }
+    let episodes_val = if details.number_of_episodes > 0 {
+        format!("{}", details.number_of_episodes)
+    } else { String::new() };
 
-    if !details.first_air_date.is_empty() {
-        push_detail(
-            &mut detail_lines,
-            "First aired",
-            &details.first_air_date.replace('-', " · "),
-        );
-    }
-
+    // Row 2: Spoken · Origin · Original · Popularity · Language · Networks
     let locale_spoken = tv_spoken_names(&details, 3);
     let locale_origin = details.origin_country.join(", ");
-
     let original_title = {
         let on = details.original_name.trim();
         let tn = details.name.trim();
-        if !on.is_empty() && on != tn {
-            on.to_string()
-        } else {
-            String::new()
-        }
+        if !on.is_empty() && on != tn { on.to_string() } else { String::new() }
     };
-
-    let nets: Vec<slint::SharedString> = details
+    let popularity_val = if details.popularity > 0.0 {
+        format!("{:.1}", details.popularity)
+    } else { String::new() };
+    let lang_disp = tv_original_language_display(&details);
+    let nets_label: String = details
         .networks
         .iter()
         .filter(|n| !n.name.trim().is_empty())
-        .take(5)
-        .map(|n| n.name.as_str().into())
-        .collect();
+        .take(3)
+        .map(|n| n.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ");
 
-    let air_last = details
-        .last_episode_to_air
-        .as_ref()
-        .map(|e| tv_detail_air_line("Last aired", e))
-        .unwrap_or_default();
-    let air_next = details
-        .next_episode_to_air
-        .as_ref()
-        .map(|e| tv_detail_air_line("Next", e))
-        .unwrap_or_default();
+    let detail_items = vec![
+        slot("Rating",       rating_val),
+        slot("Type",         type_s),
+        slot("Status",       tv_status_detail_label(&details.status)),
+        slot("Avg. runtime", runtime_val),
+        slot("Seasons",      seasons_val),
+        slot("Episodes",     episodes_val),
+        slot("Spoken",       locale_spoken),
+        slot("Origin",       locale_origin),
+        slot("Original",     original_title),
+        slot("Popularity",   popularity_val),
+        slot("Language",     lang_disp),
+        slot("Networks",     nets_label),
+    ];
 
-    tv_detail_lines_model.set_vec(detail_lines.clone());
-    tv_networks_model.set_vec(nets);
-
-    app.set_tv_show_locale_spoken(locale_spoken.as_str().into());
-    app.set_tv_show_locale_origin(locale_origin.as_str().into());
-    app.set_tv_show_original_title(original_title.as_str().into());
-    app.set_tv_show_air_last(air_last.as_str().into());
-    app.set_tv_show_air_next(air_next.as_str().into());
-
-    let has_detail_lines = !detail_lines.is_empty();
-    let show_series_details = has_detail_lines
-        || !locale_spoken.is_empty()
-        || !locale_origin.is_empty()
-        || !original_title.is_empty()
-        || !details.networks.is_empty()
-        || !air_last.is_empty()
-        || !air_next.is_empty();
+    let show_series_details = detail_items.iter().any(|i| !i.value.is_empty());
+    tv_detail_items_model.set_vec(detail_items);
     app.set_tv_show_series_details_visible(show_series_details);
 
     let sel_sn = tabs.get(idx).map(|t| t.season_number);
@@ -740,6 +604,11 @@ pub(crate) fn refresh_tv_show_ui(
         }
     }
     ep_rows.sort_by_key(|r| r.ep_num);
+    let first_file_id = ep_rows
+        .first()
+        .map(|r| r.file_id.to_string())
+        .unwrap_or_default();
+    app.set_tv_show_first_file_id(first_file_id.as_str().into());
     tv_episodes_model.set_vec(ep_rows);
 
     let mut missing_fetch = Vec::new();
@@ -796,9 +665,7 @@ pub(crate) fn install(
         let tv_show_seasons_model = models.tv_seasons.clone();
         let tv_show_episodes_model = models.tv_episodes.clone();
         let tv_show_hero_badges_model = models.tv_hero_badges.clone();
-        let tv_show_hero_creators_model = models.tv_hero_creators.clone();
-        let tv_show_detail_lines_model = models.tv_detail_lines.clone();
-        let tv_show_networks_model = models.tv_networks.clone();
+        let tv_show_detail_items_model = models.tv_detail_items.clone();
         let rt = rt.clone();
         move |idx| {
             let Some(app) = weak.upgrade() else {
@@ -818,9 +685,7 @@ pub(crate) fn install(
                 &tv_show_seasons_model,
                 &tv_show_episodes_model,
                 &tv_show_hero_badges_model,
-                &tv_show_hero_creators_model,
-                &tv_show_detail_lines_model,
-                &tv_show_networks_model,
+                &tv_show_detail_items_model,
                 &rt,
             );
         }

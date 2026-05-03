@@ -392,9 +392,7 @@ pub(crate) fn install(
         let tv_show_seasons_model = models.tv_seasons.clone();
         let tv_show_episodes_model = models.tv_episodes.clone();
         let tv_show_hero_badges_model = models.tv_hero_badges.clone();
-        let tv_show_hero_creators_model = models.tv_hero_creators.clone();
-        let tv_show_detail_lines_model = models.tv_detail_lines.clone();
-        let tv_show_networks_model = models.tv_networks.clone();
+        let tv_show_detail_items_model = models.tv_detail_items.clone();
         let rt = rt.clone();
         move |file_id| {
             let Some(app) = weak.upgrade() else {
@@ -417,9 +415,7 @@ pub(crate) fn install(
                         &tv_show_seasons_model,
                         &tv_show_episodes_model,
                         &tv_show_hero_badges_model,
-                        &tv_show_hero_creators_model,
-                        &tv_show_detail_lines_model,
-                        &tv_show_networks_model,
+                        &tv_show_detail_items_model,
                         &rt,
                     );
                     app.set_view(VIEW_TV_SHOW);

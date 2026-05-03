@@ -5,7 +5,7 @@ use std::rc::Rc;
 use slint::{ModelRc, VecModel};
 
 use crate::{
-    AppWindow, FileItem, MediaItem, MetadataItem, PathSegment, TvCreatorChip, TvEpisodeRow,
+    AppWindow, FileItem, MediaItem, MetadataItem, PathSegment, TvDetailItem, TvEpisodeRow,
     TvHeroBadge, TvSeasonTab,
 };
 
@@ -18,9 +18,7 @@ pub(crate) struct UiModels {
     pub tv_seasons: Rc<VecModel<TvSeasonTab>>,
     pub tv_episodes: Rc<VecModel<TvEpisodeRow>>,
     pub tv_hero_badges: Rc<VecModel<TvHeroBadge>>,
-    pub tv_hero_creators: Rc<VecModel<TvCreatorChip>>,
-    pub tv_detail_lines: Rc<VecModel<slint::SharedString>>,
-    pub tv_networks: Rc<VecModel<slint::SharedString>>,
+    pub tv_detail_items: Rc<VecModel<TvDetailItem>>,
 }
 
 impl UiModels {
@@ -33,9 +31,7 @@ impl UiModels {
         let tv_seasons = Rc::new(VecModel::from(Vec::<TvSeasonTab>::new()));
         let tv_episodes = Rc::new(VecModel::from(Vec::<TvEpisodeRow>::new()));
         let tv_hero_badges = Rc::new(VecModel::from(Vec::<TvHeroBadge>::new()));
-        let tv_hero_creators = Rc::new(VecModel::from(Vec::<TvCreatorChip>::new()));
-        let tv_detail_lines = Rc::new(VecModel::from(Vec::<slint::SharedString>::new()));
-        let tv_networks = Rc::new(VecModel::from(Vec::<slint::SharedString>::new()));
+        let tv_detail_items = Rc::new(VecModel::from(Vec::<TvDetailItem>::new()));
 
         app.set_visible_items(ModelRc::from(visible.clone()));
         app.set_path_segments(ModelRc::from(path.clone()));
@@ -45,9 +41,7 @@ impl UiModels {
         app.set_tv_show_seasons(ModelRc::from(tv_seasons.clone()));
         app.set_tv_show_episodes(ModelRc::from(tv_episodes.clone()));
         app.set_tv_show_hero_badges(ModelRc::from(tv_hero_badges.clone()));
-        app.set_tv_show_hero_creators(ModelRc::from(tv_hero_creators.clone()));
-        app.set_tv_show_detail_lines(ModelRc::from(tv_detail_lines.clone()));
-        app.set_tv_show_networks(ModelRc::from(tv_networks.clone()));
+        app.set_tv_show_detail_items(ModelRc::from(tv_detail_items.clone()));
 
         Self {
             visible,
@@ -58,9 +52,7 @@ impl UiModels {
             tv_seasons,
             tv_episodes,
             tv_hero_badges,
-            tv_hero_creators,
-            tv_detail_lines,
-            tv_networks,
+            tv_detail_items,
         }
     }
 }
