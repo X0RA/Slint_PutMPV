@@ -471,40 +471,34 @@ export component TvShowPage inherits Rectangle {
                             spacing: 10px;
                             width: parent.width;
 
-                            HorizontalLayout {
+                            if root.detail_lines.length > 0 : HorizontalLayout {
                                 spacing: 18px;
                                 width: parent.width;
 
-                                for line[idx] in root.detail_lines: Rectangle {
-                                    horizontal-stretch: idx < 4 ? 1 : 0;
-                                    if idx < 4: DetailDlCell {
-                                        line: line;
-                                    }
-                                }
+                                DetailDlCell { line: root.detail_lines[0]; }
+                                if root.detail_lines.length > 1 : DetailDlCell { line: root.detail_lines[1]; }
+                                if root.detail_lines.length > 2 : DetailDlCell { line: root.detail_lines[2]; }
+                                if root.detail_lines.length > 3 : DetailDlCell { line: root.detail_lines[3]; }
                             }
 
-                            HorizontalLayout {
+                            if root.detail_lines.length > 4 : HorizontalLayout {
                                 spacing: 18px;
                                 width: parent.width;
 
-                                for line[idx] in root.detail_lines: Rectangle {
-                                    horizontal-stretch: idx >= 4 && idx < 8 ? 1 : 0;
-                                    if idx >= 4 && idx < 8: DetailDlCell {
-                                        line: line;
-                                    }
-                                }
+                                DetailDlCell { line: root.detail_lines[4]; }
+                                if root.detail_lines.length > 5 : DetailDlCell { line: root.detail_lines[5]; }
+                                if root.detail_lines.length > 6 : DetailDlCell { line: root.detail_lines[6]; }
+                                if root.detail_lines.length > 7 : DetailDlCell { line: root.detail_lines[7]; }
                             }
 
-                            HorizontalLayout {
+                            if root.detail_lines.length > 8 : HorizontalLayout {
                                 spacing: 18px;
                                 width: parent.width;
 
-                                for line[idx] in root.detail_lines: Rectangle {
-                                    horizontal-stretch: idx >= 8 && idx < 12 ? 1 : 0;
-                                    if idx >= 8 && idx < 12: DetailDlCell {
-                                        line: line;
-                                    }
-                                }
+                                DetailDlCell { line: root.detail_lines[8]; }
+                                if root.detail_lines.length > 9 : DetailDlCell { line: root.detail_lines[9]; }
+                                if root.detail_lines.length > 10 : DetailDlCell { line: root.detail_lines[10]; }
+                                if root.detail_lines.length > 11 : DetailDlCell { line: root.detail_lines[11]; }
                             }
                         }
 
