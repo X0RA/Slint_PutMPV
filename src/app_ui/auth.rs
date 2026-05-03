@@ -1,0 +1,310 @@
+//! OAuth device flow state and startup / sign-in callbacks.
+
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, RwLock};
+
+use slint::ComponentHandle;
+use tokio::runtime::Runtime;
+use tracing::{error, info, warn};
+
+use crate::putio::types::UnifiedDirectoryTree;
+use crate::putio::{self, oauth, PutioClient};
+use crate::storage::config::ConfigStore;
+use crate::storage::files_store::FilesStore;
+use crate::AppWindow;
+
+use super::state::{OauthFlow, UiState};
+use super::{Services, VIEW_CODE, VIEW_FILES, VIEW_LOADING, VIEW_SPLASH};
+
+struct AuthenticatedSessionRefresh {
+    weak: slint::Weak<AppWindow>,
+    cfg: Arc<ConfigStore>,
+    files_store: Arc<FilesStore>,
+    client: PutioClient,
+    tree: Arc<RwLock<UnifiedDirectoryTree>>,
+    sync_profiles: Arc<RwLock<Vec<putio::sync::SyncProfile>>>,
+    token: String,
+    tree_success_log: Option<&'static str>,
+    tree_error_log: &'static str,
+}
+
+impl AuthenticatedSessionRefresh {
+    async fn run(self) {
+        let _ = self.weak.upgrade_in_event_loop(|app| {
+            app.set_view(VIEW_FILES);
+            app.invoke_request_refresh();
+        });
+
+        match putio::config_kv::get(&self.client, &self.token, putio::config_kv::TMDB_KEY).await {
+            Ok(value) => {
+                let _ = self.cfg.set_tmdb_putio_key(&value);
+            }
+            Err(e) => warn!("refresh put.io TMDB key failed: {e}"),
+        }
+
+        match putio::sync::list_profiles(&self.client, &self.token, &self.cfg).await {
+            Ok(profiles) => {
+                *self.sync_profiles.write().unwrap() = profiles;
+            }
+            Err(e) => warn!("list sync profiles failed: {e}"),
+        }
+
+        let _ = self.weak.upgrade_in_event_loop(|app| {
+            app.invoke_settings_refresh();
+        });
+
+        match putio::files::build_tree(self.client, self.token).await {
+            Ok(new_tree) => {
+                if let Some(message) = self.tree_success_log {
+                    info!(
+                        "{message}: {} folders, {} files",
+                        new_tree.total_folders, new_tree.total_files
+                    );
+                }
+                if let Err(e) = self.files_store.write_tree(&new_tree) {
+                    error!("write tree: {e}");
+                }
+                *self.tree.write().unwrap() = new_tree;
+                let _ = self.weak.upgrade_in_event_loop(|app| {
+                    app.invoke_request_refresh();
+                    app.invoke_metadata_criteria_changed();
+                });
+            }
+            Err(e) => error!("{}: {e}", self.tree_error_log),
+        }
+    }
+}
+
+pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt: &Arc<Runtime>) {
+    let weak = app.as_weak();
+    let client = services.client.clone();
+    let cfg = services.config.clone();
+    let oauth_flow = state.oauth_flow.clone();
+    let tree = state.tree.clone();
+    let files_store = services.files_store.clone();
+    let sync_profiles = state.sync_profiles.clone();
+
+    app.on_sign_in({
+        let weak = weak.clone();
+        let client = client.clone();
+        let cfg = cfg.clone();
+        let rt = rt.clone();
+        let oauth_flow = oauth_flow.clone();
+        let tree = tree.clone();
+        let files_store = files_store.clone();
+        let sync_profiles = sync_profiles.clone();
+        move || {
+            if let Some(app) = weak.upgrade() {
+                app.set_view(VIEW_LOADING);
+                app.set_loading_message("Requesting code…".into());
+                app.set_oauth_error("".into());
+            }
+            let app_id = cfg.put_client_id();
+            let weak_inner = weak.clone();
+            let client = client.clone();
+            let cfg = cfg.clone();
+            let oauth_flow_ref = oauth_flow.clone();
+            let tree = tree.clone();
+            let files_store = files_store.clone();
+            let sync_profiles = sync_profiles.clone();
+            let cancel = Arc::new(AtomicBool::new(false));
+            oauth_flow_ref.borrow_mut().cancel = Some(cancel.clone());
+            rt.spawn(async move {
+                let code = match oauth::get_device_code(&client, app_id).await {
+                    Ok(c) => c,
+                    Err(e) => {
+                        let msg = format!("Could not fetch code: {e}");
+                        error!("{msg}");
+                        let _ = weak_inner.upgrade_in_event_loop(move |app| {
+                            app.set_oauth_error(msg.into());
+                            app.set_view(VIEW_SPLASH);
+                        });
+                        return;
+                    }
+                };
+                let display = code.to_uppercase();
+                let _ = weak_inner.upgrade_in_event_loop(move |app| {
+                    app.set_device_code(display.into());
+                    app.set_device_expires("10:00".into());
+                    app.set_view(VIEW_CODE);
+                });
+
+                loop {
+                    if cancel.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    if cancel.load(Ordering::Relaxed) {
+                        return;
+                    }
+                    match oauth::poll_token(&client, &code).await {
+                        Ok(oauth::PollResult::Pending) => continue,
+                        Ok(oauth::PollResult::Token(token)) => {
+                            if let Err(e) = cfg.set_oauth_token(&token) {
+                                error!("save token: {e}");
+                            }
+                            AuthenticatedSessionRefresh {
+                                weak: weak_inner.clone(),
+                                cfg,
+                                files_store,
+                                client: client.clone(),
+                                tree,
+                                sync_profiles,
+                                token,
+                                tree_success_log: None,
+                                tree_error_log: "initial tree build failed",
+                            }
+                            .run()
+                            .await;
+                            return;
+                        }
+                        Err(e) => {
+                            let msg = format!("OAuth error: {e}");
+                            error!("{msg}");
+                            let _ = weak_inner.upgrade_in_event_loop(move |app| {
+                                app.set_oauth_error(msg.into());
+                                app.set_view(VIEW_SPLASH);
+                            });
+                            return;
+                        }
+                    }
+                }
+            });
+        }
+    });
+
+    app.on_code_back({
+        let weak = weak.clone();
+        let oauth_flow = oauth_flow.clone();
+        move || {
+            if let Some(c) = oauth_flow.borrow().cancel.clone() {
+                c.store(true, Ordering::Relaxed);
+            }
+            *oauth_flow.borrow_mut() = OauthFlow::default();
+            if let Some(app) = weak.upgrade() {
+                app.set_view(VIEW_SPLASH);
+            }
+        }
+    });
+
+    app.on_code_open_link({
+        let weak = weak.clone();
+        move || {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            let code = app.get_device_code().to_string();
+            let url = if code.is_empty() {
+                "https://app.put.io/link".to_string()
+            } else {
+                format!("https://app.put.io/link?code={code}")
+            };
+            if let Err(e) = open::that(&url) {
+                warn!("could not open browser: {e}");
+            }
+        }
+    });
+
+    app.on_code_copy({
+        let weak = weak.clone();
+        move || {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            let code = app.get_device_code().to_string();
+            if code.is_empty() {
+                return;
+            }
+            match arboard::Clipboard::new() {
+                Ok(mut cb) => {
+                    if let Err(e) = cb.set_text(code) {
+                        warn!("clipboard write failed: {e}");
+                    }
+                }
+                Err(e) => warn!("clipboard init failed: {e}"),
+            }
+        }
+    });
+
+    app.on_code_continue({
+        let weak = weak.clone();
+        move || {
+            if let Some(app) = weak.upgrade() {
+                app.set_view(VIEW_FILES);
+            }
+        }
+    });
+
+    let path_stack_logout = state.path_stack.clone();
+    let current_folder_logout = state.current_folder.clone();
+    app.on_logout({
+        let weak = weak.clone();
+        let cfg = cfg.clone();
+        let tree = tree.clone();
+        let path_stack = path_stack_logout.clone();
+        let current_folder = current_folder_logout.clone();
+        move || {
+            if let Err(e) = cfg.clear_oauth_token() {
+                warn!("clear token: {e}");
+            }
+            *tree.write().unwrap() = UnifiedDirectoryTree::default();
+            *current_folder.borrow_mut() = 0;
+            *path_stack.borrow_mut() = vec![(0u64, "put.io".to_string())];
+            if let Some(app) = weak.upgrade() {
+                app.set_view(VIEW_SPLASH);
+                app.invoke_request_refresh();
+            }
+        }
+    });
+}
+
+/// OAuth token check and background tree refresh after UI is wired.
+pub(crate) fn run_startup(
+    app: &AppWindow,
+    services: &Services,
+    state: &UiState,
+    rt: &Arc<Runtime>,
+) {
+    let weak = app.as_weak();
+    let cfg = services.config.clone();
+    let files_store = services.files_store.clone();
+    let client = services.client.clone();
+    let tree = state.tree.clone();
+    let token = services.config.oauth_token();
+    let sync_profiles = state.sync_profiles.clone();
+
+    if token.is_empty() {
+        app.set_view(VIEW_SPLASH);
+    } else {
+        if let Ok(t) = files_store.read_tree() {
+            *tree.write().unwrap() = t;
+        }
+
+        rt.spawn(async move {
+            let valid = oauth::check_token_validity(&client, &token)
+                .await
+                .unwrap_or(false);
+            if !valid {
+                info!("stored token invalid, clearing");
+                let _ = cfg.clear_oauth_token();
+                let _ = weak.upgrade_in_event_loop(|app| {
+                    app.set_view(VIEW_SPLASH);
+                });
+                return;
+            }
+            AuthenticatedSessionRefresh {
+                weak,
+                cfg,
+                files_store,
+                client,
+                tree,
+                sync_profiles,
+                token,
+                tree_success_log: Some("tree refresh done"),
+                tree_error_log: "tree refresh failed",
+            }
+            .run()
+            .await;
+        });
+    }
+}
