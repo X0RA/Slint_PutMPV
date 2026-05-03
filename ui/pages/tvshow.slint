@@ -39,20 +39,19 @@ component DetailColumn inherits Rectangle {
     background: transparent;
 
     VerticalLayout {
-        padding-right: 16px;
         spacing: 12px;
         alignment: start;
 
         VerticalLayout {
             spacing: 3px;
-            Text { text: root.label1; color: Theme.text_mute; font-size: 11px; font-weight: 500; overflow: elide; font-family: Theme.ui_font; }
-            Text { text: root.value1; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; font-family: Theme.ui_font; }
+            Text { text: root.label1; color: Theme.text_mute; font-size: 11px; font-weight: 500; overflow: elide; horizontal-alignment: center; font-family: Theme.ui_font; }
+            Text { text: root.value1; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; horizontal-alignment: center; font-family: Theme.ui_font; }
         }
 
         if root.label2 != "" : VerticalLayout {
             spacing: 3px;
-            Text { text: root.label2; color: Theme.text_mute; font-size: 11px; font-weight: 500; overflow: elide; font-family: Theme.ui_font; }
-            Text { text: root.value2; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; font-family: Theme.ui_font; }
+            Text { text: root.label2; color: Theme.text_mute; font-size: 11px; font-weight: 500; overflow: elide; horizontal-alignment: center; font-family: Theme.ui_font; }
+            Text { text: root.value2; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide; horizontal-alignment: center; font-family: Theme.ui_font; }
         }
     }
 }
@@ -376,39 +375,34 @@ export component TvShowPage inherits Rectangle {
             // ── Series details ────────────────────────────────────────────────
             if root.series_details_visible : VerticalLayout {
                 width: root.width;
-                padding-left: gutter;
-                padding-right: gutter;
                 padding-top: 24px;
                 padding-bottom: 20px;
                 spacing: 14px;
 
-                Text {
-                    text: "Series details";
-                    color: Theme.text;
-                    font-size: 14px;
-                    font-weight: 700;
-                    letter-spacing: -0.2px;
-                    font-family: Theme.ui_font;
-                }
-
-                // 6 paired columns — top item (row 1) + bottom item (row 2) share one slot
+                // 6 paired columns centred across the full window width
                 if root.detail_items.length >= 12 : HorizontalLayout {
-                    spacing: 0px;
-                    width: content-w;
+                    alignment: center;
+                    HorizontalLayout {
+                        spacing: 0px;
+                        width: content-w;
 
-                    DetailColumn { label1: root.detail_items[0].label; value1: root.detail_items[0].value; label2: root.detail_items[6].label; value2: root.detail_items[6].value; }
-                    DetailColumn { label1: root.detail_items[1].label; value1: root.detail_items[1].value; label2: root.detail_items[7].label; value2: root.detail_items[7].value; }
-                    DetailColumn { label1: root.detail_items[2].label; value1: root.detail_items[2].value; label2: root.detail_items[8].label; value2: root.detail_items[8].value; }
-                    DetailColumn { label1: root.detail_items[3].label; value1: root.detail_items[3].value; label2: root.detail_items[9].label; value2: root.detail_items[9].value; }
-                    DetailColumn { label1: root.detail_items[4].label; value1: root.detail_items[4].value; label2: root.detail_items[10].label; value2: root.detail_items[10].value; }
-                    DetailColumn { label1: root.detail_items[5].label; value1: root.detail_items[5].value; label2: root.detail_items[11].label; value2: root.detail_items[11].value; }
+                        DetailColumn { label1: root.detail_items[0].label; value1: root.detail_items[0].value; label2: root.detail_items[6].label; value2: root.detail_items[6].value; }
+                        DetailColumn { label1: root.detail_items[1].label; value1: root.detail_items[1].value; label2: root.detail_items[7].label; value2: root.detail_items[7].value; }
+                        DetailColumn { label1: root.detail_items[2].label; value1: root.detail_items[2].value; label2: root.detail_items[8].label; value2: root.detail_items[8].value; }
+                        DetailColumn { label1: root.detail_items[3].label; value1: root.detail_items[3].value; label2: root.detail_items[9].label; value2: root.detail_items[9].value; }
+                        DetailColumn { label1: root.detail_items[4].label; value1: root.detail_items[4].value; label2: root.detail_items[10].label; value2: root.detail_items[10].value; }
+                        DetailColumn { label1: root.detail_items[5].label; value1: root.detail_items[5].value; label2: root.detail_items[11].label; value2: root.detail_items[11].value; }
+                    }
                 }
 
                 // Divider
-                Rectangle {
-                    width: content-w;
-                    height: 1px;
-                    background: Theme.border;
+                HorizontalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: content-w;
+                        height: 1px;
+                        background: Theme.border;
+                    }
                 }
             }
 
