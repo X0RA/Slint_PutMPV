@@ -1,0 +1,927 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { ButtonChip } from "../components/primitives.slint";
+import { Icon } from "../components/icons.slint";
+import { TvSeasonTab, TvEpisodeRow, TvCreatorChip, TvHeroBadge, TvEpisodeCredit } from "../types.slint";
+
+/// Small avatar for “Created by” (TMDB profile or initial); ~1rem in reference UI.
+component CreatorAvatar inherits Rectangle {
+    in property <string> initial;
+    in property <image> photo;
+    in property <length> avatar-size: 16px;
+
+    width: avatar-size;
+    height: avatar-size;
+    border-radius: self.height / 2;
+    clip: true;
+    background: Theme.surface_hi;
+    border-width: 1px;
+    border-color: Theme.border;
+
+    if photo.width > 0 : Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.photo;
+        image-fit: cover;
+    }
+
+    if photo.width == 0 : Text {
+        width: parent.width;
+        height: parent.height;
+        text: root.initial != "" ? root.initial : "?";
+        color: Theme.text_dim;
+        font-size: 12px;
+        font-weight: 700;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        font-family: Theme.ui_font;
+    }
+}
+
+/// Genre/status chip with intrinsic padding (avoid collapsed/overlapping pills).
+component HeroPill inherits Rectangle {
+    in property <TvHeroBadge> badge;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: badge.style == 1 ? Theme.accent_soft : Theme.surface_hi;
+
+    HorizontalLayout {
+        padding-left: 11px;
+        padding-right: 11px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+
+        Text {
+            text: root.badge.text;
+            color: badge.style == 1 ? Theme.accent_hi : Theme.text_dim;
+            font-size: 11px;
+            font-weight: 600;
+            font-family: Theme.ui_font;
+        }
+    }
+}
+
+/// One cell in the primary series-details grid (single “Label · value” line).
+component DetailDlCell inherits Rectangle {
+    in property <string> line;
+    horizontal-stretch: 1;
+    min-width: 0px;
+    background: transparent;
+
+    Text {
+        width: parent.width;
+        text: root.line;
+        color: Theme.text;
+        font-size: 11px;
+        font-weight: 500;
+        wrap: word-wrap;
+        font-family: Theme.ui_font;
+    }
+}
+
+/// Guest / crew portrait chip on an episode card.
+component EpisodeCreditCard inherits Rectangle {
+    in property <TvEpisodeCredit> credit;
+    width: 78px;
+    background: transparent;
+
+    VerticalLayout {
+        spacing: 5px;
+        alignment: center;
+        width: parent.width;
+
+        Rectangle {
+            width: 48px;
+            height: 56px;
+            border-radius: 7px;
+            clip: true;
+            background: Theme.surface_higher;
+            border-width: 1px;
+            border-color: Theme.border;
+
+            if credit.photo.width > 0 : Image {
+                width: parent.width;
+                height: parent.height;
+                source: credit.photo;
+                image-fit: cover;
+            }
+
+            if credit.photo.width == 0 : Text {
+                width: parent.width;
+                height: parent.height;
+                text: "?";
+                color: Theme.text_mute;
+                font-size: 15px;
+                font-weight: 700;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                font-family: Theme.ui_font;
+            }
+        }
+
+        Text {
+            text: credit.name;
+            color: Theme.text;
+            font-size: 10px;
+            font-weight: 600;
+            wrap: word-wrap;
+            width: parent.width;
+            horizontal-alignment: center;
+            font-family: Theme.ui_font;
+        }
+
+        Text {
+            text: credit.role;
+            color: Theme.text_mute;
+            font-size: 9px;
+            wrap: word-wrap;
+            width: parent.width;
+            horizontal-alignment: center;
+            font-family: Theme.ui_font;
+        }
+    }
+}
+
+export component TvShowPage inherits Rectangle {
+    background: Theme.bg;
+
+    in property <string> title;
+    in property <string> tagline;
+    in property <string> rating_label;
+    in property <string> years_label;
+    in property <string> overview;
+    in property <string> stats_line;
+    in property <[TvCreatorChip]> hero_creators;
+    in property <[TvHeroBadge]> hero_badges;
+    in property <image> backdrop;
+    in property <image> hero_poster;
+    in property <bool> series_details_visible: false;
+    in property <[string]> detail_lines;
+    in property <string> locale_spoken;
+    in property <string> locale_origin;
+    in property <string> original_title;
+    in property <[string]> networks;
+    in property <string> air_last;
+    in property <string> air_next;
+    in property <[TvSeasonTab]> seasons;
+    in-out property <int> selected_season_idx: 0;
+    in property <string> season_block_title;
+    in property <string> season_block_meta;
+    in property <image> season_block_poster;
+    in property <[TvEpisodeRow]> episodes;
+
+    in property <bool> show_credits_strip: false;
+    in property <bool> has_creators: false;
+    in property <bool> has_hero_badges: false;
+
+    callback back_clicked();
+    callback season_changed(int);
+    callback play_episode(string);
+    callback subtitles_clicked(string);
+
+    private property <bool> compact: root.width < 760px;
+    private property <length> gutter: compact ? 16px : 32px;
+    /// Shorter cinematic band (reference UI); not full 16:9 poster height.
+    private property <length> hero-band-h: min(max(root.width * 28 / 100, 260px), 380px);
+    /// Inner column max ~56rem (reference).
+    private property <length> hero-col-w: min(root.width - gutter * 2, 896px);
+    private property <length> overview-max-w: min(768px, hero-col-w);
+
+    ScrollView {
+        width: parent.width;
+        height: parent.height;
+        viewport-width: self.visible-width;
+        viewport-height: max(self.visible-height, content.preferred-height + 24px);
+
+        content := VerticalLayout {
+            width: root.width;
+            spacing: 0px;
+
+            // --- Hero ---
+            Rectangle {
+                width: parent.width;
+                height: hero-band-h;
+                clip: true;
+
+                // Taller image box + vertical center = “middle slice” of backdrop (object-position feel).
+                if backdrop.width > 0 : Image {
+                    width: parent.width;
+                    height: parent.height * 150 / 100;
+                    y: (parent.height - self.height) / 2;
+                    source: root.backdrop;
+                    image-fit: cover;
+                }
+
+                if backdrop.width == 0 : Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    background: @linear-gradient(165deg, Theme.surface_higher 0%, #050508 100%);
+                    if hero_poster.width > 0 : Image {
+                        width: parent.width;
+                        height: parent.height * 150 / 100;
+                        y: (parent.height - self.height) / 2;
+                        source: root.hero_poster;
+                        image-fit: cover;
+                        opacity: 0.35;
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    background: @linear-gradient(90deg, #0a0a10f0 0%, #0a0a10a0 40%, #0a0a1070 100%);
+                }
+
+                Rectangle {
+                    width: parent.width;
+                    height: parent.height;
+                    background: @linear-gradient(180deg, #00000000 0%, #00000055 48%, Theme.bg 100%);
+                }
+
+                VerticalLayout {
+                    width: parent.width;
+                    height: parent.height;
+                    padding-left: gutter;
+                    padding-right: gutter;
+                    padding-bottom: compact ? 16px : 32px;
+                    padding-top: 0px;
+                    alignment: end;
+
+                    VerticalLayout {
+                        spacing: compact ? 12px : 16px;
+                        width: min(hero-col-w, parent.width);
+                        alignment: start;
+
+                        TouchArea {
+                            clicked => {
+                                root.back_clicked();
+                            }
+
+                            Text {
+                                text: "← Back to Media";
+                                color: Theme.accent_hi;
+                                font-size: 12.5px;
+                                font-weight: 600;
+                                font-family: Theme.ui_font;
+                            }
+                        }
+
+                        Text {
+                            text: root.title;
+                            color: Theme.text;
+                            font-size: compact ? 26px : 36px;
+                            font-weight: 700;
+                            letter-spacing: -0.6px;
+                            wrap: word-wrap;
+                            font-family: Theme.ui_font;
+                        }
+
+                        if tagline != "" : Text {
+                            text: root.tagline;
+                            color: Theme.accent;
+                            font-size: compact ? 14px : 16px;
+                            font-weight: 500;
+                            wrap: word-wrap;
+                            font-family: Theme.ui_font;
+                        }
+
+                        HorizontalLayout {
+                            spacing: 20px;
+                            alignment: start;
+
+                            HorizontalLayout {
+                                spacing: 5px;
+                                alignment: center;
+                                Icon {
+                                    name: "star";
+                                    icon_size: 15px;
+                                    tint: Theme.accent;
+                                    y: (parent.height - self.height) / 2;
+                                }
+
+                                Text {
+                                    text: root.rating_label;
+                                    color: Theme.text;
+                                    font-size: compact ? 14px : 15px;
+                                    font-weight: 700;
+                                    font-family: Theme.mono_font;
+                                }
+
+                                Text {
+                                    text: " / 10";
+                                    color: Theme.text_mute;
+                                    font-size: compact ? 14px : 15px;
+                                    font-family: Theme.ui_font;
+                                }
+                            }
+
+                            if years_label != "" : Text {
+                                text: root.years_label;
+                                color: Theme.text_dim;
+                                font-size: compact ? 13px : 14px;
+                                font-weight: 500;
+                                font-family: Theme.ui_font;
+                            }
+                        }
+
+                        if show_credits_strip : VerticalLayout {
+                            spacing: 6px;
+                            alignment: start;
+
+                            if has_creators : HorizontalLayout {
+                                spacing: 8px;
+                                alignment: center;
+
+                                Text {
+                                    text: "Created by";
+                                    color: Theme.text_mute;
+                                    font-size: compact ? 11px : 12px;
+                                    font-weight: 600;
+                                    font-family: Theme.ui_font;
+                                }
+
+                                HorizontalLayout {
+                                    spacing: 4px;
+                                    alignment: center;
+
+                                    for person[idx] in root.hero_creators: HorizontalLayout {
+                                        spacing: 5px;
+                                        alignment: center;
+
+                                        CreatorAvatar {
+                                            initial: person.initial;
+                                            photo: person.photo;
+                                        }
+
+                                        Text {
+                                            text: person.name;
+                                            color: Theme.text;
+                                            font-size: compact ? 11px : 12px;
+                                            font-family: Theme.ui_font;
+                                        }
+
+                                        if idx < root.hero_creators.length - 1 : Text {
+                                            text: ",";
+                                            color: Theme.text_dim;
+                                            font-size: compact ? 11px : 12px;
+                                            font-family: Theme.ui_font;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if stats_line != "" : Text {
+                                text: root.stats_line;
+                                color: Theme.text;
+                                font-size: compact ? 11px : 12px;
+                                font-family: Theme.ui_font;
+                            }
+                        }
+
+                        if overview != "" : Rectangle {
+                            width: min(overview-max-w, parent.width);
+                            background: transparent;
+
+                            Text {
+                                width: parent.width;
+                                text: root.overview;
+                                color: Theme.text_dim;
+                                font-size: compact ? 14px : 15px;
+                                wrap: word-wrap;
+                                font-family: Theme.ui_font;
+                            }
+                        }
+
+                        if has_hero_badges : VerticalLayout {
+                            spacing: 6px;
+                            width: parent.width;
+
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+
+                                for tag[idx] in root.hero_badges: Rectangle {
+                                    if idx < 4: HeroPill {
+                                        badge: tag;
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+
+                                for tag[idx] in root.hero_badges: Rectangle {
+                                    if idx >= 4 && idx < 8: HeroPill {
+                                        badge: tag;
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: 8px;
+                                alignment: start;
+
+                                for tag[idx] in root.hero_badges: Rectangle {
+                                    if idx >= 8 && idx < 12: HeroPill {
+                                        badge: tag;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- Series details ---
+            if root.series_details_visible : VerticalLayout {
+                width: root.width;
+                padding-left: gutter;
+                padding-right: gutter;
+                padding-top: 24px;
+                spacing: 12px;
+
+                Text {
+                    text: "Series details";
+                    color: Theme.text_mute;
+                    font-size: 12px;
+                    font-weight: 600;
+                    letter-spacing: 0.4px;
+                    font-family: Theme.ui_font;
+                }
+
+                Rectangle {
+                    width: root.width - gutter * 2;
+                    background: Theme.surface;
+                    border-radius: Theme.radius_lg;
+                    border-width: 1px;
+                    border-color: Theme.border;
+
+                    VerticalLayout {
+                        padding-top: 12px;
+                        padding-bottom: 16px;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        spacing: 12px;
+
+                        VerticalLayout {
+                            spacing: 8px;
+                            width: parent.width;
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                width: parent.width;
+
+                                for line[idx] in root.detail_lines: Rectangle {
+                                    horizontal-stretch: idx < 4 ? 1 : 0;
+                                    if idx < 4: DetailDlCell {
+                                        line: line;
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                width: parent.width;
+
+                                for line[idx] in root.detail_lines: Rectangle {
+                                    horizontal-stretch: idx >= 4 && idx < 8 ? 1 : 0;
+                                    if idx >= 4 && idx < 8: DetailDlCell {
+                                        line: line;
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                width: parent.width;
+
+                                for line[idx] in root.detail_lines: Rectangle {
+                                    horizontal-stretch: idx >= 8 && idx < 12 ? 1 : 0;
+                                    if idx >= 8 && idx < 12: DetailDlCell {
+                                        line: line;
+                                    }
+                                }
+                            }
+
+                            HorizontalLayout {
+                                spacing: 10px;
+                                width: parent.width;
+
+                                for line[idx] in root.detail_lines: Rectangle {
+                                    horizontal-stretch: idx >= 12 && idx < 16 ? 1 : 0;
+                                    if idx >= 12 && idx < 16: DetailDlCell {
+                                        line: line;
+                                    }
+                                }
+                            }
+                        }
+
+                        if locale_spoken != "" || locale_origin != "" : VerticalLayout {
+                            spacing: 8px;
+
+                            if locale_spoken != "" : HorizontalLayout {
+                                spacing: 8px;
+                                Text {
+                                    text: "Spoken";
+                                    color: Theme.text_mute;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    font-family: Theme.ui_font;
+                                }
+
+                                Text {
+                                    text: root.locale_spoken;
+                                    color: Theme.text;
+                                    font-size: 11px;
+                                    wrap: word-wrap;
+                                    font-family: Theme.ui_font;
+                                }
+                            }
+
+                            if locale_origin != "" : HorizontalLayout {
+                                spacing: 8px;
+                                Text {
+                                    text: "Origin";
+                                    color: Theme.text_mute;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    font-family: Theme.ui_font;
+                                }
+
+                                Text {
+                                    text: root.locale_origin;
+                                    color: Theme.text;
+                                    font-size: 11px;
+                                    wrap: word-wrap;
+                                    font-family: Theme.ui_font;
+                                }
+                            }
+                        }
+
+                        if original_title != "" : HorizontalLayout {
+                            spacing: 8px;
+
+                            Text {
+                                text: "Original";
+                                color: Theme.text_mute;
+                                font-size: 11px;
+                                font-weight: 600;
+                                font-family: Theme.ui_font;
+                            }
+
+                            Text {
+                                text: root.original_title;
+                                color: Theme.text;
+                                font-size: 11px;
+                                font-weight: 500;
+                                wrap: word-wrap;
+                                font-family: Theme.ui_font;
+                            }
+                        }
+
+                        if networks.length > 0 : VerticalLayout {
+                            spacing: 6px;
+
+                            Text {
+                                text: "Networks";
+                                color: Theme.text_mute;
+                                font-size: 11px;
+                                font-weight: 600;
+                                font-family: Theme.ui_font;
+                            }
+
+                            HorizontalLayout {
+                                spacing: 6px;
+                                alignment: start;
+
+                                for net[idx] in root.networks: Rectangle {
+                                    border-radius: 6px;
+                                    background: Theme.surface_hi;
+                                    border-width: 1px;
+                                    border-color: Theme.border;
+
+                                    HorizontalLayout {
+                                        padding-left: 8px;
+                                        padding-right: 8px;
+                                        padding-top: 4px;
+                                        padding-bottom: 4px;
+
+                                        Text {
+                                            text: net;
+                                            color: Theme.text_dim;
+                                            font-size: 10px;
+                                            font-weight: 600;
+                                            font-family: Theme.ui_font;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if air_last != "" || air_next != "" : VerticalLayout {
+                            spacing: 6px;
+
+                            if air_last != "" : Text {
+                                text: root.air_last;
+                                color: Theme.text_dim;
+                                font-size: 11px;
+                                wrap: word-wrap;
+                                font-family: Theme.ui_font;
+                            }
+
+                            if air_next != "" : Text {
+                                text: root.air_next;
+                                color: Theme.text_dim;
+                                font-size: 11px;
+                                wrap: word-wrap;
+                                font-family: Theme.ui_font;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- Seasons & episodes ---
+            VerticalLayout {
+                width: parent.width;
+                padding-left: gutter;
+                padding-right: gutter;
+                padding-top: 28px;
+                padding-bottom: 48px;
+                spacing: 18px;
+
+                Text {
+                    text: "Seasons & Episodes";
+                    color: Theme.text;
+                    font-size: 20px;
+                    font-weight: 600;
+                    letter-spacing: -0.3px;
+                    font-family: Theme.ui_font;
+                }
+
+                HorizontalLayout {
+                    spacing: 8px;
+                    alignment: start;
+
+                    for tab[idx] in root.seasons: ButtonChip {
+                        label: tab.label;
+                        primary: idx == root.selected_season_idx;
+                        clicked => {
+                            root.selected_season_idx = idx;
+                            root.season_changed(idx);
+                        }
+                    }
+                }
+
+                if season_block_title != "" || season_block_meta != "" : Rectangle {
+                    width: parent.width;
+                    background: Theme.surface;
+                    border-radius: Theme.radius_lg;
+                    border-width: 1px;
+                    border-color: Theme.border;
+
+                    HorizontalLayout {
+                        padding: 14px;
+                        spacing: 14px;
+                        alignment: start;
+
+                        Rectangle {
+                            width: 56px;
+                            height: 84px;
+                            border-radius: 6px;
+                            clip: true;
+                            background: Theme.surface_higher;
+                            border-width: 1px;
+                            border-color: Theme.border;
+
+                            if season_block_poster.width > 0 : Image {
+                                width: parent.width;
+                                height: parent.height;
+                                source: root.season_block_poster;
+                                image-fit: cover;
+                            }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 6px;
+                            alignment: start;
+
+                            Text {
+                                text: root.season_block_title;
+                                color: Theme.text;
+                                font-size: 15px;
+                                font-weight: 700;
+                                wrap: word-wrap;
+                                font-family: Theme.ui_font;
+                            }
+
+                            Text {
+                                text: root.season_block_meta;
+                                color: Theme.text_dim;
+                                font-size: 12.5px;
+                                wrap: word-wrap;
+                                font-family: Theme.ui_font;
+                            }
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    width: min(parent.width, root.hero-col-w);
+                    spacing: 12px;
+
+                    for ep[idx] in root.episodes: Rectangle {
+                        width: parent.width;
+                        background: Theme.surface;
+                        border-radius: Theme.radius_lg;
+                        border-width: 1px;
+                        border-color: Theme.border;
+                        clip: true;
+
+                        VerticalLayout {
+                            padding: 14px;
+                            spacing: 14px;
+
+                            HorizontalLayout {
+                                spacing: 14px;
+                                alignment: start;
+
+                                Rectangle {
+                                    width: 120px;
+                                    height: 68px;
+                                    vertical-stretch: 0;
+                                    border-radius: 6px;
+                                    clip: true;
+                                    background: Theme.surface_higher;
+                                    border-width: 1px;
+                                    border-color: Theme.border;
+
+                                    if ep.still.width > 0 : Image {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        source: ep.still;
+                                        image-fit: cover;
+                                    }
+                                }
+
+                                VerticalLayout {
+                                    horizontal-stretch: 1;
+                                    min-width: 0px;
+                                    spacing: 10px;
+                                    alignment: start;
+
+                                    HorizontalLayout {
+                                        spacing: 12px;
+                                        alignment: start;
+
+                                        VerticalLayout {
+                                            horizontal-stretch: 1;
+                                            min-width: 0px;
+                                            spacing: 6px;
+                                            alignment: start;
+
+                                            Text {
+                                                text: ep.ep_num + ". " + ep.title;
+                                                color: Theme.text;
+                                                font-size: 15px;
+                                                font-weight: 700;
+                                                wrap: word-wrap;
+                                                font-family: Theme.ui_font;
+                                            }
+
+                                            HorizontalLayout {
+                                                spacing: 6px;
+                                                alignment: start;
+
+                                                if ep.air_date != "" : Text {
+                                                    color: Theme.text_mute;
+                                                    font-size: 11.5px;
+                                                    font-family: Theme.ui_font;
+                                                    text: ep.air_date;
+                                                }
+
+                                                if ep.air_date != "" && (ep.duration_label != "" || ep.rating_label != "") : Text {
+                                                    color: Theme.text_mute;
+                                                    font-size: 11.5px;
+                                                    font-family: Theme.ui_font;
+                                                    text: "·";
+                                                }
+
+                                                if ep.duration_label != "" : HorizontalLayout {
+                                                    spacing: 4px;
+                                                    alignment: center;
+
+                                                    Icon {
+                                                        name: "clock";
+                                                        icon_size: 11px;
+                                                        tint: Theme.text_mute;
+                                                        y: (parent.height - self.height) / 2;
+                                                    }
+
+                                                    Text {
+                                                        color: Theme.text_mute;
+                                                        font-size: 11.5px;
+                                                        font-family: Theme.ui_font;
+                                                        text: ep.duration_label;
+                                                    }
+                                                }
+
+                                                if ep.duration_label != "" && ep.rating_label != "" : Text {
+                                                    color: Theme.text_mute;
+                                                    font-size: 11.5px;
+                                                    font-family: Theme.ui_font;
+                                                    text: "·";
+                                                }
+
+                                                if ep.rating_label != "" : HorizontalLayout {
+                                                    spacing: 4px;
+                                                    alignment: center;
+
+                                                    Icon {
+                                                        name: "star";
+                                                        icon_size: 11px;
+                                                        tint: Theme.accent;
+                                                        y: (parent.height - self.height) / 2;
+                                                    }
+
+                                                    Text {
+                                                        color: Theme.text_dim;
+                                                        font-size: 11.5px;
+                                                        font-family: Theme.mono_font;
+                                                        text: ep.rating_label;
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        VerticalLayout {
+                                            horizontal-stretch: 0;
+                                            spacing: 8px;
+                                            alignment: end;
+
+                                            if ep.file_id != "" : ButtonChip {
+                                                primary: true;
+                                                label: "Play";
+                                                icon_name: "play";
+                                                clicked => {
+                                                    root.play_episode(ep.file_id);
+                                                }
+                                            }
+
+                                            if ep.file_id != "" : ButtonChip {
+                                                primary: false;
+                                                label: "Subtitles";
+                                                icon_name: "subtitles";
+                                                clicked => {
+                                                    root.subtitles_clicked(ep.file_id);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: ep.overview;
+                                        color: Theme.text_dim;
+                                        font-size: 12.5px;
+                                        wrap: word-wrap;
+                                        font-family: Theme.ui_font;
+                                    }
+                                }
+                            }
+
+                            if ep.credits.length > 0 : VerticalLayout {
+                                spacing: 8px;
+
+                                Text {
+                                    text: "Guest Stars & Crew";
+                                    color: Theme.text_mute;
+                                    font-size: 10px;
+                                    font-weight: 700;
+                                    letter-spacing: 0.6px;
+                                    font-family: Theme.ui_font;
+                                }
+
+                                Flickable {
+                                    height: 120px;
+                                    viewport-width: parent.width;
+
+                                    HorizontalLayout {
+                                        spacing: 10px;
+                                        alignment: start;
+
+                                        for credit[idx] in ep.credits: EpisodeCreditCard {
+                                            credit: credit;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

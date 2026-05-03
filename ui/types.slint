@@ -58,3 +58,38 @@ export struct PlayerTrack {
     name: string,
     detail: string,
 }
+
+export struct TvSeasonTab {
+    season_number: int,
+    label: string,
+}
+
+export struct TvCreatorChip {
+    name: string,
+    initial: string,
+    photo: image,
+}
+
+/// Hero genre/status badges: style 0 = status chip, 1 = in production, 2 = genre outline.
+export struct TvHeroBadge {
+    text: string,
+    style: int,
+}
+
+export struct TvEpisodeCredit {
+    name: string,
+    role: string,
+    photo: image,
+}
+
+export struct TvEpisodeRow {
+    ep_num: int,
+    title: string,
+    air_date: string,
+    duration_label: string,
+    overview: string,
+    rating_label: string,
+    still: image,
+    file_id: string,
+    credits: [TvEpisodeCredit],
+}

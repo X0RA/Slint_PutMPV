@@ -8,8 +8,9 @@ import { FilesPage } from "./pages/files.slint";
 import { MetadataPage } from "./pages/metadata.slint";
 import { SettingsPage } from "./pages/settings.slint";
 import { MediaPage, MediaItem } from "./pages/media.slint";
+import { TvShowPage } from "./pages/tvshow.slint";
 import { PlayerPage } from "./pages/player.slint";
-import { FileItem, MetadataItem, PathSegment, LocalDataRow, PlayerTrack } from "./types.slint";
+import { FileItem, MetadataItem, PathSegment, LocalDataRow, PlayerTrack, TvSeasonTab, TvEpisodeRow, TvCreatorChip, TvHeroBadge } from "./types.slint";
 
 export component AppWindow inherits Window {
     title: "PutMPV";
@@ -106,6 +107,35 @@ export component AppWindow inherits Window {
     in-out property <bool> media_show_success_flash: false;
     in-out property <string> media_success_flash_text;
 
+    in-out property <string> tv_show_title: "";
+    in-out property <string> tv_show_tagline: "";
+    in-out property <string> tv_show_rating_label: "";
+    in-out property <string> tv_show_years_label: "";
+    in-out property <string> tv_show_overview: "";
+    in-out property <string> tv_show_stats_line: "";
+    in-out property <[TvCreatorChip]> tv_show_hero_creators;
+    in-out property <[TvHeroBadge]> tv_show_hero_badges;
+    in-out property <bool> tv_show_show_credits_strip: false;
+    in-out property <bool> tv_show_has_creators: false;
+    in-out property <bool> tv_show_has_hero_badges: false;
+    in-out property <image> tv_show_backdrop;
+    in-out property <image> tv_show_hero_poster;
+    in-out property <bool> tv_show_series_details_visible: false;
+    in-out property <[string]> tv_show_detail_lines;
+    in-out property <string> tv_show_locale_spoken: "";
+    in-out property <string> tv_show_locale_origin: "";
+    in-out property <string> tv_show_original_title: "";
+    in-out property <[string]> tv_show_networks;
+    in-out property <string> tv_show_air_last: "";
+    in-out property <string> tv_show_air_next: "";
+    in-out property <[TvSeasonTab]> tv_show_seasons;
+    in-out property <int> tv_show_season_idx: 0;
+    in-out property <string> tv_show_season_block_title: "";
+    in-out property <string> tv_show_season_block_meta: "";
+    in-out property <image> tv_show_season_block_poster;
+    in-out property <[TvEpisodeRow]> tv_show_episodes;
+    in-out property <int> tv_show_series_id: 0;
+
     callback sign_in();
     callback code_back();
     callback code_open_link();
@@ -164,6 +194,10 @@ export component AppWindow inherits Window {
     callback media_scrape_unmatched();
     callback media_dismiss_error();
     callback media_dismiss_success();
+    callback tv_show_back();
+    callback tv_show_season_changed(int);
+    callback tv_show_play_episode(string);
+    callback tv_show_episode_subtitles(string);
 
     if (root.view != 7) : title-bar := Rectangle {
         x: 0px;
@@ -196,7 +230,7 @@ export component AppWindow inherits Window {
             alignment: end;
 
             TopNavButton { label: "Files"; icon_name: "folder"; active: root.view == 3; clicked => { root.view = 3; } }
-            TopNavButton { label: "Media"; icon_name: "media"; active: root.view == 4; clicked => { root.view = 4; root.media_refresh(); } }
+            TopNavButton { label: "Media"; icon_name: "media"; active: root.view == 4 || root.view == 8; clicked => { root.view = 4; root.media_refresh(); } }
             TopNavButton { label: "Metadata"; icon_name: "metadata"; active: root.view == 5; clicked => { root.view = 5; root.metadata_criteria_changed(); } }
             TopNavButton { label: "Settings"; icon_name: "settings"; active: root.view == 6; clicked => { root.view = 6; root.settings_refresh(); if (root.settings_section == 1) { root.sync_refresh_profiles(); } } }
             Rectangle { width: 13px; Rectangle { x: 6px; y: (parent.height - self.height) / 2; width: 1px; height: 20px; background: Theme.border; } }
@@ -289,6 +323,44 @@ export component AppWindow inherits Window {
         dismiss_error => { root.media_dismiss_error(); }
         dismiss_success => { root.media_dismiss_success(); }
         media_item_clicked(file_id) => { root.media_item_clicked(file_id); }
+    }
+
+    if (root.view == 8) : tvshow := TvShowPage {
+        x: 0px;
+        y: Theme.title_bar_height;
+        width: parent.width;
+        height: parent.height - Theme.title_bar_height;
+        title: root.tv_show_title;
+        tagline: root.tv_show_tagline;
+        rating_label: root.tv_show_rating_label;
+        years_label: root.tv_show_years_label;
+        overview: root.tv_show_overview;
+        stats_line: root.tv_show_stats_line;
+        hero_creators: root.tv_show_hero_creators;
+        hero_badges: root.tv_show_hero_badges;
+        show_credits_strip: root.tv_show_show_credits_strip;
+        has_creators: root.tv_show_has_creators;
+        has_hero_badges: root.tv_show_has_hero_badges;
+        backdrop: root.tv_show_backdrop;
+        hero_poster: root.tv_show_hero_poster;
+        series_details_visible: root.tv_show_series_details_visible;
+        detail_lines: root.tv_show_detail_lines;
+        locale_spoken: root.tv_show_locale_spoken;
+        locale_origin: root.tv_show_locale_origin;
+        original_title: root.tv_show_original_title;
+        networks: root.tv_show_networks;
+        air_last: root.tv_show_air_last;
+        air_next: root.tv_show_air_next;
+        seasons: root.tv_show_seasons;
+        selected_season_idx <=> root.tv_show_season_idx;
+        season_block_title: root.tv_show_season_block_title;
+        season_block_meta: root.tv_show_season_block_meta;
+        season_block_poster: root.tv_show_season_block_poster;
+        episodes: root.tv_show_episodes;
+        back_clicked => { root.tv_show_back(); }
+        season_changed(idx) => { root.tv_show_season_changed(idx); }
+        play_episode(file_id) => { root.tv_show_play_episode(file_id); }
+        subtitles_clicked(file_id) => { root.tv_show_episode_subtitles(file_id); }
     }
 
     if (root.view == 7) : player := PlayerPage {

@@ -297,6 +297,50 @@ pub struct Season {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct CreatedByPerson {
+    #[serde(default)]
+    pub id: i32,
+    #[serde(default, deserialize_with = "null_string")]
+    pub name: String,
+    #[serde(default, deserialize_with = "null_string")]
+    pub profile_path: String,
+}
+
+/// TMDB TV network (details endpoint).
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct TvNetwork {
+    #[serde(default)]
+    pub id: i32,
+    #[serde(default, deserialize_with = "null_string")]
+    pub name: String,
+    #[serde(default, deserialize_with = "null_string")]
+    pub logo_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct SpokenLanguage {
+    #[serde(default, deserialize_with = "null_string")]
+    pub english_name: String,
+    #[serde(default, deserialize_with = "null_string")]
+    pub name: String,
+    #[serde(default, deserialize_with = "null_string")]
+    pub iso_639_1: String,
+}
+
+/// `last_episode_to_air` / `next_episode_to_air` subset from TMDB TV details.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct TvEpisodeAirRef {
+    #[serde(default, deserialize_with = "null_string")]
+    pub air_date: String,
+    #[serde(default)]
+    pub episode_number: i32,
+    #[serde(default)]
+    pub season_number: i32,
+    #[serde(default, deserialize_with = "null_string")]
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct TVSeriesDetails {
     #[serde(default)]
     pub id: i32,
@@ -307,7 +351,11 @@ pub struct TVSeriesDetails {
     #[serde(default, deserialize_with = "null_string")]
     pub overview: String,
     #[serde(default, deserialize_with = "null_string")]
+    pub tagline: String,
+    #[serde(default, deserialize_with = "null_string")]
     pub first_air_date: String,
+    #[serde(default, deserialize_with = "null_string")]
+    pub last_air_date: String,
     #[serde(default, deserialize_with = "null_string")]
     pub poster_path: String,
     #[serde(default, deserialize_with = "null_string")]
@@ -319,7 +367,62 @@ pub struct TVSeriesDetails {
     #[serde(default)]
     pub vote_average: f64,
     #[serde(default)]
+    pub vote_count: i32,
+    #[serde(default)]
+    pub popularity: f64,
+    /// TMDB field `"type"` e.g. Scripted, Documentary, etc.
+    #[serde(rename = "type", default, deserialize_with = "null_string")]
+    pub series_type: String,
+    #[serde(default)]
+    pub episode_run_time: Vec<i32>,
+    #[serde(default, deserialize_with = "null_string")]
+    pub status: String,
+    #[serde(default)]
+    pub in_production: bool,
+    #[serde(default, deserialize_with = "null_string")]
+    pub original_language: String,
+    #[serde(default)]
+    pub genres: Vec<Genre>,
+    #[serde(default)]
+    pub created_by: Vec<CreatedByPerson>,
+    #[serde(default)]
     pub seasons: Vec<Season>,
+    #[serde(default)]
+    pub networks: Vec<TvNetwork>,
+    #[serde(default)]
+    pub origin_country: Vec<String>,
+    #[serde(default)]
+    pub spoken_languages: Vec<SpokenLanguage>,
+    #[serde(default)]
+    pub last_episode_to_air: Option<TvEpisodeAirRef>,
+    #[serde(default)]
+    pub next_episode_to_air: Option<TvEpisodeAirRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct EpisodeGuestStar {
+    #[serde(default)]
+    pub id: i32,
+    #[serde(default, deserialize_with = "null_string")]
+    pub name: String,
+    #[serde(default, deserialize_with = "null_string")]
+    pub character: String,
+    #[serde(default, deserialize_with = "null_string")]
+    pub profile_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct EpisodeCrewCredit {
+    #[serde(default)]
+    pub id: i32,
+    #[serde(default, deserialize_with = "null_string")]
+    pub name: String,
+    #[serde(default, deserialize_with = "null_string")]
+    pub job: String,
+    #[serde(default, deserialize_with = "null_string")]
+    pub department: String,
+    #[serde(default, deserialize_with = "null_string")]
+    pub profile_path: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -338,6 +441,16 @@ pub struct Episode {
     pub season_number: i32,
     #[serde(default, deserialize_with = "null_string")]
     pub still_path: String,
+    #[serde(default)]
+    pub runtime: i32,
+    #[serde(default)]
+    pub vote_average: f64,
+    #[serde(default)]
+    pub vote_count: i32,
+    #[serde(default)]
+    pub guest_stars: Vec<EpisodeGuestStar>,
+    #[serde(default)]
+    pub crew: Vec<EpisodeCrewCredit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
