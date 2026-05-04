@@ -8,6 +8,7 @@ export component PlayerIconButton inherits Rectangle {
     in property <bool> large_icon: false;
     in property <bool> small_icon: false;
     in property <bool> compact_icon: false;
+    private property <bool> slightly_smaller_icon: root.compact_icon || root.icon_name == "rw_10_seconds" || root.icon_name == "ff_10_seconds";
     callback clicked();
 
     width: root.tone == "accent-circle" ? 40px : 30px;
@@ -30,9 +31,9 @@ export component PlayerIconButton inherits Rectangle {
 
     Icon {
         x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2;
+        y: root.large_icon || root.small_icon ? 6px : (root.slightly_smaller_icon ? 7.5px : (parent.height - self.height) / 2);
         name: root.icon_name;
-        icon_size: root.tone == "accent-circle" ? 20px : (root.large_icon ? 20px : (root.small_icon ? 14px : (root.compact_icon ? 16px : 18px)));
+        icon_size: root.tone == "accent-circle" ? 20px : (root.large_icon || root.small_icon ? 17px : (root.slightly_smaller_icon ? 15px : 16px));
         tint: root.tone == "accent-circle" ? #ffffff : (root.tone == "subtle" ? #666666 : #808080);
     }
 
