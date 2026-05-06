@@ -45,5 +45,5 @@ Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(
 
 [UninstallDelete]
 ; PutMPV stores settings and poster cache under ProjectDirs::from("io", "putmpv", "PutMPV").
-Type: filesandordirs; Name: "{userappdata}\putmpv\PutMPV"
-Type: filesandordirs; Name: "{localappdata}\putmpv\PutMPV"
+Type: filesandordirs; Name: "{userappdata}\putmpv"
+Type: filesandordirs; Name: "{localappdata}\putmpv"
