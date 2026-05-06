@@ -1,4 +1,5 @@
 /target/
+/deps/
 **/*.rs.bk
 
 # Editor/OS noise
@@ -11,3 +12,4 @@ md/
 .temp/
 
 .codex
+.claude

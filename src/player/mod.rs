@@ -106,7 +106,9 @@ impl PlayerEngine {
 
     pub fn create_event_client(&self) -> Result<Mpv> {
         self.mpv
-            .create_client(Some("putmpv_events"))
+            // Errored out in debug mode with this in there
+            // .create_client(Some("putmpv_events"))
+            .create_client(None)
             .map_err(|e| anyhow!("{e}"))
     }
 
