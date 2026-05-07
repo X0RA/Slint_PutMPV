@@ -51,6 +51,7 @@ pub(crate) struct Services {
     pub tmdb_api: Arc<meta_api::TMDBAPI>,
     pub tvmaze_api: Arc<meta_api::TVMazeAPI>,
     pub file_state: Arc<std::sync::RwLock<FileStateStore>>,
+    pub watch_sync: Arc<crate::sync::watch_session::WatchSyncService>,
     pub client: PutioClient,
     pub rt: Arc<Runtime>,
 }

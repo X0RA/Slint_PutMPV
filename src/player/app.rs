@@ -5,8 +5,7 @@ use std::{
 
 use libmpv2::{
     events::{Event, PropertyData},
-    mpv_end_file_reason,
-    Mpv,
+    mpv_end_file_reason, Mpv,
 };
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 use tokio::runtime::Runtime;
@@ -14,6 +13,7 @@ use tracing::warn;
 
 use crate::putio::{self, PutioClient};
 use crate::storage::config::ConfigStore;
+use crate::sync::watch_session::WatchSyncService;
 use crate::{AppWindow, PlayerPlaylistItem, PlayerTrack};
 
 use super::{PlayerEngine, PlayerRenderer};
@@ -42,6 +42,7 @@ pub struct EmbeddedPlayer {
     client: PutioClient,
     config: Arc<ConfigStore>,
     rt: Arc<Runtime>,
+    watch_sync: Arc<WatchSyncService>,
     player_view: i32,
     files_view: i32,
 }
@@ -52,6 +53,7 @@ impl EmbeddedPlayer {
         client: PutioClient,
         config: Arc<ConfigStore>,
         rt: Arc<Runtime>,
+        watch_sync: Arc<WatchSyncService>,
         player_view: i32,
         files_view: i32,
     ) -> Self {
@@ -75,6 +77,7 @@ impl EmbeddedPlayer {
                 client.clone(),
                 config.clone(),
                 rt.clone(),
+                watch_sync.clone(),
                 player_view,
             );
         }
@@ -86,6 +89,7 @@ impl EmbeddedPlayer {
                 client.clone(),
                 config.clone(),
                 rt.clone(),
+                watch_sync.clone(),
                 player_view,
             );
         }
@@ -96,6 +100,7 @@ impl EmbeddedPlayer {
             client,
             config,
             rt,
+            watch_sync,
             player_view,
             files_view,
         };
@@ -114,7 +119,10 @@ impl EmbeddedPlayer {
             return;
         }
 
-        let index = queue.iter().position(|item| item.file_id == file_id).unwrap_or(0);
+        let index = queue
+            .iter()
+            .position(|item| item.file_id == file_id)
+            .unwrap_or(0);
         set_playlist_model(app, &queue, index);
 
         {
@@ -130,6 +138,7 @@ impl EmbeddedPlayer {
             self.client.clone(),
             self.config.clone(),
             self.rt.clone(),
+            self.watch_sync.clone(),
             self.player_view,
             queue[index].clone(),
             index,
@@ -140,8 +149,10 @@ impl EmbeddedPlayer {
         let weak = app.as_weak();
         let engine = self.engine.clone();
         let playback_state = self.playback_state.clone();
+        let watch_sync = self.watch_sync.clone();
         let files_view = self.files_view;
         app.on_player_close(move || {
+            watch_sync.on_session_end();
             if let Some(engine) = engine.as_ref() {
                 if let Err(e) = engine.stop() {
                     warn!("could not stop embedded mpv playback: {e}");
@@ -158,9 +169,10 @@ impl EmbeddedPlayer {
             if let Some(app) = weak.upgrade() {
                 app.set_player_playlist_current_id("".into());
                 set_playlist_nav_state(&app, 0, None);
-                app.set_player_playlist_items(ModelRc::from(Rc::new(VecModel::from(
-                    Vec::<PlayerPlaylistItem>::new(),
-                ))));
+                app.set_player_playlist_items(ModelRc::from(Rc::new(VecModel::from(Vec::<
+                    PlayerPlaylistItem,
+                >::new(
+                )))));
                 app.set_view(files_view);
             }
         });
@@ -225,6 +237,7 @@ fn register_events(
     client: PutioClient,
     config: Arc<ConfigStore>,
     rt: Arc<Runtime>,
+    watch_sync: Arc<WatchSyncService>,
     player_view: i32,
 ) {
     match engine.create_event_client() {
@@ -237,6 +250,7 @@ fn register_events(
                 match event_client.wait_event(1.0) {
                     Some(Ok(Event::EndFile(reason))) => {
                         if reason == mpv_end_file_reason::Eof {
+                            watch_sync.on_eof();
                             let next = {
                                 let state = playback_state.lock().unwrap();
                                 let next_index = state.current_index.map(|idx| idx + 1);
@@ -251,6 +265,7 @@ fn register_events(
                                     let client = client.clone();
                                     let config = config.clone();
                                     let rt = rt.clone();
+                                    let watch_sync = watch_sync.clone();
                                     move |app| {
                                         start_queue_item(
                                             &app,
@@ -259,6 +274,7 @@ fn register_events(
                                             client,
                                             config,
                                             rt,
+                                            watch_sync,
                                             player_view,
                                             item,
                                             idx,
@@ -269,14 +285,37 @@ fn register_events(
                                 playback_state.lock().unwrap().active = false;
                             }
                         } else {
+                            watch_sync.on_session_end();
                             playback_state.lock().unwrap().active = false;
                         }
                     }
-                    Some(Ok(Event::FileLoaded | Event::AudioReconfig)) => {
+                    Some(Ok(Event::FileLoaded)) => {
+                        let duration = get_f64(&event_client, "duration").unwrap_or(0.0);
+                        let resume = {
+                            let state = playback_state.lock().unwrap();
+                            state
+                                .current_index
+                                .and_then(|idx| state.queue.get(idx))
+                                .and_then(|item| watch_sync.start_session(item.file_id, duration))
+                        };
+                        if let Some(position) = resume {
+                            if let Err(e) = engine.seek(position) {
+                                warn!("could not auto-resume playback: {e}");
+                            }
+                        }
                         let tracks = read_tracks(&event_client);
                         let _ = weak.upgrade_in_event_loop(move |app| {
                             apply_tracks(&app, tracks);
                         });
+                    }
+                    Some(Ok(Event::AudioReconfig)) => {
+                        let tracks = read_tracks(&event_client);
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            apply_tracks(&app, tracks);
+                        });
+                    }
+                    Some(Ok(Event::Seek)) => {
+                        watch_sync.on_seek();
                     }
                     Some(Ok(Event::PropertyChange { name, change, .. })) => {
                         if name == "track-list/count" {
@@ -285,7 +324,7 @@ fn register_events(
                                 apply_tracks(&app, tracks);
                             });
                         } else {
-                            apply_property_change(&weak, name, change);
+                            apply_property_change(&weak, &watch_sync, name, change);
                         }
                     }
                     Some(Ok(_)) | None => {}
@@ -339,6 +378,7 @@ fn register_callbacks(
     client: PutioClient,
     config: Arc<ConfigStore>,
     rt: Arc<Runtime>,
+    watch_sync: Arc<WatchSyncService>,
     player_view: i32,
 ) {
     let weak = app.as_weak();
@@ -466,6 +506,7 @@ fn register_callbacks(
     let play_client = client.clone();
     let play_config = config.clone();
     let play_rt = rt.clone();
+    let play_watch_sync = watch_sync.clone();
     app.on_player_playlist_play(move |file_id| {
         let Ok(file_id) = file_id.as_str().parse::<u64>() else {
             return;
@@ -490,6 +531,7 @@ fn register_callbacks(
                 play_client.clone(),
                 play_config.clone(),
                 play_rt.clone(),
+                play_watch_sync.clone(),
                 player_view,
                 item,
                 idx,
@@ -503,6 +545,7 @@ fn register_callbacks(
     let previous_client = client.clone();
     let previous_config = config.clone();
     let previous_rt = rt.clone();
+    let previous_watch_sync = watch_sync.clone();
     app.on_player_playlist_previous(move || {
         let Some(app) = weak.upgrade() else {
             return;
@@ -516,6 +559,7 @@ fn register_callbacks(
                 previous_client.clone(),
                 previous_config.clone(),
                 previous_rt.clone(),
+                previous_watch_sync.clone(),
                 player_view,
                 item,
                 idx,
@@ -539,6 +583,7 @@ fn register_callbacks(
                 client.clone(),
                 config.clone(),
                 rt.clone(),
+                watch_sync.clone(),
                 player_view,
                 item,
                 idx,
@@ -576,6 +621,7 @@ fn start_queue_item(
     client: PutioClient,
     config: Arc<ConfigStore>,
     rt: Arc<Runtime>,
+    watch_sync: Arc<WatchSyncService>,
     player_view: i32,
     item: PlaybackQueueItem,
     index: usize,
@@ -588,6 +634,7 @@ fn start_queue_item(
     }
 
     let fallback_url = putio::stream::fallback_mp4_stream_url(&token, item.file_id);
+    watch_sync.on_session_end();
     {
         let mut state = playback_state.lock().unwrap();
         state.active = true;
@@ -703,12 +750,19 @@ struct PlayerTracks {
     selected_audio: SharedString,
 }
 
-fn apply_property_change(weak: &slint::Weak<AppWindow>, name: &str, change: PropertyData<'_>) {
+fn apply_property_change(
+    weak: &slint::Weak<AppWindow>,
+    watch_sync: &WatchSyncService,
+    name: &str,
+    change: PropertyData<'_>,
+) {
     match (name, change) {
         ("pause", PropertyData::Flag(paused)) => {
+            watch_sync.on_pause(paused);
             let _ = weak.upgrade_in_event_loop(move |app| app.set_player_paused(paused));
         }
         ("time-pos", PropertyData::Double(position)) => {
+            watch_sync.on_position(position, 0.0);
             let label = format_time(position);
             let _ = weak.upgrade_in_event_loop(move |app| {
                 app.set_player_position(position as f32);
@@ -716,6 +770,7 @@ fn apply_property_change(weak: &slint::Weak<AppWindow>, name: &str, change: Prop
             });
         }
         ("duration", PropertyData::Double(duration)) => {
+            watch_sync.on_duration(duration);
             let label = format_time(duration);
             let _ = weak.upgrade_in_event_loop(move |app| {
                 app.set_player_duration(duration as f32);
@@ -852,6 +907,10 @@ fn get_i64(mpv: &Mpv, name: &str) -> Option<i64> {
 
 fn get_bool(mpv: &Mpv, name: &str) -> Option<bool> {
     mpv.get_property::<bool>(name).ok()
+}
+
+fn get_f64(mpv: &Mpv, name: &str) -> Option<f64> {
+    mpv.get_property::<f64>(name).ok()
 }
 
 fn normalize_track_id(track_id: &str) -> &str {

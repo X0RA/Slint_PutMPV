@@ -3,7 +3,8 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").unwrap_or_default() == "windows" {
         let mut res = winres::WindowsResource::new();
         res.set_icon("ui/assets/appicon.ico");
-        res.compile().expect("failed to compile Windows icon resource");
+        res.compile()
+            .expect("failed to compile Windows icon resource");
     }
 
     let config = slint_build::CompilerConfiguration::new().with_style("fluent".into());

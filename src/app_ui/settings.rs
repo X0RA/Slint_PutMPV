@@ -9,7 +9,7 @@ use tracing::warn;
 
 use crate::putio::types::UnifiedDirectoryTree;
 use crate::putio::{self};
-use crate::storage::file_state::{count_played, FileStateStore};
+use crate::storage::file_state::{count_completed, FileStateStore};
 use crate::{AppWindow, LocalDataRow};
 
 use super::state::UiState;
@@ -46,7 +46,9 @@ pub(crate) fn install(
         let file_state = file_state.clone();
         let sync_profiles = sync_profiles.clone();
         move || {
-            let Some(app) = weak.upgrade() else { return; };
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
             let local_key = config.tmdb_local_key();
             let putio_key = config.tmdb_putio_key();
             let tmdb_source = source_to_index(&config.tmdb_source());
@@ -79,7 +81,7 @@ pub(crate) fn install(
 
             let state_entries = file_state.read().unwrap();
             app.set_sync_known_count(state_entries.entries().len() as i32);
-            app.set_sync_played_count(count_played(state_entries.entries()) as i32);
+            app.set_sync_played_count(count_completed(state_entries.entries()) as i32);
             drop(state_entries);
 
             let config_path = config.path();
@@ -97,7 +99,7 @@ pub(crate) fn install(
                 },
                 LocalDataRow {
                     name: "Played file state".into(),
-                    desc: "Local file store for played markers. Clearing resets played flags while keeping entries.".into(),
+                    desc: "Local store for watched markers and playback resume positions.".into(),
                     path: path_label(&file_state_path).into(),
                     enabled: true,
                 },

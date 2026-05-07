@@ -8,9 +8,10 @@ use slint::ComponentHandle;
 use tokio::runtime::Runtime;
 use tracing::{info, warn};
 
+use crate::player::PlaybackQueueItem;
 use crate::putio::types::{DirectoryNode, PutIoFile, UnifiedDirectoryTree};
 use crate::putio::{self};
-use crate::player::PlaybackQueueItem;
+use crate::storage::file_state::FileStateEntry;
 use crate::{AppWindow, FileItem, PathSegment};
 
 use super::models::UiModels;
@@ -273,11 +274,7 @@ fn search_entries(
     out
 }
 
-fn sort_display_rows(
-    rows: &mut [(DisplayEntry, String)],
-    sort: i32,
-    descending: bool,
-) {
+fn sort_display_rows(rows: &mut [(DisplayEntry, String)], sort: i32, descending: bool) {
     match sort {
         1 => rows.sort_by(|a, b| {
             a.0.file
@@ -306,7 +303,11 @@ fn sort_display_rows(
     }
 }
 
-fn put_to_file_item(entry: &DisplayEntry, location: &str) -> FileItem {
+fn put_to_file_item(
+    entry: &DisplayEntry,
+    location: &str,
+    file_state: &std::collections::BTreeMap<String, FileStateEntry>,
+) -> FileItem {
     let file = &entry.file;
     let is_folder = file.file_type == "FOLDER";
     let (kind, detail_kind) = kind_for(file);
@@ -358,7 +359,10 @@ fn put_to_file_item(entry: &DisplayEntry, location: &str) -> FileItem {
         detail_extra_b_value: "".into(),
         location: location.into(),
         is_media,
-        is_watched: false,
+        is_watched: file_state
+            .get(&file.id.to_string())
+            .map(|entry| entry.is_completed())
+            .unwrap_or(false),
     }
 }
 
@@ -439,6 +443,8 @@ pub(crate) fn install(
     let config = services.config.clone();
     let client = services.client.clone();
     let files_store = services.files_store.clone();
+    let file_state = services.file_state.clone();
+    let watch_sync = services.watch_sync.clone();
 
     app.on_request_refresh({
         let weak = app.as_weak();
@@ -447,6 +453,7 @@ pub(crate) fn install(
         let path_stack = path_stack.clone();
         let visible_model = visible_model.clone();
         let path_model = path_model.clone();
+        let file_state = file_state.clone();
         move || {
             let Some(app) = weak.upgrade() else {
                 return;
@@ -463,6 +470,7 @@ pub(crate) fn install(
                 app.set_detail_item(empty_file_item());
             }
             let query = app.get_files_query().to_lowercase();
+            let file_state_entries = file_state.read().unwrap().entries().clone();
             let mut rows = if query.is_empty() {
                 let location = location_text(&path_stack.borrow());
                 children_for_folder(&tree, folder_id)
@@ -493,7 +501,7 @@ pub(crate) fn install(
 
             visible_model.set_vec(
                 rows.iter()
-                    .map(|(entry, location)| put_to_file_item(entry, location))
+                    .map(|(entry, location)| put_to_file_item(entry, location, &file_state_entries))
                     .collect::<Vec<_>>(),
             );
             path_model.set_vec(
@@ -622,6 +630,7 @@ pub(crate) fn install(
         let current_folder = current_folder.clone();
         let path_stack = path_stack.clone();
         let r = request_refresh.clone();
+        let file_state = file_state.clone();
         move |id, item_type| {
             let Some(app) = weak.upgrade() else {
                 return;
@@ -658,7 +667,8 @@ pub(crate) fn install(
                 r();
             } else {
                 let location = location_text(&location_stack);
-                app.set_detail_item(put_to_file_item(&entry, &location));
+                let file_state_entries = file_state.read().unwrap().entries().clone();
+                app.set_detail_item(put_to_file_item(&entry, &location, &file_state_entries));
                 app.set_detail_open(true);
             }
         }
@@ -737,17 +747,49 @@ pub(crate) fn install(
         let tree = tree.clone();
         let current_folder = current_folder.clone();
         let embedded_player = embedded_player.clone();
+        let watch_sync = watch_sync.clone();
+        let request_refresh = request_refresh.clone();
+        let file_state = file_state.clone();
         move |action, id| {
             info!("menu action: {action} on {id}");
-            if action.as_str() != "play" {
-                return;
-            }
-
             let Some(app) = weak.upgrade() else {
                 return;
             };
 
             let tree_borrow = tree.read().unwrap();
+            if action.as_str() == "watched" {
+                let Some((entry, location_stack)) = find_entry_by_id(&tree_borrow.root, id) else {
+                    return;
+                };
+                let file_id = entry.file.id;
+                let current = {
+                    let file_state_entries = file_state.read().unwrap();
+                    file_state_entries
+                        .entries()
+                        .get(&file_id.to_string())
+                        .map(|entry| entry.is_completed())
+                        .unwrap_or(false)
+                };
+                drop(tree_borrow);
+                watch_sync.mark_watched(file_id, !current);
+                request_refresh();
+                if app.get_detail_open() {
+                    let entries = file_state.read().unwrap().entries().clone();
+                    app.set_detail_item(put_to_file_item(
+                        &entry,
+                        &location_text(&location_stack),
+                        &entries,
+                    ));
+                }
+                app.invoke_media_refresh();
+                app.invoke_settings_refresh();
+                return;
+            }
+
+            if action.as_str() != "play" {
+                return;
+            }
+
             let Some((queue, file_id)) =
                 files_playback_queue(&app, &tree_borrow, *current_folder.borrow(), id)
             else {

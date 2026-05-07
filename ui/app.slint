@@ -179,6 +179,7 @@ export component AppWindow inherits Window {
     callback local_data_cancel_clear();
     callback media_refresh();
     callback media_item_clicked(file_id: string);
+    callback media_watch_toggle(file_id: string);
     callback media_scrape_unmatched();
     callback media_dismiss_error();
     callback media_dismiss_success();
@@ -186,6 +187,7 @@ export component AppWindow inherits Window {
     callback tv_show_season_changed(int);
     callback tv_show_play_episode(string);
     callback tv_show_episode_subtitles(string);
+    callback tv_show_episode_watch_toggle(string);
 
     if (root.view != 7) : title-bar := Rectangle {
         x: 0px;
@@ -312,6 +314,7 @@ export component AppWindow inherits Window {
         dismiss_error => { root.media_dismiss_error(); }
         dismiss_success => { root.media_dismiss_success(); }
         media_item_clicked(file_id) => { root.media_item_clicked(file_id); }
+        media_watch_toggle(file_id) => { root.media_watch_toggle(file_id); }
     }
 
     if (root.view == 8) : tvshow := TvShowPage {
@@ -343,6 +346,7 @@ export component AppWindow inherits Window {
         season_changed(idx) => { root.tv_show_season_changed(idx); }
         play_episode(file_id) => { root.tv_show_play_episode(file_id); }
         subtitles_clicked(file_id) => { root.tv_show_episode_subtitles(file_id); }
+        episode_watch_toggle(file_id) => { root.tv_show_episode_watch_toggle(file_id); }
     }
 
     if (root.view == 7) : player := PlayerPage {

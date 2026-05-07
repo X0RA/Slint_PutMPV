@@ -90,6 +90,7 @@ component HubMediaCard inherits TouchArea {
     horizontal-stretch: 0;
 
     callback open();
+    callback watch_toggle();
 
     clicked => {
         root.open();
@@ -125,6 +126,29 @@ component HubMediaCard inherits TouchArea {
                         initials: root.data.initials;
                         poster-height: parent.height;
                         art: root.data.poster;
+                    }
+
+                    if !root.data.is_tv : Rectangle {
+                        x: parent.width - self.width - 10px;
+                        y: 10px;
+                        width: 28px;
+                        height: 28px;
+                        border-radius: 14px;
+                        border-width: 1px;
+                        border-color: root.data.progress < 0.05 ? #ffffff40 : root.data.progress < 0.9 ? #fbbf24cc : #22c55ecc;
+                        background: root.data.progress < 0.05 ? #000000aa : root.data.progress < 0.9 ? #fbbf24 : #22c55e;
+
+                        Icon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            name: "check";
+                            icon_size: 13px;
+                            tint: root.data.progress < 0.05 ? Theme.text_dim : Theme.bg;
+                        }
+
+                        TouchArea {
+                            clicked => { root.watch_toggle(); }
+                        }
                     }
 
                     Rectangle {
@@ -440,6 +464,7 @@ export component MediaPage inherits Rectangle {
     callback dismiss_error();
     callback dismiss_success();
     callback media_item_clicked(string);
+    callback media_watch_toggle(string);
 
     private property <bool> has-banner-content: root.has_unmatched || root.show_error_flash || root.show_success_flash;
 
@@ -519,6 +544,9 @@ export component MediaPage inherits Rectangle {
                                 open => {
                                     root.media_item_clicked(item.file_id);
                                 }
+                                watch_toggle => {
+                                    root.media_watch_toggle(item.file_id);
+                                }
                             }
                         }
                     }
@@ -559,6 +587,9 @@ export component MediaPage inherits Rectangle {
                                 data: item;
                                 open => {
                                     root.media_item_clicked(item.file_id);
+                                }
+                                watch_toggle => {
+                                    root.media_watch_toggle(item.file_id);
                                 }
                             }
                         }

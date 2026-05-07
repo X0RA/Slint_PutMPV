@@ -1,4 +1,7 @@
-#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+#![cfg_attr(
+    all(target_os = "windows", not(debug_assertions)),
+    windows_subsystem = "windows"
+)]
 
 use std::sync::{Arc, RwLock};
 
@@ -19,6 +22,7 @@ mod metadata;
 mod player;
 mod putio;
 mod storage;
+mod sync;
 
 slint::include_modules!();
 
@@ -45,6 +49,12 @@ fn main() -> Result<()> {
     let file_state = Arc::new(RwLock::new(FileStateStore::load()?));
     let client = PutioClient::new();
     let rt = Arc::new(Runtime::new()?);
+    let watch_sync = sync::watch_session::WatchSyncService::new(
+        file_state.clone(),
+        client.clone(),
+        config.clone(),
+        rt.clone(),
+    );
 
     let app = AppWindow::new()?;
     app.set_files_mode(config.files_mode());
@@ -59,6 +69,7 @@ fn main() -> Result<()> {
         client.clone(),
         config.clone(),
         rt.clone(),
+        watch_sync.clone(),
         app_ui::VIEW_PLAYER,
         app_ui::VIEW_FILES,
     );
@@ -78,6 +89,7 @@ fn main() -> Result<()> {
         tmdb_api,
         tvmaze_api,
         file_state,
+        watch_sync,
         client,
         rt: rt.clone(),
     };
@@ -91,8 +103,10 @@ fn main() -> Result<()> {
 
     app_ui::install(&app, &ctx);
     app_ui::auth::run_startup(&app, &ctx.services, &ctx.state, &ctx.services.rt);
+    ctx.services.watch_sync.pull_to_local();
 
     app.run()?;
+    ctx.services.watch_sync.shutdown_blocking();
     drop(rt);
     Ok(())
 }

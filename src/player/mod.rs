@@ -123,6 +123,9 @@ impl PlayerEngine {
             .enable_event(mpv_event_id::EndFile)
             .map_err(|e| anyhow!("{e}"))?;
         event_client
+            .enable_event(mpv_event_id::Seek)
+            .map_err(|e| anyhow!("{e}"))?;
+        event_client
             .observe_property("pause", Format::Flag, 1)
             .map_err(|e| anyhow!("{e}"))?;
         event_client

@@ -8,8 +8,9 @@ use crate::metadata::tmdb::{Episode, TVSeasonDetails, TVSeriesDetails};
 use slint::{ComponentHandle, Model, VecModel};
 use tokio::runtime::Runtime;
 
-use crate::putio::types::UnifiedDirectoryTree;
 use crate::player::PlaybackQueueItem;
+use crate::putio::types::UnifiedDirectoryTree;
+use crate::storage::file_state::FileStateStore;
 use crate::storage::matched_store::MatchedStore;
 use crate::storage::tmdb_store::{CacheEntry, TMDBStore};
 use crate::{AppWindow, TvDetailItem, TvEpisodeCredit, TvEpisodeRow, TvHeroBadge, TvSeasonTab};
@@ -39,7 +40,6 @@ pub(crate) fn load_tv_season_details_from_sub(
     }
     None
 }
-
 
 fn tv_status_badge_label(status: &str) -> Option<String> {
     if status.is_empty() {
@@ -72,7 +72,6 @@ fn tv_status_detail_label(status: &str) -> String {
         _ => status.to_string(),
     }
 }
-
 
 fn format_us_long_date(iso: &str) -> String {
     const MONTHS: [&str; 12] = [
@@ -239,12 +238,14 @@ pub(crate) fn refresh_tv_show_ui(
     tree: &Arc<RwLock<UnifiedDirectoryTree>>,
     matched_store: &Arc<MatchedStore>,
     tmdb_store: &Arc<TMDBStore>,
+    file_state: &Arc<RwLock<FileStateStore>>,
     tv_seasons_model: &Rc<VecModel<TvSeasonTab>>,
     tv_episodes_model: &Rc<VecModel<TvEpisodeRow>>,
     tv_hero_badges_model: &Rc<VecModel<TvHeroBadge>>,
     tv_detail_items_model: &Rc<VecModel<TvDetailItem>>,
     rt: &Arc<Runtime>,
 ) {
+    let file_state_entries = file_state.read().unwrap().entries().clone();
     use std::collections::HashSet;
 
     let matched = matched_store.get_matched_snapshot().unwrap_or_default();
@@ -448,22 +449,33 @@ pub(crate) fn refresh_tv_show_ui(
     let slot = |label: &str, value: String| -> TvDetailItem {
         let v = value.trim().to_string();
         if v.is_empty() || v == "—" {
-            TvDetailItem { label: "".into(), value: "".into() }
+            TvDetailItem {
+                label: "".into(),
+                value: "".into(),
+            }
         } else {
-            TvDetailItem { label: label.into(), value: v.into() }
+            TvDetailItem {
+                label: label.into(),
+                value: v.into(),
+            }
         }
     };
 
     // Row 1: Rating · Type · Status · Avg. runtime · Seasons · Episodes
     let rating_val = if details.vote_average > 0.0 {
         let mut r = format!("{:.1}/10", details.vote_average);
-        if details.vote_count > 0 { r.push_str(&format!(" ({})", details.vote_count)); }
+        if details.vote_count > 0 {
+            r.push_str(&format!(" ({})", details.vote_count));
+        }
         r
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     let type_s = if !details.series_type.trim().is_empty() {
         details.series_type.trim().to_string()
-    } else if details.number_of_seasons <= 1 && details.number_of_episodes <= 20
+    } else if details.number_of_seasons <= 1
+        && details.number_of_episodes <= 20
         && details.number_of_episodes > 0
     {
         "Miniseries".to_string()
@@ -476,15 +488,21 @@ pub(crate) fn refresh_tv_show_ui(
         let n = details.episode_run_time.len() as i32;
         let avg = ((f64::from(sum)) / (f64::from(n))).round() as i32;
         format!("{avg}m")
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     let seasons_val = if details.number_of_seasons > 0 {
         format!("{}", details.number_of_seasons)
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     let episodes_val = if details.number_of_episodes > 0 {
         format!("{}", details.number_of_episodes)
-    } else { String::new() };
+    } else {
+        String::new()
+    };
 
     // Row 2: Spoken · Origin · Original · Popularity · Language · Networks
     let locale_spoken = tv_spoken_names(&details, 3);
@@ -492,11 +510,17 @@ pub(crate) fn refresh_tv_show_ui(
     let original_title = {
         let on = details.original_name.trim();
         let tn = details.name.trim();
-        if !on.is_empty() && on != tn { on.to_string() } else { String::new() }
+        if !on.is_empty() && on != tn {
+            on.to_string()
+        } else {
+            String::new()
+        }
     };
     let popularity_val = if details.popularity > 0.0 {
         format!("{:.1}", details.popularity)
-    } else { String::new() };
+    } else {
+        String::new()
+    };
     let lang_disp = tv_original_language_display(&details);
     let nets_label: String = details
         .networks
@@ -508,18 +532,18 @@ pub(crate) fn refresh_tv_show_ui(
         .join(", ");
 
     let detail_items = vec![
-        slot("Rating",       rating_val),
-        slot("Type",         type_s),
-        slot("Status",       tv_status_detail_label(&details.status)),
+        slot("Rating", rating_val),
+        slot("Type", type_s),
+        slot("Status", tv_status_detail_label(&details.status)),
         slot("Avg. runtime", runtime_val),
-        slot("Seasons",      seasons_val),
-        slot("Episodes",     episodes_val),
-        slot("Spoken",       locale_spoken),
-        slot("Origin",       locale_origin),
-        slot("Original",     original_title),
-        slot("Popularity",   popularity_val),
-        slot("Language",     lang_disp),
-        slot("Networks",     nets_label),
+        slot("Seasons", seasons_val),
+        slot("Episodes", episodes_val),
+        slot("Spoken", locale_spoken),
+        slot("Origin", locale_origin),
+        slot("Original", original_title),
+        slot("Popularity", popularity_val),
+        slot("Language", lang_disp),
+        slot("Networks", nets_label),
     ];
 
     let show_series_details = detail_items.iter().any(|i| !i.value.is_empty());
@@ -597,6 +621,10 @@ pub(crate) fn refresh_tv_show_ui(
             ep_rows.push(TvEpisodeRow {
                 ep_num: ep.episode_number,
                 title: ep.name.as_str().into(),
+                watched: file_state_entries
+                    .get(&file_id)
+                    .map(|entry| entry.is_completed())
+                    .unwrap_or(false),
                 air_date: air_fmt.as_str().into(),
                 duration_label: duration_label.as_str().into(),
                 overview: ep.overview.as_str().into(),
@@ -657,6 +685,8 @@ pub(crate) fn install(
     let tree = state.tree.clone();
     let matched_store = services.matched_store.clone();
     let tmdb_store = services.tmdb_store.clone();
+    let file_state = services.file_state.clone();
+    let watch_sync = services.watch_sync.clone();
     let embedded_player = embedded_player.clone();
 
     app.on_tv_show_back({
@@ -673,6 +703,7 @@ pub(crate) fn install(
         let tree = tree.clone();
         let matched_store = matched_store.clone();
         let tmdb_store = tmdb_store.clone();
+        let file_state = file_state.clone();
         let tv_show_seasons_model = models.tv_seasons.clone();
         let tv_show_episodes_model = models.tv_episodes.clone();
         let tv_show_hero_badges_model = models.tv_hero_badges.clone();
@@ -693,6 +724,7 @@ pub(crate) fn install(
                 &tree,
                 &matched_store,
                 &tmdb_store,
+                &file_state,
                 &tv_show_seasons_model,
                 &tv_show_episodes_model,
                 &tv_show_hero_badges_model,
@@ -761,6 +793,57 @@ pub(crate) fn install(
                     app.invoke_files_menu_action("play".into(), truncate_id(id));
                 }
             }
+        }
+    });
+
+    app.on_tv_show_episode_watch_toggle({
+        let weak = weak.clone();
+        let file_state = file_state.clone();
+        let watch_sync = watch_sync.clone();
+        let tree = tree.clone();
+        let matched_store = matched_store.clone();
+        let tmdb_store = tmdb_store.clone();
+        let tv_show_seasons_model = models.tv_seasons.clone();
+        let tv_show_episodes_model = models.tv_episodes.clone();
+        let tv_show_hero_badges_model = models.tv_hero_badges.clone();
+        let tv_show_detail_items_model = models.tv_detail_items.clone();
+        let rt = rt.clone();
+        move |file_id| {
+            let Ok(id) = file_id.as_str().parse::<u64>() else {
+                return;
+            };
+            let currently_watched = file_state
+                .read()
+                .unwrap()
+                .entries()
+                .get(&id.to_string())
+                .map(|entry| entry.is_completed())
+                .unwrap_or(false);
+            watch_sync.mark_watched(id, !currently_watched);
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            let sid = app.get_tv_show_series_id();
+            if sid <= 0 {
+                return;
+            }
+            refresh_tv_show_ui(
+                &app,
+                sid,
+                Some(app.get_tv_show_season_idx().max(0) as usize),
+                &tree,
+                &matched_store,
+                &tmdb_store,
+                &file_state,
+                &tv_show_seasons_model,
+                &tv_show_episodes_model,
+                &tv_show_hero_badges_model,
+                &tv_show_detail_items_model,
+                &rt,
+            );
+            app.invoke_media_refresh();
+            app.invoke_request_refresh();
+            app.invoke_settings_refresh();
         }
     });
 }

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::storage::config::ConfigStore;
-use crate::storage::file_state::{count_played, FileStateEntry, FileStateStore};
+use crate::storage::file_state::{count_completed, FileStateEntry, FileStateFile, FileStateStore};
 use anyhow::{anyhow, Result};
 
 use super::client::PutioClient;
@@ -45,7 +45,7 @@ pub async fn list_profiles(
         profiles.push(SyncProfile {
             name: profile_name_from_slug(cfg, &slug),
             slug,
-            total_played: count_played(&state),
+            total_played: count_completed(&state),
         });
     }
     profiles.sort_by(|a, b| a.name.cmp(&b.name).then(a.slug.cmp(&b.slug)));
@@ -86,7 +86,7 @@ pub fn disable_sync(cfg: &ConfigStore) -> Result<()> {
     cfg.clear_file_state_sync_profile()
 }
 
-async fn sync_profile(
+pub async fn sync_profile(
     client: &PutioClient,
     token: &str,
     store: &mut FileStateStore,
@@ -100,7 +100,10 @@ async fn sync_profile(
     };
     store.merge(&remote);
     store.save()?;
-    let body = serde_json::to_vec_pretty(store.entries())?;
+    let body = serde_json::to_vec_pretty(&FileStateFile {
+        version: 1,
+        entries: store.entries().clone(),
+    })?;
     let uploaded = upload_file(client, token, folder_id, &profile_filename(slug), body).await?;
     if let Some(old) = profile_file {
         if old.id != uploaded.id {
@@ -159,9 +162,11 @@ async fn download_state(
     if bytes.is_empty() {
         return Ok(BTreeMap::new());
     }
-    Ok(serde_json::from_slice::<BTreeMap<String, FileStateEntry>>(
-        &bytes,
-    )?)
+    Ok(serde_json::from_slice::<FileStateFile>(&bytes)
+        .ok()
+        .filter(|file| file.version == 1)
+        .map(|file| file.entries)
+        .unwrap_or_default())
 }
 
 fn latest_profile_files(files: Vec<PutIoFile>) -> BTreeMap<String, PutIoFile> {

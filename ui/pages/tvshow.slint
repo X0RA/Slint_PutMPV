@@ -150,6 +150,7 @@ export component TvShowPage inherits Rectangle {
     callback season_changed(int);
     callback play_episode(string);
     callback subtitles_clicked(string);
+    callback episode_watch_toggle(string);
 
     private property <bool> compact: root.width < 760px;
     private property <length> gutter: compact ? 20px : 48px;
@@ -545,13 +546,42 @@ export component TvShowPage inherits Rectangle {
                                     spacing: 10px;
                                     alignment: start;
 
-                                    Text {
-                                        text: ep.ep_num + ". " + ep.title;
-                                        color: Theme.text;
-                                        font-size: 15px;
-                                        font-weight: 700;
-                                        wrap: word-wrap;
-                                        font-family: Theme.ui_font;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        alignment: start;
+
+                                        Text {
+                                            horizontal-stretch: 1;
+                                            text: ep.ep_num + ". " + ep.title;
+                                            color: Theme.text;
+                                            font-size: 15px;
+                                            font-weight: 700;
+                                            wrap: word-wrap;
+                                            font-family: Theme.ui_font;
+                                        }
+
+                                        Rectangle {
+                                            width: 24px;
+                                            height: 24px;
+                                            border-radius: 12px;
+                                            border-width: 1px;
+                                            border-color: ep.watched ? #22c55ecc : #ffffff40;
+                                            background: ep.watched ? #22c55e : #000000aa;
+
+                                            Icon {
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                                name: "check";
+                                                icon_size: 12px;
+                                                tint: ep.watched ? Theme.bg : Theme.text_dim;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.episode_watch_toggle(ep.file_id);
+                                                }
+                                            }
+                                        }
                                     }
 
                                     HorizontalLayout {

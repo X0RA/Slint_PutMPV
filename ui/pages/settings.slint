@@ -2,6 +2,7 @@ import { ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { SidebarSectionButton, ButtonChip, TextFieldBox, RadioRow, Dropdown } from "../components/primitives.slint";
 import { MetadataSettingsPanel } from "../components/settings/metadata.slint";
+import { WatchSyncSettingsPanel } from "../components/settings/watch-sync.slint";
 import { LocalDataRow, MetadataItem } from "../types.slint";
 
 component SettingsHead inherits VerticalLayout {
@@ -304,96 +305,20 @@ export component SettingsPage inherits Rectangle {
                 if (root.tmdb_status != "") : InfoBanner { title: "TMDB"; body: root.tmdb_status; }
             }
 
-            if (root.section == 1) : sync-page := SectionContainer {
-                SettingsHead { title: "Watch Status Sync"; description: "Sync watched file state through a shared PutMPV folder on put.io."; }
-                Rectangle { height: 8px; }
-                Rectangle {
-                    height: played-card.preferred-height;
-                    border-radius: 10px;
-                    border-width: 1px;
-                    border-color: Theme.border;
-                    background: Theme.surface;
-                    clip: true;
-                    played-card := VerticalLayout {
-                        spacing: 0px;
-                        CardHeader { title: "Played counts"; description: "Totals for local watched state and known tracked files."; }
-                        Rectangle {
-                            height: counts-row.preferred-height;
-                            background: transparent;
-                            counts-row := HorizontalLayout {
-                                padding-left: 22px;
-                                padding-right: 22px;
-                                padding-top: 20px;
-                                padding-bottom: 20px;
-                                spacing: 40px;
-                                alignment: start;
-                                VerticalLayout {
-                                    spacing: 6px;
-                                    Text { text: "PLAYED"; color: Theme.text_mute; font-size: 10.5px; font-weight: 600; font-family: Theme.ui_font; }
-                                    Text { text: root.sync_played_count; color: Theme.text; font-size: 30px; font-family: Theme.mono_font; }
-                                }
-                                VerticalLayout {
-                                    spacing: 6px;
-                                    Text { text: "KNOWN"; color: Theme.text_mute; font-size: 10.5px; font-weight: 600; font-family: Theme.ui_font; }
-                                    Text { text: root.sync_known_count; color: Theme.text; font-size: 30px; font-family: Theme.mono_font; }
-                                }
-                                Rectangle { horizontal-stretch: 1; background: transparent; }
-                                VerticalLayout {
-                                    spacing: 4px;
-                                    alignment: center;
-                                    Text { text: "Active profile"; color: Theme.text_mute; font-size: 11px; font-family: Theme.ui_font; horizontal-alignment: right; }
-                                    Text { text: root.sync_active_profile == "" ? "None" : root.sync_active_profile; color: Theme.text; font-size: 13.5px; font-weight: 600; font-family: Theme.ui_font; horizontal-alignment: right; }
-                                }
-                            }
-                        }
-                    }
-                }
-                Rectangle {
-                    height: profile-card.preferred-height;
-                    border-radius: 10px;
-                    border-width: 1px;
-                    border-color: Theme.border;
-                    background: Theme.surface;
-                    clip: false;
-                    profile-card := VerticalLayout {
-                        spacing: 0px;
-                        CardHeader { title: "Profiles"; description: "Pick or create a shared profile. Selecting a profile merges local and remote file state."; }
-                        SettingsRow {
-                            label: "Existing shared profiles";
-                            hint: root.sync_profile_labels.length == 0 ? "No profiles discovered on put.io." : "Profiles discovered on put.io.";
-                            HorizontalLayout {
-                                spacing: 8px;
-                                alignment: end;
-                                Dropdown { width: 240px; items: root.sync_profile_labels; selected_index <=> root.sync_existing_index; open <=> root.sync_dropdown_open; placeholder: "Select profile"; selected(index) => { root.sync_profile_selected(index); } }
-                                ButtonChip { label: "Use existing"; primary: true; enabled: root.sync_existing_index >= 0; clicked => { root.sync_use_existing(); } }
-                            }
-                        }
-                        SettingsRow {
-                            label: "Create or use by name";
-                            hint: "A new profile is created on put.io if the name does not exist.";
-                            HorizontalLayout {
-                                spacing: 8px;
-                                alignment: end;
-                                TextFieldBox { width: 240px; placeholder: "Profile name"; text <=> root.sync_new_name; }
-                                ButtonChip { label: "Use / create profile"; primary: true; clicked => { root.sync_use_new(); } }
-                            }
-                        }
-                        Rectangle {
-                            height: 60px;
-                            background: transparent;
-                            HorizontalLayout {
-                                x: 22px;
-                                y: 14px;
-                                width: parent.width - 44px;
-                                spacing: 8px;
-                                alignment: start;
-                                ButtonChip { label: "Sync now"; icon_name: "refresh"; clicked => { root.sync_now(); } }
-                                ButtonChip { label: "Disable sync"; icon_name: "close"; danger: true; clicked => { root.sync_disable(); } }
-                            }
-                        }
-                    }
-                }
-                if (root.sync_status != "") : InfoBanner { title: "Sync"; body: root.sync_status; }
+            if (root.section == 1) : sync-page := WatchSyncSettingsPanel {
+                profile_labels: root.sync_profile_labels;
+                existing_index <=> root.sync_existing_index;
+                dropdown_open <=> root.sync_dropdown_open;
+                new_name <=> root.sync_new_name;
+                status: root.sync_status;
+                played_count: root.sync_played_count;
+                known_count: root.sync_known_count;
+                active_profile: root.sync_active_profile;
+                profile_selected(index) => { root.sync_profile_selected(index); }
+                use_existing => { root.sync_use_existing(); }
+                use_new => { root.sync_use_new(); }
+                sync_now => { root.sync_now(); }
+                disable_sync => { root.sync_disable(); }
             }
 
             if (root.section == 2) : data-page := SectionContainer {

@@ -234,10 +234,10 @@ pub(crate) fn refresh_media_ui(
             } else {
                 String::new()
             };
-            let played = file_state_entries
+            let progress = file_state_entries
                 .get(&file_id)
-                .map(|e| e.played)
-                .unwrap_or(false);
+                .map(|e| e.progress_ratio())
+                .unwrap_or(0.0);
             let poster = if d.poster_path.is_empty() {
                 Default::default()
             } else if let Some(img) = load_cached_poster(&d.poster_path) {
@@ -252,7 +252,7 @@ pub(crate) fn refresh_media_ui(
                 rating: rating.as_str().into(),
                 poster,
                 resolution: "".into(),
-                progress: if played { 1.0 } else { 0.0 },
+                progress,
                 is_tv: false,
                 initials: make_initials(&d.title),
                 file_id: file_id.as_str().into(),
@@ -435,6 +435,7 @@ pub(crate) fn install(
     let tmdb_api = services.tmdb_api.clone();
     let tvmaze_api = services.tvmaze_api.clone();
     let embedded_player = embedded_player.clone();
+    let watch_sync = services.watch_sync.clone();
 
     app.on_media_refresh({
         let refresh = media_refresh.clone();
@@ -446,6 +447,7 @@ pub(crate) fn install(
         let tree = tree.clone();
         let matched_store = matched_store.clone();
         let tmdb_store = tmdb_store.clone();
+        let file_state = services.file_state.clone();
         let tv_show_seasons_model = models.tv_seasons.clone();
         let tv_show_episodes_model = models.tv_episodes.clone();
         let tv_show_hero_badges_model = models.tv_hero_badges.clone();
@@ -471,6 +473,7 @@ pub(crate) fn install(
                         &tree,
                         &matched_store,
                         &tmdb_store,
+                        &file_state,
                         &tv_show_seasons_model,
                         &tv_show_episodes_model,
                         &tv_show_hero_badges_model,
@@ -496,6 +499,31 @@ pub(crate) fn install(
                         meta: String::new(),
                     });
                 embedded_player.play_queue(&app, vec![movie], id);
+            }
+        }
+    });
+
+    app.on_media_watch_toggle({
+        let weak = weak.clone();
+        let file_state = services.file_state.clone();
+        let watch_sync = watch_sync.clone();
+        let media_refresh = media_refresh.clone();
+        move |file_id| {
+            let Ok(id) = file_id.as_str().parse::<u64>() else {
+                return;
+            };
+            let currently_watched = file_state
+                .read()
+                .unwrap()
+                .entries()
+                .get(&id.to_string())
+                .map(|entry| entry.is_completed())
+                .unwrap_or(false);
+            watch_sync.mark_watched(id, !currently_watched);
+            media_refresh();
+            if let Some(app) = weak.upgrade() {
+                app.invoke_request_refresh();
+                app.invoke_settings_refresh();
             }
         }
     });
