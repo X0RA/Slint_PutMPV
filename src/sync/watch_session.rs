@@ -20,6 +20,7 @@ pub struct WatchSyncService {
     config: Arc<ConfigStore>,
     rt: Arc<Runtime>,
     session: Arc<Mutex<Option<WatchSession>>>,
+    sync_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 #[derive(Debug)]
@@ -49,6 +50,7 @@ impl WatchSyncService {
             config,
             rt,
             session: Arc::new(Mutex::new(None)),
+            sync_lock: Arc::new(tokio::sync::Mutex::new(())),
         });
         service.start_scheduler();
         service
@@ -187,13 +189,15 @@ impl WatchSyncService {
             return;
         }
         let mut store = self.store.read().unwrap().clone();
-        match self.rt.block_on(putio::sync::sync_profile(
-            &self.client,
-            &token,
-            &mut store,
-            &slug,
-        )) {
-            Ok(()) => {
+        let lock = self.sync_lock.clone();
+        let result = self.rt.block_on(async move {
+            let _guard = lock.lock().await;
+            putio::sync::sync_profile(&self.client, &token, &mut store, &slug)
+                .await
+                .map(|_| store)
+        });
+        match result {
+            Ok(store) => {
                 *self.store.write().unwrap() = store;
             }
             Err(e) => warn!("could not flush watched state on shutdown: {e}"),
@@ -240,13 +244,15 @@ impl WatchSyncService {
             return;
         }
         let mut store = self.store.read().unwrap().clone();
-        match self.rt.block_on(putio::sync::sync_profile(
-            &self.client,
-            &token,
-            &mut store,
-            &slug,
-        )) {
-            Ok(()) => {
+        let lock = self.sync_lock.clone();
+        let result = self.rt.block_on(async move {
+            let _guard = lock.lock().await;
+            putio::sync::sync_profile(&self.client, &token, &mut store, &slug)
+                .await
+                .map(|_| store)
+        });
+        match result {
+            Ok(store) => {
                 *self.store.write().unwrap() = store;
             }
             Err(e) => warn!("could not pull watched state before playback: {e}"),
@@ -318,7 +324,9 @@ impl WatchSyncService {
         let shared_store = self.store.clone();
         let client = self.client.clone();
         let service = self.clone();
+        let lock = self.sync_lock.clone();
         self.rt.spawn(async move {
+            let _guard = lock.lock().await;
             match putio::sync::sync_profile(&client, &token, &mut store, &slug).await {
                 Ok(()) => {
                     *shared_store.write().unwrap() = store;

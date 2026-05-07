@@ -3,10 +3,14 @@ use std::collections::BTreeMap;
 use crate::storage::config::ConfigStore;
 use crate::storage::file_state::{count_completed, FileStateEntry, FileStateFile, FileStateStore};
 use anyhow::{anyhow, Result};
+use tracing::warn;
 
 use super::client::PutioClient;
 use super::files::list_folder;
-use super::folders::{delete_files, download_file, find_or_create_folder, upload_file};
+use super::folders::{
+    delete_files, delete_trash_files, download_file, find_or_create_folder, rename_file,
+    upload_file,
+};
 use super::types::PutIoFile;
 
 const REMOTE_FOLDER: &str = "PutMPV";
@@ -104,10 +108,23 @@ pub async fn sync_profile(
         version: 1,
         entries: store.entries().clone(),
     })?;
-    let uploaded = upload_file(client, token, folder_id, &profile_filename(slug), body).await?;
+    let canonical = profile_filename(slug);
+    let uploaded = upload_file(client, token, folder_id, &canonical, body).await?;
+    let mut trashed: Vec<u64> = Vec::new();
     if let Some(old) = profile_file {
         if old.id != uploaded.id {
-            delete_profile_duplicates(client, token, folder_id, slug, uploaded.id).await?;
+            trashed =
+                delete_profile_duplicates(client, token, folder_id, slug, uploaded.id).await?;
+        }
+    }
+    if uploaded.name != canonical {
+        if let Err(e) = rename_file(client, token, uploaded.id, &canonical).await {
+            warn!("could not rename uploaded profile to canonical name: {e}");
+        }
+    }
+    if !trashed.is_empty() {
+        if let Err(e) = delete_trash_files(client, token, &trashed).await {
+            warn!("could not purge profile files from put.io trash: {e}");
         }
     }
     Ok(())
@@ -135,7 +152,7 @@ async fn delete_profile_duplicates(
     folder_id: u64,
     slug: &str,
     keep_file_id: u64,
-) -> Result<()> {
+) -> Result<Vec<u64>> {
     let filename = profile_filename(slug);
     let ids = list_folder(client, token, folder_id)
         .await?
@@ -150,7 +167,7 @@ async fn delete_profile_duplicates(
         .map(|file| file.id)
         .collect::<Vec<_>>();
     delete_files(client, token, &ids).await?;
-    Ok(())
+    Ok(ids)
 }
 
 async fn download_state(
@@ -219,8 +236,10 @@ fn parse_profile_slug(filename: &str) -> Option<String> {
     let marker = "_file_state";
     let marker_index = name.find(marker)?;
     let suffix = &name[marker_index + marker.len()..];
-    if !suffix.is_empty() && !suffix.starts_with('-') {
-        return None;
+    if let Some(first) = suffix.chars().next() {
+        if first.is_ascii_alphanumeric() || first == '_' {
+            return None;
+        }
     }
     let slug = &name[..marker_index];
     (!slug.is_empty()).then(|| slug.to_string())
@@ -254,6 +273,14 @@ mod tests {
         );
         assert_eq!(
             parse_profile_slug("xora_file_state-oNXwC4uT.json").as_deref(),
+            Some("xora")
+        );
+        assert_eq!(
+            parse_profile_slug("xora_file_state.oUYkpp7n.json").as_deref(),
+            Some("xora")
+        );
+        assert_eq!(
+            parse_profile_slug("xora_file_state (1).json").as_deref(),
             Some("xora")
         );
         assert_eq!(parse_profile_slug("xora_file_state_backup.json"), None);

@@ -108,6 +108,65 @@ pub async fn download_file(
     client.get_bytes(&resp.url, None).await
 }
 
+pub async fn rename_file(
+    client: &PutioClient,
+    token: &str,
+    file_id: u64,
+    name: &str,
+) -> Result<(), ApiError> {
+    let resp = client
+        .post_form::<DeleteResponse>(
+            "https://api.put.io/v2/files/rename",
+            token,
+            &[
+                ("file_id", file_id.to_string()),
+                ("name", name.to_string()),
+            ],
+        )
+        .await?;
+    if resp.status == "OK" {
+        Ok(())
+    } else {
+        Err(ApiError::Http(
+            reqwest::StatusCode::BAD_GATEWAY,
+            resp.status,
+        ))
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct TrashDeleteBody {
+    file_ids: String,
+}
+
+pub async fn delete_trash_files(
+    client: &PutioClient,
+    token: &str,
+    ids: &[u64],
+) -> Result<(), ApiError> {
+    if ids.is_empty() {
+        return Ok(());
+    }
+    let body = TrashDeleteBody {
+        file_ids: ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(","),
+    };
+    let resp = client
+        .post_json::<_, DeleteResponse>("https://api.put.io/v2/trash/delete", token, &body)
+        .await?;
+    if resp.status == "OK" {
+        Ok(())
+    } else {
+        Err(ApiError::Http(
+            reqwest::StatusCode::BAD_GATEWAY,
+            resp.status,
+        ))
+    }
+}
+
 pub async fn delete_files(client: &PutioClient, token: &str, ids: &[u64]) -> Result<(), ApiError> {
     if ids.is_empty() {
         return Ok(());
