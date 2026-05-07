@@ -1,5 +1,7 @@
 /target/
 /deps/
+/dumps/
+/.deps/
 /dist/
 **/*.rs.bk
 

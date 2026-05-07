@@ -4,6 +4,15 @@
 #ifndef AppVersion
 #define AppVersion "0.1.0"
 #endif
+#ifndef AppSourceDir
+#define AppSourceDir "..\..\target\release"
+#endif
+#ifndef AppOutputDir
+#define AppOutputDir "..\..\target\release"
+#endif
+#ifndef AppOutputBaseFilename
+#define AppOutputBaseFilename "PutMPV-" + AppVersion + "-Setup"
+#endif
 
 [Setup]
 AppId={{833C8F31-D984-4713-8042-7F297C21D67F}
@@ -15,9 +24,9 @@ DefaultDirName={commonpf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 AllowNoIcons=yes
-OutputDir=..\dist
-OutputBaseFilename=PutMPV-{#AppVersion}-Setup
-SetupIconFile=..\ui\assets\appicon.ico
+OutputDir={#AppOutputDir}
+OutputBaseFilename={#AppOutputBaseFilename}
+SetupIconFile=..\..\ui\assets\appicon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 Compression=lzma2
 SolidCompression=yes
@@ -32,8 +41,8 @@ Name: "startmenuicon"; Description: "Create a Start Menu shortcut"; GroupDescrip
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
 [Files]
-Source: "..\target\release\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\target\release\libmpv-2.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#AppSourceDir}\{#AppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#AppSourceDir}\libmpv-2.dll"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"; WorkingDir: "{app}"; Tasks: startmenuicon

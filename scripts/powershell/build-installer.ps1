@@ -3,30 +3,41 @@
     Build the Windows PutMPV installer.
 
 .DESCRIPTION
-    Builds the release executable, stages libmpv-2.dll next to it via build.bat,
-    then compiles installer/putmpv.iss with Inno Setup.
+    Compiles scripts/installer/putmpv.iss with Inno Setup using an already-built
+    PutMPV executable and staged libmpv-2.dll.
 
 .PARAMETER Version
     Optional installer version. Defaults to the version in Cargo.toml.
 
-.PARAMETER SkipBuild
-    Skip the Rust release build and use the existing target/release outputs.
+.PARAMETER BuildDir
+    Directory containing putmpv.exe and libmpv-2.dll. The installer is emitted
+    into this same directory.
+
+.PARAMETER OutputSuffix
+    Optional suffix inserted before "-Setup" in the installer file name.
 #>
 [CmdletBinding()]
 param(
     [string]$Version,
-    [switch]$SkipBuild
+    [Parameter(Mandatory = $true)]
+    [string]$BuildDir,
+    [string]$OutputSuffix = ''
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot = Split-Path -Parent $ScriptDir
-$InstallerScript = Join-Path $RepoRoot 'installer\putmpv.iss'
-$ReleaseDir = Join-Path $RepoRoot 'target\release'
-$ExePath = Join-Path $ReleaseDir 'putmpv.exe'
-$MpvDllPath = Join-Path $ReleaseDir 'libmpv-2.dll'
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptDir)
+$InstallerScript = Join-Path $RepoRoot 'scripts\installer\putmpv.iss'
+if ([System.IO.Path]::IsPathRooted($BuildDir)) {
+    $ResolvedBuildDir = [System.IO.Path]::GetFullPath($BuildDir)
+}
+else {
+    $ResolvedBuildDir = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $BuildDir))
+}
+$ExePath = Join-Path $ResolvedBuildDir 'putmpv.exe'
+$MpvDllPath = Join-Path $ResolvedBuildDir 'libmpv-2.dll'
 
 if (-not $Version) {
     $manifest = Get-Content (Join-Path $RepoRoot 'Cargo.toml')
@@ -52,13 +63,6 @@ function Find-InnoCompiler {
     throw "Inno Setup compiler not found. Install Inno Setup 6.3 or newer, then re-run this script."
 }
 
-if (-not $SkipBuild) {
-    & (Join-Path $RepoRoot 'build.bat')
-    if ($LASTEXITCODE -ne 0) {
-        throw "build.bat failed with exit code $LASTEXITCODE."
-    }
-}
-
 foreach ($required in @($ExePath, $MpvDllPath, $InstallerScript)) {
     if (-not (Test-Path $required)) {
         throw "Required file missing: $required"
@@ -66,13 +70,19 @@ foreach ($required in @($ExePath, $MpvDllPath, $InstallerScript)) {
 }
 
 $iscc = Find-InnoCompiler
-New-Item -ItemType Directory -Force -Path (Join-Path $RepoRoot 'dist') | Out-Null
+$outputBaseFilename = "PutMPV-$Version$OutputSuffix-Setup"
+New-Item -ItemType Directory -Force -Path $ResolvedBuildDir | Out-Null
 
-& $iscc "/DAppVersion=$Version" $InstallerScript
+& $iscc `
+    "/DAppVersion=$Version" `
+    "/DAppSourceDir=$ResolvedBuildDir" `
+    "/DAppOutputDir=$ResolvedBuildDir" `
+    "/DAppOutputBaseFilename=$outputBaseFilename" `
+    $InstallerScript
 if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup failed with exit code $LASTEXITCODE."
 }
 
-$output = Join-Path $RepoRoot "dist\PutMPV-$Version-Setup.exe"
+$output = Join-Path $ResolvedBuildDir "$outputBaseFilename.exe"
 Write-Host "Installer built:"
 Write-Host "    $output"

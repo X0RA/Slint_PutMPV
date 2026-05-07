@@ -26,7 +26,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$RepoRoot  = Split-Path -Parent $ScriptDir
+$RepoRoot  = Split-Path -Parent (Split-Path -Parent $ScriptDir)
 $DepsDir   = Join-Path $RepoRoot 'deps'
 $DllOut   = Join-Path $DepsDir  'libmpv-2.dll'
 $LibOut   = Join-Path $DepsDir  'mpv.lib'

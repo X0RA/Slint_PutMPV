@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\setup-deps.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\powershell\setup-deps.ps1"
 if errorlevel 1 exit /b %errorlevel%
 
 set "LIB=%~dp0deps;%LIB%"
@@ -16,6 +16,9 @@ if errorlevel 1 exit /b %errorlevel%
 
 if not exist "%~dp0target\dev-fast" mkdir "%~dp0target\dev-fast"
 copy /Y "%~dp0deps\libmpv-2.dll" "%~dp0target\dev-fast\libmpv-2.dll" >nul
+
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\powershell\build-installer.ps1" -BuildDir "%~dp0target\dev-fast" -OutputSuffix "-dev-fast"
+if errorlevel 1 exit /b %errorlevel%
 
 "%~dp0target\dev-fast\putmpv.exe" %*
 exit /b %errorlevel%
