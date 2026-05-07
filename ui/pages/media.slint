@@ -135,19 +135,40 @@ component HubMediaCard inherits TouchArea {
                         height: 28px;
                         border-radius: 14px;
                         border-width: 1px;
-                        border-color: root.data.progress < 0.05 ? #ffffff40 : root.data.progress < 0.9 ? #fbbf24cc : #22c55ecc;
-                        background: root.data.progress < 0.05 ? #000000aa : root.data.progress < 0.9 ? #fbbf24 : #22c55e;
+                        border-color: root.data.progress >= 0.9 ? #22c55ecc : root.data.progress > 0.0 ? #fbbf24cc : Theme.border;
+                        background: root.data.progress >= 0.9 ? #22c55e : root.data.progress > 0.0 ? #fbbf24 : Theme.surface_higher;
 
                         Icon {
                             x: (parent.width - self.width) / 2;
                             y: (parent.height - self.height) / 2;
                             name: "check";
                             icon_size: 13px;
-                            tint: root.data.progress < 0.05 ? Theme.text_dim : Theme.bg;
+                            tint: root.data.progress > 0.0 ? Theme.bg : Theme.text_dim;
                         }
 
                         TouchArea {
                             clicked => { root.watch_toggle(); }
+                        }
+                    }
+
+                    if !root.data.is_tv && root.data.progress > 0.0 && root.data.progress < 0.9 : Rectangle {
+                        x: 10px;
+                        y: 10px;
+                        height: 22px;
+                        width: progress-t.preferred-width + 16px;
+                        border-radius: 7px;
+                        background: #000000cc;
+                        border-width: 1px;
+                        border-color: #ffffff22;
+
+                        progress-t := Text {
+                            x: 8px;
+                            y: (parent.height - self.height) / 2;
+                            text: Math.round(root.data.progress * 100) + "% watched";
+                            color: #ffffff;
+                            font-size: 10.5px;
+                            font-weight: 700;
+                            font-family: Theme.ui_font;
                         }
                     }
 

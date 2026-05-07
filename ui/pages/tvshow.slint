@@ -539,6 +539,27 @@ export component TvShowPage inherits Rectangle {
                                         source: ep.still;
                                         image-fit: cover;
                                     }
+
+                                    if ep.progress > 0.0 && ep.progress < 0.9 : Rectangle {
+                                        x: 6px;
+                                        y: 6px;
+                                        height: 20px;
+                                        width: ep-progress.preferred-width + 14px;
+                                        border-radius: 6px;
+                                        background: #000000cc;
+                                        border-width: 1px;
+                                        border-color: #ffffff22;
+
+                                        ep-progress := Text {
+                                            x: 7px;
+                                            y: (parent.height - self.height) / 2;
+                                            text: Math.round(ep.progress * 100) + "% watched";
+                                            color: #ffffff;
+                                            font-size: 10px;
+                                            font-weight: 700;
+                                            font-family: Theme.ui_font;
+                                        }
+                                    }
                                 }
 
                                 VerticalLayout {
@@ -565,15 +586,15 @@ export component TvShowPage inherits Rectangle {
                                             height: 24px;
                                             border-radius: 12px;
                                             border-width: 1px;
-                                            border-color: ep.watched ? #22c55ecc : #ffffff40;
-                                            background: ep.watched ? #22c55e : #000000aa;
+                                            border-color: ep.progress >= 0.9 ? #22c55ecc : ep.progress > 0.0 ? #fbbf24cc : Theme.border;
+                                            background: ep.progress >= 0.9 ? #22c55e : ep.progress > 0.0 ? #fbbf24 : Theme.surface_higher;
 
                                             Icon {
                                                 x: (parent.width - self.width) / 2;
                                                 y: (parent.height - self.height) / 2;
                                                 name: "check";
                                                 icon_size: 12px;
-                                                tint: ep.watched ? Theme.bg : Theme.text_dim;
+                                                tint: ep.progress > 0.0 ? Theme.bg : Theme.text_dim;
                                             }
 
                                             TouchArea {

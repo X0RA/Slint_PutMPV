@@ -618,6 +618,10 @@ pub(crate) fn refresh_tv_show_ui(
             let rating_label = episode_display_rating(ep.vote_average, ep.vote_count);
             let credits_vec = build_episode_credits(ep, &mut missing_credit_profiles);
             let credits_m = std::rc::Rc::new(slint::VecModel::from(credits_vec));
+            let progress = file_state_entries
+                .get(&file_id)
+                .map(|entry| entry.progress_ratio())
+                .unwrap_or(0.0);
             ep_rows.push(TvEpisodeRow {
                 ep_num: ep.episode_number,
                 title: ep.name.as_str().into(),
@@ -625,6 +629,7 @@ pub(crate) fn refresh_tv_show_ui(
                     .get(&file_id)
                     .map(|entry| entry.is_completed())
                     .unwrap_or(false),
+                progress,
                 air_date: air_fmt.as_str().into(),
                 duration_label: duration_label.as_str().into(),
                 overview: ep.overview.as_str().into(),
