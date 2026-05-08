@@ -1,0 +1,406 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { Icon } from "../components/icons.slint";
+import { SearchField, ButtonChip, SegmentChip } from "../components/primitives.slint";
+
+component MagnetRow inherits Rectangle {
+    in property <string> title;
+    in property <string> source;
+    in property <string> size;
+    in property <string> seeders;
+    in property <string> age;
+    in property <bool> last: false;
+    callback copy_magnet();
+    callback download();
+
+    height: 64px;
+    background: touch.has-hover ? #ffffff05 : transparent;
+    private property <length> right_margin: 18px;
+    private property <length> download_w: 96px;
+    private property <length> copy_w: 72px;
+    private property <length> action_gap: 8px;
+    private property <length> seeders_w: 84px;
+    private property <length> right_block_w: seeders_w + action_gap + copy_w + action_gap + download_w;
+    private property <length> right_start_x: root.width - right_margin - right_block_w;
+
+    Text {
+        x: 18px;
+        y: 12px;
+        width: right_start_x - 18px - 12px;
+        text: root.title;
+        color: Theme.text;
+        font-size: 13px;
+        font-weight: 500;
+        font-family: Theme.ui_font;
+        overflow: elide;
+    }
+
+    Rectangle {
+        x: 18px;
+        y: 36px;
+        width: source-text.preferred-width + 12px;
+        height: 18px;
+        border-radius: 4px;
+        background: Theme.surface_higher;
+
+        source-text := Text {
+            x: 6px;
+            y: 2px;
+            text: root.source;
+            color: Theme.text_dim;
+            font-size: 10.5px;
+            font-weight: 600;
+            font-family: Theme.ui_font;
+        }
+    }
+
+    size-text := Text {
+        x: 18px + source-text.preferred-width + 20px;
+        y: 36px;
+        text: root.size;
+        color: Theme.text_dim;
+        font-size: 11px;
+        font-family: Theme.ui_font;
+    }
+
+    Text {
+        x: size-text.x + size-text.preferred-width + 10px;
+        y: 36px;
+        text: root.age;
+        color: Theme.text_mute;
+        font-size: 11px;
+        font-family: Theme.ui_font;
+    }
+
+    seeders-layout := Rectangle {
+        x: right_start_x;
+        y: 14px;
+        width: seeders_w;
+        height: 28px;
+
+        Icon {
+            x: 0px;
+            y: (parent.height - self.height) / 2;
+            name: "arrow-up";
+            icon_size: 10px;
+            tint: Theme.success;
+        }
+
+        Text {
+            x: 16px;
+            y: (parent.height - self.height) / 2;
+            text: root.seeders;
+            color: Theme.success;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: Theme.ui_font;
+            vertical-alignment: center;
+        }
+    }
+
+    copy-btn := Rectangle {
+        x: seeders-layout.x + seeders-layout.width + action_gap;
+        y: 10px;
+        width: copy_w;
+        height: 32px;
+        border-radius: 6px;
+        border-width: 1px;
+        border-color: copy-touch.has-hover ? Theme.accent_border : Theme.border;
+        background: copy-touch.has-hover ? Theme.accent_soft : transparent;
+
+        Icon {
+            x: copy-label.x - self.width - 6px;
+            y: (parent.height - self.height) / 2;
+            name: "copy";
+            icon_size: 12px;
+            tint: copy-touch.has-hover ? Theme.accent_hi : Theme.text_dim;
+        }
+
+        copy-label := Text {
+            x: (parent.width - (self.preferred-width + 18px)) / 2 + 18px;
+            y: (parent.height - self.height) / 2 + 1px;
+            text: "Copy";
+            color: copy-touch.has-hover ? Theme.accent_hi : Theme.text_dim;
+            font-size: 11px;
+            font-weight: 500;
+            font-family: Theme.ui_font;
+        }
+
+        copy-touch := TouchArea {
+            clicked => { root.copy_magnet(); }
+        }
+    }
+
+    dl-btn := Rectangle {
+        x: copy-btn.x + copy-btn.width + action_gap;
+        y: 10px;
+        width: download_w;
+        height: 32px;
+        border-radius: 6px;
+        border-width: 1px;
+        border-color: dl-touch.has-hover ? Theme.accent_border : Theme.border;
+        background: dl-touch.has-hover ? Theme.accent_soft : transparent;
+
+        Icon {
+            x: dl-label.x - self.width - 6px;
+            y: (parent.height - self.height) / 2;
+            name: "download";
+            icon_size: 12px;
+            tint: dl-touch.has-hover ? Theme.accent_hi : Theme.text_dim;
+        }
+
+        dl-label := Text {
+            x: (parent.width - (self.preferred-width + 18px)) / 2 + 18px;
+            y: (parent.height - self.height) / 2 + 1px;
+            text: "Download";
+            color: dl-touch.has-hover ? Theme.accent_hi : Theme.text_dim;
+            font-size: 11px;
+            font-weight: 500;
+            font-family: Theme.ui_font;
+        }
+
+        dl-touch := TouchArea {
+            clicked => { root.download(); }
+        }
+    }
+
+    touch := TouchArea {}
+
+    if (!root.last) : Rectangle {
+        x: 18px;
+        y: parent.height - 1px;
+        width: parent.width - 36px;
+        height: 1px;
+        background: Theme.border;
+    }
+}
+
+export component MagnetsPage inherits Rectangle {
+    in-out property <string> search_text: "";
+    in-out property <int> sort_index: 0;
+    in-out property <bool> sort_descending: true;
+    in-out property <bool> f720p: false;
+    in-out property <bool> f1080p: false;
+    in-out property <bool> f2160p: false;
+    in-out property <bool> fx264: false;
+    in-out property <bool> fx265: false;
+    in-out property <bool> fhdr: false;
+
+    callback search_changed();
+    callback sort_changed(index: int);
+    callback sort_direction_toggled();
+    callback toggle_filter(name: string);
+
+    private property <length> page_padding: root.width < 720px ? 20px : 36px;
+    private property <length> content_width: root.width - page_padding * 2;
+    private property <bool> filters_on_own_row: content_width < 1080px;
+    private property <length> controls_bottom_y: filters_on_own_row ? 208px : 170px;
+
+    background: Theme.bg;
+
+    Text {
+        x: page_padding;
+        y: 36px;
+        text: "Magnets";
+        color: Theme.text;
+        font-size: 28px;
+        font-weight: 700;
+        font-family: Theme.ui_font;
+    }
+
+    search := SearchField {
+        x: page_padding;
+        y: 80px;
+        width: content_width;
+        placeholder: "Search for torrents…";
+        text <=> root.search_text;
+        edited => { root.search_changed(); }
+    }
+
+    filters-segment := Rectangle {
+        x: page_padding;
+        y: filters_on_own_row ? 178px : 130px;
+        width: filters_on_own_row ? min(content_width, 480px) : min(content_width * 0.45, 480px);
+        height: 30px;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.surface;
+        clip: true;
+
+        HorizontalLayout {
+            width: parent.width;
+            height: parent.height;
+            spacing: 0px;
+
+            SegmentChip { horizontal-stretch: 1; label: "720p"; active: root.f720p; show_right_divider: true; clicked => { root.f720p = !root.f720p; root.toggle_filter("720p"); } }
+            SegmentChip { horizontal-stretch: 1; label: "1080p"; active: root.f1080p; show_right_divider: true; clicked => { root.f1080p = !root.f1080p; root.toggle_filter("1080p"); } }
+            SegmentChip { horizontal-stretch: 1; label: "2160p"; active: root.f2160p; show_right_divider: true; clicked => { root.f2160p = !root.f2160p; root.toggle_filter("2160p"); } }
+            SegmentChip { horizontal-stretch: 1; label: "x264"; active: root.fx264; show_right_divider: true; clicked => { root.fx264 = !root.fx264; root.toggle_filter("x264"); } }
+            SegmentChip { horizontal-stretch: 1; label: "x265"; active: root.fx265; show_right_divider: true; clicked => { root.fx265 = !root.fx265; root.toggle_filter("x265"); } }
+            SegmentChip { horizontal-stretch: 1; label: "HDR"; active: root.fhdr; show_right_divider: false; clicked => { root.fhdr = !root.fhdr; root.toggle_filter("HDR"); } }
+        }
+    }
+
+    toolbar := Rectangle {
+        x: filters_on_own_row ? page_padding : filters-segment.x + filters-segment.width + 10px;
+        y: 130px;
+        width: filters_on_own_row ? content_width : content_width - filters-segment.width - 10px;
+        height: 40px;
+        background: transparent;
+
+        sort-segment := Rectangle {
+            x: 0px;
+            y: 0px;
+            width: max(220px, min(parent.width - 130px, 460px));
+            height: 32px;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.border;
+            background: Theme.surface;
+            clip: true;
+
+            HorizontalLayout {
+                width: parent.width;
+                height: parent.height;
+                spacing: 0px;
+
+                SegmentChip { horizontal-stretch: 1; label: "Name"; active: root.sort_index == 0; show_right_divider: true; clicked => { root.sort_index = 0; root.sort_changed(0); } }
+                SegmentChip { horizontal-stretch: 1; label: "Seeders"; active: root.sort_index == 1; show_right_divider: true; clicked => { root.sort_index = 1; root.sort_changed(1); } }
+                SegmentChip { horizontal-stretch: 1; label: "Size"; active: root.sort_index == 2; show_right_divider: true; clicked => { root.sort_index = 2; root.sort_changed(2); } }
+                SegmentChip { horizontal-stretch: 1; label: "Age"; active: root.sort_index == 3; show_right_divider: true; clicked => { root.sort_index = 3; root.sort_changed(3); } }
+                SegmentChip { horizontal-stretch: 1; label: "Source"; active: root.sort_index == 4; show_right_divider: false; clicked => { root.sort_index = 4; root.sort_changed(4); } }
+            }
+        }
+
+        descending-chip := ButtonChip {
+            x: sort-segment.x + sort-segment.width + 10px;
+            y: 0px;
+            width: 120px;
+            height: 32px;
+            label: root.sort_descending ? "Descending" : "Ascending";
+            icon_name: "sort";
+            clicked => {
+                root.sort_descending = !root.sort_descending;
+                root.sort_direction_toggled();
+            }
+        }
+    }
+
+    Text {
+        x: page_padding;
+        y: controls_bottom_y + 12px;
+        text: "6 results";
+        color: Theme.text_mute;
+        font-size: 12px;
+        font-family: Theme.ui_font;
+    }
+
+    ScrollView {
+        x: page_padding;
+        y: controls_bottom_y + 38px;
+        width: content_width;
+        height: parent.height - (controls_bottom_y + 62px);
+        viewport-width: self.visible-width;
+        viewport-height: max(self.visible-height, results.preferred-height);
+
+        results := VerticalLayout {
+            width: parent.width;
+            spacing: 0px;
+
+            Rectangle {
+                width: parent.width;
+                height: 40px;
+                border-top-left-radius: 10px;
+                border-top-right-radius: 10px;
+                border-width: 1px;
+                border-color: Theme.border;
+                background: Theme.surface;
+
+                Text { x: 18px; y: 12px; text: "TORRENTS"; color: Theme.text_mute; font-size: 10.5px; font-weight: 700; letter-spacing: 0.8px; font-family: Theme.ui_font; }
+            }
+
+            Rectangle {
+                width: parent.width;
+                border-width: 1px;
+                border-color: Theme.border;
+                border-bottom-left-radius: 10px;
+                border-bottom-right-radius: 10px;
+                background: Theme.surface;
+                height: magnet-list.preferred-height;
+                clip: true;
+
+                magnet-list := VerticalLayout {
+                    width: parent.width;
+                    spacing: 0px;
+
+                    MagnetRow {
+                        title: "Interstellar.2014.2160p.BluRay.x265.10bit.HDR.DTS-HD.MA.5.1";
+                        source: "1337x";
+                        size: "14.2 GB";
+                        seeders: "1,247";
+                        age: "3 days";
+                        last: false;
+                        copy_magnet => { }
+                        download => { }
+                    }
+
+                    MagnetRow {
+                        title: "Interstellar.2014.1080p.BluRay.x264.DTS-HD.MA.5.1";
+                        source: "YTS";
+                        size: "4.8 GB";
+                        seeders: "3,891";
+                        age: "12 days";
+                        last: false;
+                        copy_magnet => { }
+                        download => { }
+                    }
+
+                    MagnetRow {
+                        title: "The.Matrix.1999.2160p.WEB-DL.x265.HDR.DTS-HD.MA.5.1";
+                        source: "RARBG";
+                        size: "11.6 GB";
+                        seeders: "856";
+                        age: "1 day";
+                        last: false;
+                        copy_magnet => { }
+                        download => { }
+                    }
+
+                    MagnetRow {
+                        title: "Dune.Part.Two.2024.1080p.WEB-DL.x264.AAC5.1";
+                        source: "1337x";
+                        size: "3.2 GB";
+                        seeders: "5,423";
+                        age: "2 hours";
+                        last: false;
+                        copy_magnet => { }
+                        download => { }
+                    }
+
+                    MagnetRow {
+                        title: "Oppenheimer.2023.720p.BluRay.x264.YTS";
+                        source: "YTS";
+                        size: "1.1 GB";
+                        seeders: "2,109";
+                        age: "5 days";
+                        last: false;
+                        copy_magnet => { }
+                        download => { }
+                    }
+
+                    MagnetRow {
+                        title: "Blade.Runner.2049.2017.2160p.UHD.BluRay.x265.HDR.DTS-HD.MA.7.1";
+                        source: "RARBG";
+                        size: "18.7 GB";
+                        seeders: "412";
+                        age: "21 days";
+                        last: true;
+                        copy_magnet => { }
+                        download => { }
+                    }
+                }
+            }
+        }
+    }
+}

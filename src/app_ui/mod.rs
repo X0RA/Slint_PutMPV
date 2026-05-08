@@ -39,6 +39,7 @@ pub(crate) const VIEW_FILES: i32 = 3;
 pub(crate) const VIEW_MEDIA: i32 = 4;
 pub(crate) const VIEW_TV_SHOW: i32 = 8;
 pub(crate) const VIEW_PLAYER: i32 = 7;
+pub(crate) const VIEW_MAGNETS: i32 = 9;
 pub(crate) const VIEW_SPLASH_AFTER_RESET: i32 = VIEW_SPLASH;
 
 /// Runtime services and API clients (not Slint-specific).

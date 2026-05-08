@@ -10,6 +10,7 @@ import { TransfersPage } from "./pages/transfers.slint";
 import { MediaPage, MediaItem } from "./pages/media.slint";
 import { TvShowPage } from "./pages/tvshow.slint";
 import { PlayerPage } from "./pages/player.slint";
+import { MagnetsPage } from "./pages/magnets.slint";
 import { FileItem, MetadataItem, PathSegment, LocalDataRow, PlayerPlaylistItem, PlayerTrack, TransferItem, TvSeasonTab, TvEpisodeRow, TvCreatorChip, TvHeroBadge, TvDetailItem } from "./types.slint";
 
 export component AppWindow inherits Window {
@@ -244,6 +245,7 @@ export component AppWindow inherits Window {
             TopNavButton { label: "Files"; icon_name: "folder"; active: root.view == 3; clicked => { root.view = 3; } }
             TopNavButton { label: "Transfers"; icon_name: "download"; active: root.view == 5; clicked => { root.view = 5; root.transfers_refresh(); } }
             TopNavButton { label: "Media"; icon_name: "media"; active: root.view == 4 || root.view == 8; clicked => { root.view = 4; root.media_refresh(); } }
+            TopNavButton { label: "Magnets"; icon_name: "magnet"; active: root.view == 9; clicked => { root.view = 9; } }
             TopNavButton { label: "Settings"; icon_name: "settings"; active: root.view == 6; clicked => { root.view = 6; root.settings_refresh(); if (root.settings_section == 1) { root.sync_refresh_profiles(); } if (root.settings_section == 3) { root.metadata_criteria_changed(); } } }
             Rectangle { width: 13px; Rectangle { x: 6px; y: (parent.height - self.height) / 2; width: 1px; height: 20px; background: Theme.border; } }
             ButtonChip { label: "Logout"; icon_name: "logout"; clicked => { root.logout(); } }
@@ -362,6 +364,13 @@ export component AppWindow inherits Window {
         cancel_dismiss => { root.transfers_cancel_dismiss(); }
         clear_completed => { root.transfers_clear_completed(); }
         go_to_file(file_id, parent_id) => { root.transfers_go_to_file(file_id, parent_id); }
+    }
+
+    if (root.view == 9) : magnets := MagnetsPage {
+        x: 0px;
+        y: Theme.title_bar_height;
+        width: parent.width;
+        height: parent.height - Theme.title_bar_height;
     }
 
     if (root.view == 8) : tvshow := TvShowPage {
