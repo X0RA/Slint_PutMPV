@@ -229,7 +229,7 @@ fn sort_view(items: &mut [&Torrent], sort_index: i32, descending: bool) {
             0 => a.name.to_lowercase().cmp(&b.name.to_lowercase()),
             1 => a.seeders.cmp(&b.seeders),
             2 => a.size_bytes.cmp(&b.size_bytes),
-            3 => Ordering::Equal,
+            3 => a.peers.cmp(&b.peers),
             4 => a.provider.to_lowercase().cmp(&b.provider.to_lowercase()),
             _ => Ordering::Equal,
         };
@@ -246,13 +246,13 @@ fn torrent_to_item(t: &Torrent) -> MagnetItem {
         title: t.name.clone().into(),
         source: t.provider.clone().into(),
         size: format_size(t.size_bytes).into(),
-        seeders: format_seeders(t.seeders).into(),
-        age: "".into(),
+        seeders: format_number(t.seeders).into(),
+        peers: format_number(t.peers).into(),
         magnet_link: t.magnet_link.clone().into(),
     }
 }
 
-fn format_seeders(n: u32) -> String {
+fn format_number(n: u32) -> String {
     let raw = n.to_string();
     let mut out = String::with_capacity(raw.len() + raw.len() / 3);
     for (i, c) in raw.chars().rev().enumerate() {
@@ -269,11 +269,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn seeders_formatted_with_commas() {
-        assert_eq!(format_seeders(0), "0");
-        assert_eq!(format_seeders(42), "42");
-        assert_eq!(format_seeders(1_247), "1,247");
-        assert_eq!(format_seeders(1_000_000), "1,000,000");
+    fn number_formatted_with_commas() {
+        assert_eq!(format_number(0), "0");
+        assert_eq!(format_number(42), "42");
+        assert_eq!(format_number(1_247), "1,247");
+        assert_eq!(format_number(1_000_000), "1,000,000");
     }
 
     #[test]

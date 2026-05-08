@@ -9,7 +9,7 @@ component MagnetRow inherits Rectangle {
     in property <string> source;
     in property <string> size;
     in property <string> seeders;
-    in property <string> age;
+    in property <string> peers;
     in property <string> magnet_link;
     in property <bool> last: false;
     callback copy_magnet(magnet: string);
@@ -22,7 +22,8 @@ component MagnetRow inherits Rectangle {
     private property <length> copy_w: 72px;
     private property <length> action_gap: 8px;
     private property <length> seeders_w: 84px;
-    private property <length> right_block_w: seeders_w + action_gap + copy_w + action_gap + download_w;
+    private property <length> peers_w: 84px;
+    private property <length> right_block_w: seeders_w + peers_w + action_gap + copy_w + action_gap + download_w;
     private property <length> right_start_x: root.width - right_margin - right_block_w;
 
     // Row TouchArea is declared FIRST so the action buttons declared after it
@@ -69,15 +70,6 @@ component MagnetRow inherits Rectangle {
         font-family: Theme.ui_font;
     }
 
-    Text {
-        x: size-text.x + size-text.preferred-width + 10px;
-        y: 36px;
-        text: root.age;
-        color: Theme.text_mute;
-        font-size: 11px;
-        font-family: Theme.ui_font;
-    }
-
     seeders-layout := Rectangle {
         x: right_start_x;
         y: 14px;
@@ -104,8 +96,35 @@ component MagnetRow inherits Rectangle {
         }
     }
 
+    peers-layout := Rectangle {
+        x: seeders-layout.x + seeders-layout.width;
+        y: 14px;
+        width: peers_w;
+        height: 28px;
+
+        Icon {
+            x: 0px;
+            y: (parent.height - self.height) / 2;
+            name: "arrow-up";
+            icon_size: 10px;
+            tint: Theme.warning;
+            transform-rotation: 180deg;
+        }
+
+        Text {
+            x: 16px;
+            y: (parent.height - self.height) / 2;
+            text: root.peers;
+            color: Theme.warning;
+            font-size: 12px;
+            font-weight: 600;
+            font-family: Theme.ui_font;
+            vertical-alignment: center;
+        }
+    }
+
     copy-btn := Rectangle {
-        x: seeders-layout.x + seeders-layout.width + action_gap;
+        x: peers-layout.x + peers-layout.width + action_gap;
         y: 10px;
         width: copy_w;
         height: 32px;
@@ -278,7 +297,7 @@ export component MagnetsPage inherits Rectangle {
                 SegmentChip { horizontal-stretch: 1; label: "Name"; active: root.sort_index == 0; show_right_divider: true; clicked => { root.sort_index = 0; root.sort_changed(0); } }
                 SegmentChip { horizontal-stretch: 1; label: "Seeders"; active: root.sort_index == 1; show_right_divider: true; clicked => { root.sort_index = 1; root.sort_changed(1); } }
                 SegmentChip { horizontal-stretch: 1; label: "Size"; active: root.sort_index == 2; show_right_divider: true; clicked => { root.sort_index = 2; root.sort_changed(2); } }
-                SegmentChip { horizontal-stretch: 1; label: "Age"; active: root.sort_index == 3; show_right_divider: true; clicked => { root.sort_index = 3; root.sort_changed(3); } }
+                SegmentChip { horizontal-stretch: 1; label: "Peers"; active: root.sort_index == 3; show_right_divider: true; clicked => { root.sort_index = 3; root.sort_changed(3); } }
                 SegmentChip { horizontal-stretch: 1; label: "Source"; active: root.sort_index == 4; show_right_divider: false; clicked => { root.sort_index = 4; root.sort_changed(4); } }
             }
         }
@@ -359,7 +378,7 @@ export component MagnetsPage inherits Rectangle {
                         source: entry.source;
                         size: entry.size;
                         seeders: entry.seeders;
-                        age: entry.age;
+                        peers: entry.peers;
                         magnet_link: entry.magnet-link;
                         last: i == root.items.length - 1;
                         copy_magnet(m) => { root.copy_magnet(m); }
