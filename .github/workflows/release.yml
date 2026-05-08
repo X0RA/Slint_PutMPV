@@ -150,8 +150,21 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
           Copy-Item "target\release\${env:APP_BIN}.exe" "dist\${env:APP_BIN}-windows-x86_64.exe"
+          Copy-Item "target\release\${env:APP_BIN}.exe" "dist\${env:APP_BIN}.exe"
           $dll = Get-ChildItem $env:MPV_DEV_DIR -Filter "libmpv-2.dll" | Select-Object -First 1
           if ($dll) { Copy-Item $dll.FullName "dist\libmpv-2.dll" }
+
+      - name: Install Inno Setup
+        if: inputs.version != ''
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build Windows installer
+        if: inputs.version != ''
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: .\scripts\powershell\build-installer.ps1 -Version $env:VERSION -BuildDir dist
 
       - name: Upload Windows artifact
         if: inputs.version != ''
@@ -161,6 +174,7 @@ jobs:
           path: |
             dist/${{ env.APP_BIN }}-windows-x86_64.exe
             dist/libmpv-2.dll
+            dist/PutMPV-${{ inputs.version }}-Setup.exe
           if-no-files-found: error
 
   build-macos:
