@@ -6,6 +6,7 @@ import { SplashPage } from "./pages/splash.slint";
 import { CodePage } from "./pages/code.slint";
 import { FilesPage } from "./pages/files.slint";
 import { SettingsPage } from "./pages/settings.slint";
+import { TransfersPage } from "./pages/transfers.slint";
 import { MediaPage, MediaItem } from "./pages/media.slint";
 import { TvShowPage } from "./pages/tvshow.slint";
 import { PlayerPage } from "./pages/player.slint";
@@ -100,6 +101,8 @@ export component AppWindow inherits Window {
     in-out property <string> media_error_flash_text;
     in-out property <bool> media_show_success_flash: false;
     in-out property <string> media_success_flash_text;
+    in-out property <bool> transfers_add_open: false;
+    in-out property <string> transfers_magnet: "";
 
     in-out property <string> tv_show_title: "";
     in-out property <string> tv_show_tagline: "";
@@ -183,6 +186,10 @@ export component AppWindow inherits Window {
     callback media_scrape_unmatched();
     callback media_dismiss_error();
     callback media_dismiss_success();
+    callback transfers_open_add();
+    callback transfers_close_add();
+    callback transfers_submit_magnet();
+    callback transfers_pick_torrent_file();
     callback tv_show_back();
     callback tv_show_season_changed(int);
     callback tv_show_play_episode(string);
@@ -222,6 +229,7 @@ export component AppWindow inherits Window {
             alignment: end;
 
             TopNavButton { label: "Files"; icon_name: "folder"; active: root.view == 3; clicked => { root.view = 3; } }
+            TopNavButton { label: "Transfers"; icon_name: "download"; active: root.view == 5; clicked => { root.view = 5; } }
             TopNavButton { label: "Media"; icon_name: "media"; active: root.view == 4 || root.view == 8; clicked => { root.view = 4; root.media_refresh(); } }
             TopNavButton { label: "Settings"; icon_name: "settings"; active: root.view == 6; clicked => { root.view = 6; root.settings_refresh(); if (root.settings_section == 1) { root.sync_refresh_profiles(); } if (root.settings_section == 3) { root.metadata_criteria_changed(); } } }
             Rectangle { width: 13px; Rectangle { x: 6px; y: (parent.height - self.height) / 2; width: 1px; height: 20px; background: Theme.border; } }
@@ -315,6 +323,19 @@ export component AppWindow inherits Window {
         dismiss_success => { root.media_dismiss_success(); }
         media_item_clicked(file_id) => { root.media_item_clicked(file_id); }
         media_watch_toggle(file_id) => { root.media_watch_toggle(file_id); }
+    }
+
+    if (root.view == 5) : transfers := TransfersPage {
+        x: 0px;
+        y: Theme.title_bar_height;
+        width: parent.width;
+        height: parent.height - Theme.title_bar_height;
+        add_open <=> root.transfers_add_open;
+        magnet <=> root.transfers_magnet;
+        open_add => { root.transfers_open_add(); }
+        close_add => { root.transfers_close_add(); }
+        submit_magnet => { root.transfers_submit_magnet(); }
+        pick_torrent_file => { root.transfers_pick_torrent_file(); }
     }
 
     if (root.view == 8) : tvshow := TvShowPage {

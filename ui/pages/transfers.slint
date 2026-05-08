@@ -1,0 +1,416 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "../theme.slint";
+import { ButtonChip, IconButton, TextFieldBox } from "../components/primitives.slint";
+import { Icon } from "../components/icons.slint";
+
+component RowActionButton inherits Rectangle {
+    in property <string> icon_name;
+    in property <bool> danger: false;
+    callback clicked();
+
+    width: 28px;
+    height: 28px;
+    border-radius: 7px;
+    border-width: 1px;
+    border-color: action-touch.pressed
+        ? (root.danger ? Theme.danger : Theme.accent_border)
+        : action-touch.has-hover ? (root.danger ? #f8717180 : Theme.border_hi)
+        : transparent;
+    background: action-touch.pressed
+        ? (root.danger ? #f8717133 : Theme.surface_higher)
+        : action-touch.has-hover ? (root.danger ? #f8717124 : Theme.surface_hi)
+        : transparent;
+
+    Icon {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        name: root.icon_name;
+        icon_size: 12px;
+        tint: root.danger
+            ? (action-touch.has-hover ? Theme.danger : #f87171b3)
+            : (action-touch.pressed ? Theme.accent_hi : action-touch.has-hover ? Theme.text : Theme.text_mute);
+    }
+
+    action-touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+component TransferRow inherits Rectangle {
+    in property <string> title;
+    in property <int> status_style: 0;
+    in property <float> progress: 0;
+    in property <string> meta;
+    in property <bool> last: false;
+    callback reannounce();
+    callback cancel();
+    callback go_to_file();
+
+    private property <bool> file_available: root.progress >= 1.0;
+
+    private property <color> accent_color:
+        root.status_style == 2 ? Theme.success :
+        root.status_style == 3 ? Theme.danger :
+        root.status_style == 1 ? Theme.warning :
+        Theme.accent;
+    private property <color> accent_soft_color:
+        root.status_style == 2 ? #86efac1a :
+        root.status_style == 3 ? #f871711a :
+        root.status_style == 1 ? #fbbf241a :
+        Theme.accent_soft;
+    private property <color> accent_border_color:
+        root.status_style == 2 ? #86efac4d :
+        root.status_style == 3 ? #f871714d :
+        root.status_style == 1 ? #fbbf244d :
+        Theme.accent_border;
+    private property <string> status_icon:
+        root.status_style == 2 ? "check" :
+        root.status_style == 3 ? "close" :
+        root.status_style == 1 ? "arrow-up" :
+        root.progress >= 1.0 ? "check" :
+        "download";
+    private property <length> right_pad: 18px;
+    // Width of the action button group (two 28px buttons + 4px gap)
+    private property <length> action_block_w: 60px;
+    // Reserve right-side width so title/meta clear the "Go to file" button
+    private property <length> top_right_reserve: 144px;
+
+    height: 90px;
+    background: touch.has-hover ? #ffffff05 : transparent;
+
+    // Status icon tile (color-tinted by state)
+    Rectangle {
+        x: 18px;
+        y: (parent.height - self.height) / 2;
+        width: 38px;
+        height: 38px;
+        border-radius: 9px;
+        border-width: 1px;
+        border-color: root.accent_border_color;
+        background: root.accent_soft_color;
+
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            name: root.status_icon;
+            icon_size: 14px;
+            tint: root.accent_color;
+        }
+    }
+
+    // Title
+    title-text := Text {
+        x: 68px;
+        y: 16px;
+        width: parent.width - 68px - root.top_right_reserve;
+        text: root.title;
+        color: Theme.text;
+        font-size: 13.5px;
+        font-weight: 600;
+        font-family: Theme.ui_font;
+        overflow: elide;
+    }
+
+    // Meta line
+    Text {
+        x: 68px;
+        y: 36px;
+        width: parent.width - 68px - root.top_right_reserve;
+        text: root.meta;
+        color: Theme.text_mute;
+        font-size: 11.5px;
+        font-family: Theme.ui_font;
+        overflow: elide;
+    }
+
+    // "Go to file" button (top-right, disabled until the transfer is complete)
+    go-to-file := ButtonChip {
+        x: parent.width - self.width - root.right_pad;
+        y: 14px;
+        width: 124px;
+        label: "Go to file";
+        icon_name: "external";
+        center_content: true;
+        enabled: root.file_available;
+        clicked => { root.go_to_file(); }
+    }
+
+    // Progress bar (bottom row, fills remaining space)
+    Rectangle {
+        x: 68px;
+        y: 64px;
+        width: parent.width - 68px - 60px - 12px - root.action_block_w - root.right_pad - 8px;
+        height: 5px;
+        border-radius: 2.5px;
+        background: Theme.surface_higher;
+        clip: true;
+
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width * root.progress;
+            height: parent.height;
+            border-radius: parent.border-radius;
+            background: root.accent_color;
+        }
+    }
+
+    // Percentage label inline with bar
+    Text {
+        x: parent.width - root.right_pad - root.action_block_w - 12px - 60px;
+        y: 56px;
+        width: 60px;
+        height: 18px;
+        text: "\{round(root.progress * 100)}%";
+        color: Theme.text_dim;
+        font-size: 11px;
+        font-weight: 600;
+        font-family: Theme.mono_font;
+        horizontal-alignment: right;
+        vertical-alignment: center;
+    }
+
+    // Action group (bottom-right, vertically centered with progress bar)
+    RowActionButton {
+        x: parent.width - root.right_pad - root.action_block_w;
+        y: 51px;
+        icon_name: "refresh";
+        clicked => { root.reannounce(); }
+    }
+
+    RowActionButton {
+        x: parent.width - root.right_pad - 28px;
+        y: 51px;
+        icon_name: "close";
+        danger: true;
+        clicked => { root.cancel(); }
+    }
+
+    if (!root.last) : Rectangle {
+        x: 18px;
+        y: parent.height - 1px;
+        width: parent.width - 36px;
+        height: 1px;
+        background: Theme.border;
+    }
+
+    touch := TouchArea {}
+}
+
+component AddTransferOverlay inherits Rectangle {
+    in-out property <string> magnet;
+    callback close();
+    callback submit_magnet();
+    callback pick_torrent_file();
+
+    background: #00000080;
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.close(); }
+    }
+
+    modal := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: max(26px, (parent.height - self.height) / 2 - 34px);
+        width: min(520px, parent.width - 40px);
+        height: 278px;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: Theme.border_hi;
+        background: Theme.surface;
+        clip: true;
+
+        TouchArea {
+            width: parent.width;
+            height: parent.height;
+        }
+
+        Text {
+            x: 24px;
+            y: 22px;
+            text: "Add transfer";
+            color: Theme.text;
+            font-size: 18px;
+            font-weight: 700;
+            font-family: Theme.ui_font;
+        }
+
+        IconButton {
+            x: parent.width - self.width - 20px;
+            y: 20px;
+            icon_name: "close";
+            clicked => { root.close(); }
+        }
+
+        Text {
+            x: 24px;
+            y: 64px;
+            width: parent.width - 48px;
+            text: "Paste a magnet link or choose a .torrent file.";
+            color: Theme.text_dim;
+            font-size: 12px;
+            font-family: Theme.ui_font;
+        }
+
+        Text {
+            x: 24px;
+            y: 104px;
+            text: "MAGNET";
+            color: Theme.text_mute;
+            font-size: 10.5px;
+            font-weight: 700;
+            letter-spacing: 0.8px;
+            font-family: Theme.ui_font;
+        }
+
+        TextFieldBox {
+            x: 24px;
+            y: 124px;
+            width: parent.width - 48px;
+            text <=> root.magnet;
+            monospace: true;
+            placeholder: "magnet:?xt=urn:btih:...";
+        }
+
+        Rectangle {
+            x: 24px;
+            y: 180px;
+            width: parent.width - 48px;
+            height: 1px;
+            background: Theme.border;
+        }
+
+        ButtonChip {
+            x: 24px;
+            y: 204px;
+            label: "Upload .torrent";
+            icon_name: "arrow-up";
+            clicked => { root.pick_torrent_file(); }
+        }
+
+        ButtonChip {
+            x: parent.width - self.width - 110px;
+            y: 204px;
+            label: "Cancel";
+            clicked => { root.close(); }
+        }
+
+        ButtonChip {
+            x: parent.width - self.width - 24px;
+            y: 204px;
+            label: "Add";
+            icon_name: "download";
+            primary: true;
+            clicked => { root.submit_magnet(); }
+        }
+    }
+}
+
+export component TransfersPage inherits Rectangle {
+    in-out property <bool> add_open: false;
+    in-out property <string> magnet: "";
+
+    callback open_add();
+    callback close_add();
+    callback submit_magnet();
+    callback pick_torrent_file();
+
+    private property <length> page_padding: root.width < 720px ? 20px : 36px;
+    private property <length> content_width: root.width - page_padding * 2;
+
+    background: Theme.bg;
+
+    Text {
+        x: page_padding;
+        y: 36px;
+        text: "Transfers";
+        color: Theme.text;
+        font-size: 28px;
+        font-weight: 700;
+        font-family: Theme.ui_font;
+    }
+
+    Text {
+        x: page_padding;
+        y: 76px;
+        text: "5 active transfers";
+        color: Theme.text_mute;
+        font-size: 12px;
+        font-family: Theme.ui_font;
+    }
+
+    ButtonChip {
+        x: parent.width - page_padding - self.width;
+        y: 42px;
+        label: "Add";
+        icon_name: "download";
+        primary: true;
+        clicked => { root.open_add(); }
+    }
+
+    ButtonChip {
+        x: parent.width - page_padding - self.width - 86px;
+        y: 42px;
+        label: "Clear completed";
+        icon_name: "trash";
+    }
+
+    ScrollView {
+        x: page_padding;
+        y: 122px;
+        width: content_width;
+        height: parent.height - 146px;
+        viewport-width: self.visible-width;
+        viewport-height: max(self.visible-height, rows.preferred-height);
+
+        rows := VerticalLayout {
+            width: parent.width;
+            spacing: 0px;
+
+            Rectangle {
+                width: parent.width;
+                height: 44px;
+                border-top-left-radius: 10px;
+                border-top-right-radius: 10px;
+                border-width: 1px;
+                border-color: Theme.border;
+                background: Theme.surface;
+
+                Text { x: 18px; y: 15px; text: "TRANSFER"; color: Theme.text_mute; font-size: 10.5px; font-weight: 700; letter-spacing: 0.8px; font-family: Theme.ui_font; }
+            }
+
+            Rectangle {
+                width: parent.width;
+                border-width: 1px;
+                border-color: Theme.border;
+                border-bottom-left-radius: 10px;
+                border-bottom-right-radius: 10px;
+                background: Theme.surface;
+                height: transfer-list.preferred-height;
+                clip: true;
+
+                transfer-list := VerticalLayout {
+                    width: parent.width;
+                    spacing: 0px;
+
+                    TransferRow { title: "The Studio S01E09 2160p WEB-DL"; progress: 0.64; meta: "18.4 MB/s · 4.38 GB of 6.84 GB · ETA 11m · 42 peers"; }
+                    TransferRow { title: "Linux ISO Collection 2026"; status_style: 1; progress: 1.0; meta: "up 3.1 MB/s · seeded 705.06 MB of 685.03 MB · ratio 1.02 · 4 days ago"; }
+                    TransferRow { title: "Documentary Archive Pack"; progress: 0.0; meta: "queued · waiting for available transfer slot · 0 peers"; }
+                    TransferRow { title: "Concert Film Remaster"; status_style: 2; progress: 1.0; meta: "completed · seeded 8.7 GB of 8.7 GB · seed time 36s · ratio 1.00"; }
+                    TransferRow { title: "Old Public Domain Serials"; status_style: 3; progress: 0.22; meta: "tracker timeout · downloaded 1.2 GB of 5.4 GB · retrying"; last: true; }
+                }
+            }
+        }
+    }
+
+    if (root.add_open) : add-overlay := AddTransferOverlay {
+        width: parent.width;
+        height: parent.height;
+        magnet <=> root.magnet;
+        close => { root.close_add(); }
+        submit_magnet => { root.submit_magnet(); }
+        pick_torrent_file => { root.pick_torrent_file(); }
+    }
+}

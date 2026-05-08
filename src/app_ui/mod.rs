@@ -8,6 +8,7 @@ pub(crate) mod metadata_ui;
 pub(crate) mod models;
 pub(crate) mod settings;
 pub(crate) mod state;
+pub(crate) mod transfers;
 pub(crate) mod tv_show;
 pub(crate) mod util;
 
@@ -147,6 +148,7 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
     );
 
     auth::install(app, &ctx.services, &ctx.state, &ctx.services.rt);
+    transfers::install(app);
 
     metadata_ui::install(
         app,
