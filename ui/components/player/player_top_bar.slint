@@ -13,6 +13,12 @@ export component PlayerTopBar inherits Rectangle {
 
     animate opacity { duration: 250ms; easing: ease-out; }
 
+    // Swallow clicks on the bar background when visible so they don't reach
+    // the video-area TouchArea behind us and toggle play.
+    swallow := TouchArea {
+        enabled: root.controls_visible;
+    }
+
     back := Rectangle {
         x: 16px;
         y: 12px;

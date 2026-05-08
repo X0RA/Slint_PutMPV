@@ -51,6 +51,12 @@ export component PlayerControlsBar inherits Rectangle {
         root.audio_open = false;
     }
 
+    // Swallow clicks on the bar background when visible so they don't reach
+    // the video-area TouchArea behind us and toggle play.
+    swallow := TouchArea {
+        enabled: root.controls_visible;
+    }
+
     progress := PlayerProgress {
         x: 20px;
         y: 43px;

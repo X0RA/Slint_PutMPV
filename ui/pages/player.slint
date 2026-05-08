@@ -145,6 +145,18 @@ export component PlayerPage inherits FocusScope {
         image-fit: contain;
     }
 
+    click-timer := Timer {
+        interval: 250ms;
+        running: false;
+        triggered => {
+            click-timer.running = false;
+            root.focus();
+            root.reveal_controls();
+            controls.close_menus();
+            root.toggle_play();
+        }
+    }
+
     video-touch := TouchArea {
         x: 0px;
         y: 0px;
@@ -157,10 +169,15 @@ export component PlayerPage inherits FocusScope {
             }
         }
         clicked => {
+            click-timer.restart();
+        }
+        double-clicked => {
+            click-timer.stop();
             root.focus();
             root.reveal_controls();
             controls.close_menus();
             root.playlist_open = false;
+            root.toggle_fullscreen();
         }
     }
 
