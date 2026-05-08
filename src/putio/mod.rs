@@ -5,6 +5,7 @@ pub mod folders;
 pub mod oauth;
 pub mod stream;
 pub mod sync;
+pub mod transfers;
 pub mod types;
 
 pub use client::PutioClient;

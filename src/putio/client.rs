@@ -124,6 +124,20 @@ impl PutioClient {
         self.parse_response(req.send().await?).await
     }
 
+    pub async fn post_form_no_body(
+        &self,
+        url: &str,
+        token: &str,
+        form: &[(&str, String)],
+    ) -> Result<(), ApiError> {
+        let req = self
+            .http
+            .post(url)
+            .header("Authorization", format!("token {token}"))
+            .form(form);
+        self.parse_empty_response(req.send().await?).await
+    }
+
     pub async fn upload_file<T: serde::de::DeserializeOwned>(
         &self,
         url: &str,
@@ -132,11 +146,27 @@ impl PutioClient {
         filename: &str,
         body: Vec<u8>,
     ) -> Result<T, ApiError> {
+        self.upload_file_with_parent(url, token, Some(parent_id), filename, body)
+            .await
+    }
+
+    pub async fn upload_file_with_parent<T: serde::de::DeserializeOwned>(
+        &self,
+        url: &str,
+        token: &str,
+        parent_id: Option<u64>,
+        filename: &str,
+        body: Vec<u8>,
+    ) -> Result<T, ApiError> {
         let part = multipart::Part::bytes(body).file_name(filename.to_string());
         let form = multipart::Form::new()
             .part("file", part)
-            .text("filename", filename.to_string())
-            .text("parent_id", parent_id.to_string());
+            .text("filename", filename.to_string());
+        let form = if let Some(parent_id) = parent_id {
+            form.text("parent_id", parent_id.to_string())
+        } else {
+            form
+        };
         let req = self
             .http
             .post(url)
@@ -171,5 +201,18 @@ impl PutioClient {
             return Err(ApiError::Http(status, s));
         }
         Ok(serde_json::from_slice::<T>(&body)?)
+    }
+
+    async fn parse_empty_response(&self, resp: reqwest::Response) -> Result<(), ApiError> {
+        let status = resp.status();
+        let body = resp.bytes().await?;
+        if status == StatusCode::UNAUTHORIZED {
+            return Err(ApiError::Unauthorized);
+        }
+        if !status.is_success() {
+            let s = String::from_utf8_lossy(&body).into_owned();
+            return Err(ApiError::Http(status, s));
+        }
+        Ok(())
     }
 }

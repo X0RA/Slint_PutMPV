@@ -65,6 +65,17 @@ export struct PlayerPlaylistItem {
     meta: string,
 }
 
+export struct TransferItem {
+    id: string,
+    file_id: string,
+    parent_id: string,
+    title: string,
+    meta: string,
+    progress: float,
+    status_style: int,
+    file_available: bool,
+}
+
 export struct TvSeasonTab {
     season_number: int,
     label: string,

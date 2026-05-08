@@ -10,7 +10,7 @@ import { TransfersPage } from "./pages/transfers.slint";
 import { MediaPage, MediaItem } from "./pages/media.slint";
 import { TvShowPage } from "./pages/tvshow.slint";
 import { PlayerPage } from "./pages/player.slint";
-import { FileItem, MetadataItem, PathSegment, LocalDataRow, PlayerPlaylistItem, PlayerTrack, TvSeasonTab, TvEpisodeRow, TvCreatorChip, TvHeroBadge, TvDetailItem } from "./types.slint";
+import { FileItem, MetadataItem, PathSegment, LocalDataRow, PlayerPlaylistItem, PlayerTrack, TransferItem, TvSeasonTab, TvEpisodeRow, TvCreatorChip, TvHeroBadge, TvDetailItem } from "./types.slint";
 
 export component AppWindow inherits Window {
     title: "PutMPV";
@@ -103,6 +103,12 @@ export component AppWindow inherits Window {
     in-out property <string> media_success_flash_text;
     in-out property <bool> transfers_add_open: false;
     in-out property <string> transfers_magnet: "";
+    in-out property <[TransferItem]> transfers_items;
+    in-out property <bool> transfers_busy: false;
+    in-out property <string> transfers_status: "";
+    in-out property <string> transfers_count_label: "0 transfers";
+    in-out property <bool> transfers_cancel_confirm_open: false;
+    in-out property <string> transfers_cancel_name: "";
 
     in-out property <string> tv_show_title: "";
     in-out property <string> tv_show_tagline: "";
@@ -190,6 +196,13 @@ export component AppWindow inherits Window {
     callback transfers_close_add();
     callback transfers_submit_magnet();
     callback transfers_pick_torrent_file();
+    callback transfers_refresh();
+    callback transfers_reannounce(id: string);
+    callback transfers_cancel_requested(id: string, name: string);
+    callback transfers_cancel_confirm();
+    callback transfers_cancel_dismiss();
+    callback transfers_clear_completed();
+    callback transfers_go_to_file(file_id: string, parent_id: string);
     callback tv_show_back();
     callback tv_show_season_changed(int);
     callback tv_show_play_episode(string);
@@ -229,7 +242,7 @@ export component AppWindow inherits Window {
             alignment: end;
 
             TopNavButton { label: "Files"; icon_name: "folder"; active: root.view == 3; clicked => { root.view = 3; } }
-            TopNavButton { label: "Transfers"; icon_name: "download"; active: root.view == 5; clicked => { root.view = 5; } }
+            TopNavButton { label: "Transfers"; icon_name: "download"; active: root.view == 5; clicked => { root.view = 5; root.transfers_refresh(); } }
             TopNavButton { label: "Media"; icon_name: "media"; active: root.view == 4 || root.view == 8; clicked => { root.view = 4; root.media_refresh(); } }
             TopNavButton { label: "Settings"; icon_name: "settings"; active: root.view == 6; clicked => { root.view = 6; root.settings_refresh(); if (root.settings_section == 1) { root.sync_refresh_profiles(); } if (root.settings_section == 3) { root.metadata_criteria_changed(); } } }
             Rectangle { width: 13px; Rectangle { x: 6px; y: (parent.height - self.height) / 2; width: 1px; height: 20px; background: Theme.border; } }
@@ -332,10 +345,23 @@ export component AppWindow inherits Window {
         height: parent.height - Theme.title_bar_height;
         add_open <=> root.transfers_add_open;
         magnet <=> root.transfers_magnet;
+        items: root.transfers_items;
+        busy: root.transfers_busy;
+        status: root.transfers_status;
+        count_label: root.transfers_count_label;
+        cancel_confirm_open <=> root.transfers_cancel_confirm_open;
+        cancel_name: root.transfers_cancel_name;
         open_add => { root.transfers_open_add(); }
         close_add => { root.transfers_close_add(); }
         submit_magnet => { root.transfers_submit_magnet(); }
         pick_torrent_file => { root.transfers_pick_torrent_file(); }
+        refresh => { root.transfers_refresh(); }
+        reannounce(id) => { root.transfers_reannounce(id); }
+        cancel_requested(id, name) => { root.transfers_cancel_requested(id, name); }
+        cancel_confirm => { root.transfers_cancel_confirm(); }
+        cancel_dismiss => { root.transfers_cancel_dismiss(); }
+        clear_completed => { root.transfers_clear_completed(); }
+        go_to_file(file_id, parent_id) => { root.transfers_go_to_file(file_id, parent_id); }
     }
 
     if (root.view == 8) : tvshow := TvShowPage {

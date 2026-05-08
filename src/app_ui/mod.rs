@@ -148,7 +148,7 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
     );
 
     auth::install(app, &ctx.services, &ctx.state, &ctx.services.rt);
-    transfers::install(app);
+    transfers::install(app, &ctx.services, &ctx.state, &ctx.services.rt);
 
     metadata_ui::install(
         app,

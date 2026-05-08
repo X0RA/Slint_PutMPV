@@ -48,6 +48,7 @@ export component ButtonChip inherits Rectangle {
     in property <bool> primary: false;
     in property <bool> danger: false;
     in property <bool> enabled: true;
+    in property <bool> center_content: false;
     callback clicked();
 
     height: 32px;
@@ -58,6 +59,10 @@ export component ButtonChip inherits Rectangle {
     background: primary ? Theme.accent : (active ? Theme.accent_soft : Theme.surface);
     width: root.label == "" && root.icon_name != "" ? 32px : label-text.preferred-width + (icon_name == "" ? 22px : 40px);
 
+    // Width of icon + 8px gap + label, used to center the content block when center_content is set.
+    private property <length> content_w: (root.icon_name != "" ? 20px : 0px) + label-text.preferred-width;
+    private property <length> content_x0: (root.width - content_w) / 2;
+
     states [
         hover when root.enabled && touch.has-hover : {
             background: primary ? Theme.accent_hi : (active ? Theme.accent_soft : Theme.surface_hi);
@@ -65,7 +70,7 @@ export component ButtonChip inherits Rectangle {
     ]
 
     if (root.icon_name != "") : icon := Icon {
-        x: root.label == "" ? (parent.width - self.width) / 2 : 10px;
+        x: root.label == "" ? (parent.width - self.width) / 2 : (root.center_content ? content_x0 : 10px);
         y: (parent.height - self.height) / 2;
         name: root.icon_name;
         icon_size: 12px;
@@ -73,7 +78,9 @@ export component ButtonChip inherits Rectangle {
     }
 
     label-text := Text {
-        x: root.icon_name == "" ? 11px : 28px;
+        x: root.center_content
+            ? (root.icon_name == "" ? (parent.width - self.preferred-width) / 2 : content_x0 + 20px)
+            : (root.icon_name == "" ? 11px : 28px);
         y: (parent.height - self.height) / 2 + 1px;
         text: root.label;
         color: root.primary ? Theme.bg : (root.danger ? Theme.danger : (root.active ? Theme.accent_hi : Theme.text_dim));

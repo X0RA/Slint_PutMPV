@@ -1,5 +1,6 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
+import { TransferItem } from "../types.slint";
 import { ButtonChip, IconButton, TextFieldBox } from "../components/primitives.slint";
 import { Icon } from "../components/icons.slint";
 
@@ -37,16 +38,18 @@ component RowActionButton inherits Rectangle {
 }
 
 component TransferRow inherits Rectangle {
+    in property <string> id;
+    in property <string> file_id;
+    in property <string> parent_id;
     in property <string> title;
     in property <int> status_style: 0;
     in property <float> progress: 0;
     in property <string> meta;
+    in property <bool> file_available: false;
     in property <bool> last: false;
-    callback reannounce();
-    callback cancel();
-    callback go_to_file();
-
-    private property <bool> file_available: root.progress >= 1.0;
+    callback reannounce(id: string);
+    callback cancel(id: string, name: string);
+    callback go_to_file(file_id: string, parent_id: string);
 
     private property <color> accent_color:
         root.status_style == 2 ? Theme.success :
@@ -131,8 +134,8 @@ component TransferRow inherits Rectangle {
         label: "Go to file";
         icon_name: "external";
         center_content: true;
-        enabled: root.file_available;
-        clicked => { root.go_to_file(); }
+        enabled: root.file_available && root.file_id != "";
+        clicked => { root.go_to_file(root.file_id, root.parent_id); }
     }
 
     // Progress bar (bottom row, fills remaining space)
@@ -170,12 +173,14 @@ component TransferRow inherits Rectangle {
         vertical-alignment: center;
     }
 
+    touch := TouchArea {}
+
     // Action group (bottom-right, vertically centered with progress bar)
     RowActionButton {
         x: parent.width - root.right_pad - root.action_block_w;
         y: 51px;
         icon_name: "refresh";
-        clicked => { root.reannounce(); }
+        clicked => { root.reannounce(root.id); }
     }
 
     RowActionButton {
@@ -183,7 +188,7 @@ component TransferRow inherits Rectangle {
         y: 51px;
         icon_name: "close";
         danger: true;
-        clicked => { root.cancel(); }
+        clicked => { root.cancel(root.id, root.title); }
     }
 
     if (!root.last) : Rectangle {
@@ -193,8 +198,85 @@ component TransferRow inherits Rectangle {
         height: 1px;
         background: Theme.border;
     }
+}
 
-    touch := TouchArea {}
+component ConfirmCancelOverlay inherits Rectangle {
+    in property <string> name;
+    callback confirm();
+    callback dismiss();
+
+    background: #00000080;
+
+    TouchArea {
+        width: parent.width;
+        height: parent.height;
+        clicked => { root.dismiss(); }
+    }
+
+    modal := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: max(28px, (parent.height - self.height) / 2 - 18px);
+        width: min(460px, parent.width - 40px);
+        height: 186px;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: Theme.border_hi;
+        background: Theme.surface;
+        clip: true;
+
+        TouchArea {
+            width: parent.width;
+            height: parent.height;
+        }
+
+        Text {
+            x: 22px;
+            y: 20px;
+            text: "Cancel transfer?";
+            color: Theme.text;
+            font-size: 18px;
+            font-weight: 700;
+            font-family: Theme.ui_font;
+        }
+
+        Text {
+            x: 22px;
+            y: 58px;
+            width: parent.width - 44px;
+            text: root.name;
+            color: Theme.text_dim;
+            font-size: 12px;
+            font-family: Theme.ui_font;
+            overflow: elide;
+        }
+
+        Text {
+            x: 22px;
+            y: 86px;
+            width: parent.width - 44px;
+            text: "This removes the transfer entry but does not delete completed files.";
+            color: Theme.text_mute;
+            font-size: 12px;
+            font-family: Theme.ui_font;
+            wrap: word-wrap;
+        }
+
+        ButtonChip {
+            x: parent.width - self.width - 112px;
+            y: parent.height - 52px;
+            label: "Dismiss";
+            clicked => { root.dismiss(); }
+        }
+
+        ButtonChip {
+            x: parent.width - self.width - 22px;
+            y: parent.height - 52px;
+            label: "Cancel";
+            icon_name: "close";
+            danger: true;
+            clicked => { root.confirm(); }
+        }
+    }
 }
 
 component AddTransferOverlay inherits Rectangle {
@@ -311,16 +393,35 @@ component AddTransferOverlay inherits Rectangle {
 export component TransfersPage inherits Rectangle {
     in-out property <bool> add_open: false;
     in-out property <string> magnet: "";
+    in property <[TransferItem]> items;
+    in property <bool> busy: false;
+    in property <string> status: "";
+    in property <string> count_label: "0 transfers";
+    in-out property <bool> cancel_confirm_open: false;
+    in property <string> cancel_name: "";
 
     callback open_add();
     callback close_add();
     callback submit_magnet();
     callback pick_torrent_file();
+    callback refresh();
+    callback reannounce(id: string);
+    callback cancel_requested(id: string, name: string);
+    callback cancel_confirm();
+    callback cancel_dismiss();
+    callback clear_completed();
+    callback go_to_file(file_id: string, parent_id: string);
 
     private property <length> page_padding: root.width < 720px ? 20px : 36px;
     private property <length> content_width: root.width - page_padding * 2;
 
     background: Theme.bg;
+
+    poll-timer := Timer {
+        interval: 5000ms;
+        running: true;
+        triggered => { root.refresh(); }
+    }
 
     Text {
         x: page_padding;
@@ -335,7 +436,7 @@ export component TransfersPage inherits Rectangle {
     Text {
         x: page_padding;
         y: 76px;
-        text: "5 active transfers";
+        text: root.count_label;
         color: Theme.text_mute;
         font-size: 12px;
         font-family: Theme.ui_font;
@@ -355,6 +456,19 @@ export component TransfersPage inherits Rectangle {
         y: 42px;
         label: "Clear completed";
         icon_name: "trash";
+        enabled: !root.busy;
+        clicked => { root.clear_completed(); }
+    }
+
+    if (root.status != "") : Text {
+        x: page_padding;
+        y: 100px;
+        width: content_width;
+        text: root.status;
+        color: Theme.text_mute;
+        font-size: 11.5px;
+        font-family: Theme.ui_font;
+        overflow: elide;
     }
 
     ScrollView {
@@ -395,11 +509,33 @@ export component TransfersPage inherits Rectangle {
                     width: parent.width;
                     spacing: 0px;
 
-                    TransferRow { title: "The Studio S01E09 2160p WEB-DL"; progress: 0.64; meta: "18.4 MB/s · 4.38 GB of 6.84 GB · ETA 11m · 42 peers"; }
-                    TransferRow { title: "Linux ISO Collection 2026"; status_style: 1; progress: 1.0; meta: "up 3.1 MB/s · seeded 705.06 MB of 685.03 MB · ratio 1.02 · 4 days ago"; }
-                    TransferRow { title: "Documentary Archive Pack"; progress: 0.0; meta: "queued · waiting for available transfer slot · 0 peers"; }
-                    TransferRow { title: "Concert Film Remaster"; status_style: 2; progress: 1.0; meta: "completed · seeded 8.7 GB of 8.7 GB · seed time 36s · ratio 1.00"; }
-                    TransferRow { title: "Old Public Domain Serials"; status_style: 3; progress: 0.22; meta: "tracker timeout · downloaded 1.2 GB of 5.4 GB · retrying"; last: true; }
+                    if (root.items.length == 0) : Rectangle {
+                        width: parent.width;
+                        height: 96px;
+                        Text {
+                            x: 18px;
+                            y: 28px;
+                            text: root.busy ? "Loading transfers..." : "No active transfers.";
+                            color: Theme.text_dim;
+                            font-size: 13px;
+                            font-family: Theme.ui_font;
+                        }
+                    }
+
+                    for item[index] in root.items : TransferRow {
+                        id: item.id;
+                        file_id: item.file_id;
+                        parent_id: item.parent_id;
+                        title: item.title;
+                        progress: item.progress;
+                        meta: item.meta;
+                        status_style: item.status_style;
+                        file_available: item.file_available;
+                        last: index == root.items.length - 1;
+                        reannounce(id) => { root.reannounce(id); }
+                        cancel(id, name) => { root.cancel_requested(id, name); }
+                        go_to_file(file_id, parent_id) => { root.go_to_file(file_id, parent_id); }
+                    }
                 }
             }
         }
@@ -412,5 +548,13 @@ export component TransfersPage inherits Rectangle {
         close => { root.close_add(); }
         submit_magnet => { root.submit_magnet(); }
         pick_torrent_file => { root.pick_torrent_file(); }
+    }
+
+    if (root.cancel_confirm_open) : confirm-cancel := ConfirmCancelOverlay {
+        width: parent.width;
+        height: parent.height;
+        name: root.cancel_name;
+        confirm => { root.cancel_confirm(); }
+        dismiss => { root.cancel_dismiss(); }
     }
 }

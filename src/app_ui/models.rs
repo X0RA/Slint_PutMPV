@@ -5,8 +5,8 @@ use std::rc::Rc;
 use slint::{ModelRc, VecModel};
 
 use crate::{
-    AppWindow, FileItem, MediaItem, MetadataItem, PathSegment, TvDetailItem, TvEpisodeRow,
-    TvHeroBadge, TvSeasonTab,
+    AppWindow, FileItem, MediaItem, MetadataItem, PathSegment, TransferItem, TvDetailItem,
+    TvEpisodeRow, TvHeroBadge, TvSeasonTab,
 };
 
 pub(crate) struct UiModels {
@@ -28,6 +28,7 @@ impl UiModels {
         let metadata = Rc::new(VecModel::from(Vec::<MetadataItem>::new()));
         let media_movies = Rc::new(VecModel::from(Vec::<MediaItem>::new()));
         let media_shows = Rc::new(VecModel::from(Vec::<MediaItem>::new()));
+        let transfers = Rc::new(VecModel::from(Vec::<TransferItem>::new()));
         let tv_seasons = Rc::new(VecModel::from(Vec::<TvSeasonTab>::new()));
         let tv_episodes = Rc::new(VecModel::from(Vec::<TvEpisodeRow>::new()));
         let tv_hero_badges = Rc::new(VecModel::from(Vec::<TvHeroBadge>::new()));
@@ -38,6 +39,7 @@ impl UiModels {
         app.set_metadata_items(ModelRc::from(metadata.clone()));
         app.set_media_movies(ModelRc::from(media_movies.clone()));
         app.set_media_shows(ModelRc::from(media_shows.clone()));
+        app.set_transfers_items(ModelRc::from(transfers.clone()));
         app.set_tv_show_seasons(ModelRc::from(tv_seasons.clone()));
         app.set_tv_show_episodes(ModelRc::from(tv_episodes.clone()));
         app.set_tv_show_hero_badges(ModelRc::from(tv_hero_badges.clone()));
