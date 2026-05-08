@@ -11,7 +11,7 @@ import { MediaPage, MediaItem } from "./pages/media.slint";
 import { TvShowPage } from "./pages/tvshow.slint";
 import { PlayerPage } from "./pages/player.slint";
 import { MagnetsPage } from "./pages/magnets.slint";
-import { FileItem, MetadataItem, PathSegment, LocalDataRow, PlayerPlaylistItem, PlayerTrack, TransferItem, TvSeasonTab, TvEpisodeRow, TvCreatorChip, TvHeroBadge, TvDetailItem } from "./types.slint";
+import { FileItem, MetadataItem, PathSegment, LocalDataRow, PlayerPlaylistItem, PlayerTrack, TransferItem, MagnetItem, TvSeasonTab, TvEpisodeRow, TvCreatorChip, TvHeroBadge, TvDetailItem } from "./types.slint";
 
 export component AppWindow inherits Window {
     title: "PutMPV";
@@ -110,6 +110,19 @@ export component AppWindow inherits Window {
     in-out property <string> transfers_count_label: "0 transfers";
     in-out property <bool> transfers_cancel_confirm_open: false;
     in-out property <string> transfers_cancel_name: "";
+    in-out property <[MagnetItem]> magnets_items;
+    in-out property <string> magnets_query: "";
+    in-out property <bool> magnets_busy: false;
+    in-out property <string> magnets_status: "";
+    in-out property <string> magnets_count_label: "0 results";
+    in-out property <int> magnets_sort_index: 1;
+    in-out property <bool> magnets_sort_descending: true;
+    in-out property <bool> magnets_f720p: false;
+    in-out property <bool> magnets_f1080p: false;
+    in-out property <bool> magnets_f2160p: false;
+    in-out property <bool> magnets_fx264: false;
+    in-out property <bool> magnets_fx265: false;
+    in-out property <bool> magnets_fhdr: false;
 
     in-out property <string> tv_show_title: "";
     in-out property <string> tv_show_tagline: "";
@@ -204,6 +217,12 @@ export component AppWindow inherits Window {
     callback transfers_cancel_dismiss();
     callback transfers_clear_completed();
     callback transfers_go_to_file(file_id: string, parent_id: string);
+    callback magnets_search();
+    callback magnets_copy(magnet: string);
+    callback magnets_download(magnet: string);
+    callback magnets_filter_changed();
+    callback magnets_sort_changed(index: int);
+    callback magnets_sort_direction_toggled();
     callback tv_show_back();
     callback tv_show_season_changed(int);
     callback tv_show_play_episode(string);
@@ -371,6 +390,25 @@ export component AppWindow inherits Window {
         y: Theme.title_bar_height;
         width: parent.width;
         height: parent.height - Theme.title_bar_height;
+        items: root.magnets_items;
+        search_text <=> root.magnets_query;
+        busy: root.magnets_busy;
+        status: root.magnets_status;
+        count_label: root.magnets_count_label;
+        sort_index <=> root.magnets_sort_index;
+        sort_descending <=> root.magnets_sort_descending;
+        f720p <=> root.magnets_f720p;
+        f1080p <=> root.magnets_f1080p;
+        f2160p <=> root.magnets_f2160p;
+        fx264 <=> root.magnets_fx264;
+        fx265 <=> root.magnets_fx265;
+        fhdr <=> root.magnets_fhdr;
+        search_submit => { root.magnets_search(); }
+        copy_magnet(m) => { root.magnets_copy(m); }
+        download(m) => { root.magnets_download(m); }
+        toggle_filter(name) => { root.magnets_filter_changed(); }
+        sort_changed(idx) => { root.magnets_sort_changed(idx); }
+        sort_direction_toggled => { root.magnets_sort_direction_toggled(); }
     }
 
     if (root.view == 8) : tvshow := TvShowPage {

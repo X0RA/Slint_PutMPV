@@ -3,6 +3,7 @@
 
 pub(crate) mod auth;
 pub(crate) mod files;
+pub(crate) mod magnets;
 pub(crate) mod media;
 pub(crate) mod metadata_ui;
 pub(crate) mod models;
@@ -150,6 +151,7 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
 
     auth::install(app, &ctx.services, &ctx.state, &ctx.services.rt);
     transfers::install(app, &ctx.services, &ctx.state, &ctx.services.rt);
+    magnets::install(app, &ctx.services, &ctx.state, &ctx.services.rt);
 
     metadata_ui::install(
         app,

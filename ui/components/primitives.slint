@@ -246,6 +246,7 @@ export component SearchField inherits Rectangle {
     in property <string> placeholder: "";
     in property <string> shortcut: "";
     callback edited();
+    callback accepted();
 
     public function blur() {
         search_input.clear-focus();
@@ -282,6 +283,7 @@ export component SearchField inherits Rectangle {
         selection-background-color: Theme.accent;
         vertical-alignment: center;
         changed text => { root.edited(); }
+        accepted => { root.accepted(); }
     }
 
     if (root.text == "") : placeholder-text := Text {

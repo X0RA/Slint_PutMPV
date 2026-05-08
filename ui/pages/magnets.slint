@@ -2,6 +2,7 @@ import { ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { Icon } from "../components/icons.slint";
 import { SearchField, ButtonChip, SegmentChip } from "../components/primitives.slint";
+import { MagnetItem } from "../types.slint";
 
 component MagnetRow inherits Rectangle {
     in property <string> title;
@@ -9,9 +10,10 @@ component MagnetRow inherits Rectangle {
     in property <string> size;
     in property <string> seeders;
     in property <string> age;
+    in property <string> magnet_link;
     in property <bool> last: false;
-    callback copy_magnet();
-    callback download();
+    callback copy_magnet(magnet: string);
+    callback download(magnet: string);
 
     height: 64px;
     background: touch.has-hover ? #ffffff05 : transparent;
@@ -22,6 +24,10 @@ component MagnetRow inherits Rectangle {
     private property <length> seeders_w: 84px;
     private property <length> right_block_w: seeders_w + action_gap + copy_w + action_gap + download_w;
     private property <length> right_start_x: root.width - right_margin - right_block_w;
+
+    // Row TouchArea is declared FIRST so the action buttons declared after it
+    // win z-order and receive their own hover/click events.
+    touch := TouchArea {}
 
     Text {
         x: 18px;
@@ -127,7 +133,7 @@ component MagnetRow inherits Rectangle {
         }
 
         copy-touch := TouchArea {
-            clicked => { root.copy_magnet(); }
+            clicked => { root.copy_magnet(root.magnet_link); }
         }
     }
 
@@ -160,11 +166,9 @@ component MagnetRow inherits Rectangle {
         }
 
         dl-touch := TouchArea {
-            clicked => { root.download(); }
+            clicked => { root.download(root.magnet_link); }
         }
     }
-
-    touch := TouchArea {}
 
     if (!root.last) : Rectangle {
         x: 18px;
@@ -176,8 +180,12 @@ component MagnetRow inherits Rectangle {
 }
 
 export component MagnetsPage inherits Rectangle {
+    in-out property <[MagnetItem]> items;
     in-out property <string> search_text: "";
-    in-out property <int> sort_index: 0;
+    in-out property <bool> busy: false;
+    in-out property <string> status: "";
+    in-out property <string> count_label: "0 results";
+    in-out property <int> sort_index: 1;
     in-out property <bool> sort_descending: true;
     in-out property <bool> f720p: false;
     in-out property <bool> f1080p: false;
@@ -186,10 +194,12 @@ export component MagnetsPage inherits Rectangle {
     in-out property <bool> fx265: false;
     in-out property <bool> fhdr: false;
 
-    callback search_changed();
+    callback search_submit();
+    callback copy_magnet(magnet: string);
+    callback download(magnet: string);
+    callback toggle_filter(name: string);
     callback sort_changed(index: int);
     callback sort_direction_toggled();
-    callback toggle_filter(name: string);
 
     private property <length> page_padding: root.width < 720px ? 20px : 36px;
     private property <length> content_width: root.width - page_padding * 2;
@@ -214,7 +224,7 @@ export component MagnetsPage inherits Rectangle {
         width: content_width;
         placeholder: "Search for torrents…";
         text <=> root.search_text;
-        edited => { root.search_changed(); }
+        accepted => { root.search_submit(); }
     }
 
     filters-segment := Rectangle {
@@ -290,8 +300,17 @@ export component MagnetsPage inherits Rectangle {
     Text {
         x: page_padding;
         y: controls_bottom_y + 12px;
-        text: "6 results";
+        text: root.count_label;
         color: Theme.text_mute;
+        font-size: 12px;
+        font-family: Theme.ui_font;
+    }
+
+    if (root.status != "") : Text {
+        x: page_padding + 90px;
+        y: controls_bottom_y + 12px;
+        text: root.status;
+        color: Theme.text_dim;
         font-size: 12px;
         font-family: Theme.ui_font;
     }
@@ -334,70 +353,17 @@ export component MagnetsPage inherits Rectangle {
                     width: parent.width;
                     spacing: 0px;
 
-                    MagnetRow {
-                        title: "Interstellar.2014.2160p.BluRay.x265.10bit.HDR.DTS-HD.MA.5.1";
-                        source: "1337x";
-                        size: "14.2 GB";
-                        seeders: "1,247";
-                        age: "3 days";
-                        last: false;
-                        copy_magnet => { }
-                        download => { }
-                    }
-
-                    MagnetRow {
-                        title: "Interstellar.2014.1080p.BluRay.x264.DTS-HD.MA.5.1";
-                        source: "YTS";
-                        size: "4.8 GB";
-                        seeders: "3,891";
-                        age: "12 days";
-                        last: false;
-                        copy_magnet => { }
-                        download => { }
-                    }
-
-                    MagnetRow {
-                        title: "The.Matrix.1999.2160p.WEB-DL.x265.HDR.DTS-HD.MA.5.1";
-                        source: "RARBG";
-                        size: "11.6 GB";
-                        seeders: "856";
-                        age: "1 day";
-                        last: false;
-                        copy_magnet => { }
-                        download => { }
-                    }
-
-                    MagnetRow {
-                        title: "Dune.Part.Two.2024.1080p.WEB-DL.x264.AAC5.1";
-                        source: "1337x";
-                        size: "3.2 GB";
-                        seeders: "5,423";
-                        age: "2 hours";
-                        last: false;
-                        copy_magnet => { }
-                        download => { }
-                    }
-
-                    MagnetRow {
-                        title: "Oppenheimer.2023.720p.BluRay.x264.YTS";
-                        source: "YTS";
-                        size: "1.1 GB";
-                        seeders: "2,109";
-                        age: "5 days";
-                        last: false;
-                        copy_magnet => { }
-                        download => { }
-                    }
-
-                    MagnetRow {
-                        title: "Blade.Runner.2049.2017.2160p.UHD.BluRay.x265.HDR.DTS-HD.MA.7.1";
-                        source: "RARBG";
-                        size: "18.7 GB";
-                        seeders: "412";
-                        age: "21 days";
-                        last: true;
-                        copy_magnet => { }
-                        download => { }
+                    for entry[i] in root.items : MagnetRow {
+                        width: parent.width;
+                        title: entry.title;
+                        source: entry.source;
+                        size: entry.size;
+                        seeders: entry.seeders;
+                        age: entry.age;
+                        magnet_link: entry.magnet-link;
+                        last: i == root.items.length - 1;
+                        copy_magnet(m) => { root.copy_magnet(m); }
+                        download(m) => { root.download(m); }
                     }
                 }
             }
