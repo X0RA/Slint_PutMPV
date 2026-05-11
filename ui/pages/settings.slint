@@ -285,7 +285,8 @@ export component SettingsPage inherits Rectangle {
                                 spacing: 8px;
                                 alignment: center;
                                 TextFieldBox { width: 300px; placeholder: "Enter your TMDB key"; monospace: true; text <=> root.tmdb_local_key; }
-                                ButtonChip { label: "Save local"; primary: true; clicked => { root.tmdb_save_local(); } }
+                                ButtonChip { width: replace-btn.width; label: "Save"; primary: true; center_content: true; clicked => { root.tmdb_save_local(); } }
+                                ButtonChip { icon_name: "trash"; danger: true; clicked => { root.tmdb_delete_putio(); } }
                             }
                         }
                         SettingsRow {
@@ -296,8 +297,8 @@ export component SettingsPage inherits Rectangle {
                                 spacing: 8px;
                                 alignment: center;
                                 TextFieldBox { width: 300px; text: root.tmdb_putio_key == "" ? "" : "........................"; placeholder: "No shared key found"; monospace: true; read_only: true; }
-                                ButtonChip { label: "Replace on put.io"; icon_name: "arrow-up"; primary: true; clicked => { root.tmdb_replace_putio(); } }
-                                ButtonChip { label: ""; icon_name: "trash"; danger: true; clicked => { root.tmdb_delete_putio(); } }
+                                replace-btn := ButtonChip { label: "Replace"; icon_name: "arrow-up"; primary: true; center_content: true; clicked => { root.tmdb_replace_putio(); } }
+                                ButtonChip { icon_name: "trash"; danger: true; clicked => { root.tmdb_delete_putio(); } }
                             }
                         }
                     }
