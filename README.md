@@ -29,12 +29,18 @@ It is built around a simple flow:
 yay -S putmpv-bin
 ```
 
+### Linux (direct install)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/X0RA/Slint_PutMPV/main/scripts/install-linux.sh | bash
+```
+
 ### macOS (Apple Silicon)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/X0RA/Slint_PutMPV/main/scripts/install-macos.sh | bash
 ```
 
-### Linux / Windows
+### Windows
 
 Grab the latest installer from the [Releases page](https://github.com/X0RA/Slint_PutMPV/releases/latest).

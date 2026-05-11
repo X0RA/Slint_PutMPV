@@ -44,7 +44,7 @@ pub struct EmbeddedPlayer {
     rt: Arc<Runtime>,
     watch_sync: Arc<WatchSyncService>,
     player_view: i32,
-    files_view: i32,
+    previous_view: Arc<Mutex<i32>>,
 }
 
 impl EmbeddedPlayer {
@@ -102,7 +102,7 @@ impl EmbeddedPlayer {
             rt,
             watch_sync,
             player_view,
-            files_view,
+            previous_view: Arc::new(Mutex::new(files_view)),
         };
         player.register_close(app);
         player
@@ -117,6 +117,14 @@ impl EmbeddedPlayer {
 
         if queue.is_empty() {
             return;
+        }
+
+        {
+            let mut prev = self.previous_view.lock().unwrap();
+            let current = app.get_view();
+            if current != self.player_view {
+                *prev = current;
+            }
         }
 
         let index = queue
@@ -150,7 +158,7 @@ impl EmbeddedPlayer {
         let engine = self.engine.clone();
         let playback_state = self.playback_state.clone();
         let watch_sync = self.watch_sync.clone();
-        let files_view = self.files_view;
+        let previous_view = self.previous_view.clone();
         app.on_player_close(move || {
             watch_sync.on_session_end();
             if let Some(engine) = engine.as_ref() {
@@ -173,7 +181,8 @@ impl EmbeddedPlayer {
                     PlayerPlaylistItem,
                 >::new(
                 )))));
-                app.set_view(files_view);
+                let dest = *previous_view.lock().unwrap();
+                app.set_view(dest);
             }
         });
     }
