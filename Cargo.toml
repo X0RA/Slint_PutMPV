@@ -26,6 +26,7 @@ rfd = "0.15"
 libmpv2 = { version = "5", features = ["render"] }
 glow = "0.13"
 magneto = "0.2"
+souvlaki = "0.8"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 arboard = { version = "3", features = ["wayland-data-control"] }

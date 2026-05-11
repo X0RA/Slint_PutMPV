@@ -1,5 +1,6 @@
 mod app;
 mod gl;
+mod media_controls;
 
 pub use app::{EmbeddedPlayer, PlaybackQueueItem};
 

@@ -16,7 +16,23 @@ use crate::storage::config::ConfigStore;
 use crate::sync::watch_session::WatchSyncService;
 use crate::{AppWindow, PlayerPlaylistItem, PlayerTrack};
 
+use super::media_controls::{MediaCommand, MediaControlsWrapper};
 use super::{PlayerEngine, PlayerRenderer};
+
+type SharedMediaControls = Arc<Mutex<MediaControlsWrapper>>;
+
+#[cfg(target_os = "windows")]
+fn extract_hwnd(_app: &AppWindow) -> Option<usize> {
+    // TODO: extract HWND via raw-window-handle once Slint exposes it on
+    // this build. Returning None means MediaControls::new will fail on
+    // Windows and the wrapper stays inactive (logged warn, no panic).
+    None
+}
+
+#[cfg(not(target_os = "windows"))]
+fn extract_hwnd(_app: &AppWindow) -> Option<usize> {
+    None
+}
 
 #[derive(Default)]
 struct PlayerPlaybackState {
@@ -45,6 +61,7 @@ pub struct EmbeddedPlayer {
     watch_sync: Arc<WatchSyncService>,
     player_view: i32,
     previous_view: Arc<Mutex<i32>>,
+    media_controls: Option<SharedMediaControls>,
 }
 
 impl EmbeddedPlayer {
@@ -66,6 +83,10 @@ impl EmbeddedPlayer {
         };
         let playback_state = Arc::new(Mutex::new(PlayerPlaybackState::default()));
 
+        let media_controls = engine
+            .as_ref()
+            .map(|engine| build_media_controls(app, engine.clone()));
+
         if let Some(engine) = engine.clone() {
             register_renderer(app, engine, player_view);
         }
@@ -79,6 +100,7 @@ impl EmbeddedPlayer {
                 rt.clone(),
                 watch_sync.clone(),
                 player_view,
+                media_controls.clone(),
             );
         }
         if let Some(engine) = engine.clone() {
@@ -103,6 +125,7 @@ impl EmbeddedPlayer {
             watch_sync,
             player_view,
             previous_view: Arc::new(Mutex::new(files_view)),
+            media_controls,
         };
         player.register_close(app);
         player
@@ -159,12 +182,16 @@ impl EmbeddedPlayer {
         let playback_state = self.playback_state.clone();
         let watch_sync = self.watch_sync.clone();
         let previous_view = self.previous_view.clone();
+        let media_controls = self.media_controls.clone();
         app.on_player_close(move || {
             watch_sync.on_session_end();
             if let Some(engine) = engine.as_ref() {
                 if let Err(e) = engine.stop() {
                     warn!("could not stop embedded mpv playback: {e}");
                 }
+            }
+            if let Some(mc) = media_controls.as_ref() {
+                mc.lock().unwrap().release();
             }
             {
                 let mut state = playback_state.lock().unwrap();
@@ -186,6 +213,42 @@ impl EmbeddedPlayer {
             }
         });
     }
+}
+
+fn build_media_controls(app: &AppWindow, engine: Arc<PlayerEngine>) -> SharedMediaControls {
+    let weak = app.as_weak();
+    let hwnd = extract_hwnd(app);
+    let wrapper = MediaControlsWrapper::new(hwnd, move |cmd| {
+        let weak = weak.clone();
+        let engine = engine.clone();
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            match cmd {
+                MediaCommand::Toggle => app.invoke_player_toggle_play(),
+                MediaCommand::Play => {
+                    if app.get_player_paused() {
+                        app.invoke_player_toggle_play();
+                    }
+                }
+                MediaCommand::Pause => {
+                    if !app.get_player_paused() {
+                        app.invoke_player_toggle_play();
+                    }
+                }
+                MediaCommand::Stop => app.invoke_player_close(),
+                MediaCommand::Next => app.invoke_player_playlist_next(),
+                MediaCommand::Previous => app.invoke_player_playlist_previous(),
+                MediaCommand::Seek(secs) => {
+                    if let Err(e) = engine.seek(secs) {
+                        warn!("media-key seek failed: {e}");
+                    }
+                }
+            }
+        });
+    });
+    Arc::new(Mutex::new(wrapper))
 }
 
 fn register_renderer(app: &AppWindow, engine: Arc<PlayerEngine>, player_view: i32) {
@@ -249,6 +312,7 @@ fn register_events(
     rt: Arc<Runtime>,
     watch_sync: Arc<WatchSyncService>,
     player_view: i32,
+    media_controls: Option<SharedMediaControls>,
 ) {
     match engine.create_event_client() {
         Ok(mut event_client) => {
@@ -293,10 +357,16 @@ fn register_events(
                                 });
                             } else {
                                 playback_state.lock().unwrap().active = false;
+                                if let Some(mc) = media_controls.as_ref() {
+                                    mc.lock().unwrap().release();
+                                }
                             }
                         } else {
                             watch_sync.on_session_end();
                             playback_state.lock().unwrap().active = false;
+                            if let Some(mc) = media_controls.as_ref() {
+                                mc.lock().unwrap().release();
+                            }
                         }
                     }
                     Some(Ok(Event::FileLoaded)) => {
@@ -313,6 +383,20 @@ fn register_events(
                                 warn!("could not auto-resume playback: {e}");
                             }
                         }
+                        if let Some(mc) = media_controls.as_ref() {
+                            let title = {
+                                let state = playback_state.lock().unwrap();
+                                state
+                                    .current_index
+                                    .and_then(|idx| state.queue.get(idx))
+                                    .map(|item| item.title.clone())
+                            };
+                            if let Some(title) = title {
+                                let duration_opt =
+                                    if duration > 0.0 { Some(duration) } else { None };
+                                mc.lock().unwrap().ensure_active(&title, duration_opt);
+                            }
+                        }
                         let tracks = read_tracks(&event_client);
                         let _ = weak.upgrade_in_event_loop(move |app| {
                             apply_tracks(&app, tracks);
@@ -326,6 +410,9 @@ fn register_events(
                     }
                     Some(Ok(Event::Seek)) => {
                         watch_sync.on_seek();
+                        if let Some(mc) = media_controls.as_ref() {
+                            mc.lock().unwrap().flush_position();
+                        }
                     }
                     Some(Ok(Event::PropertyChange { name, change, .. })) => {
                         if name == "track-list/count" {
@@ -334,7 +421,13 @@ fn register_events(
                                 apply_tracks(&app, tracks);
                             });
                         } else {
-                            apply_property_change(&weak, &watch_sync, name, change);
+                            apply_property_change(
+                                &weak,
+                                &watch_sync,
+                                media_controls.as_ref(),
+                                name,
+                                change,
+                            );
                         }
                     }
                     Some(Ok(_)) | None => {}
@@ -764,16 +857,23 @@ struct PlayerTracks {
 fn apply_property_change(
     weak: &slint::Weak<AppWindow>,
     watch_sync: &WatchSyncService,
+    media_controls: Option<&SharedMediaControls>,
     name: &str,
     change: PropertyData<'_>,
 ) {
     match (name, change) {
         ("pause", PropertyData::Flag(paused)) => {
             watch_sync.on_pause(paused);
+            if let Some(mc) = media_controls {
+                mc.lock().unwrap().set_paused(paused);
+            }
             let _ = weak.upgrade_in_event_loop(move |app| app.set_player_paused(paused));
         }
         ("time-pos", PropertyData::Double(position)) => {
             watch_sync.on_position(position, 0.0);
+            if let Some(mc) = media_controls {
+                mc.lock().unwrap().set_position(position);
+            }
             let label = format_time(position);
             let _ = weak.upgrade_in_event_loop(move |app| {
                 app.set_player_position(position as f32);
