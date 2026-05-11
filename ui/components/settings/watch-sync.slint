@@ -102,6 +102,7 @@ export component WatchSyncSettingsPanel inherits VerticalLayout {
 
     SettingsHead { title: "Watch Status Sync"; description: "Sync watched file state through a shared PutMPV folder on put.io."; }
     Rectangle { height: 8px; }
+
     Rectangle {
         height: played-card.preferred-height;
         border-radius: 10px;
@@ -111,35 +112,53 @@ export component WatchSyncSettingsPanel inherits VerticalLayout {
         clip: true;
         played-card := VerticalLayout {
             spacing: 0px;
-            CardHeader { title: "Played counts"; description: "Totals for local watched state and known tracked files."; }
             Rectangle {
-                height: counts-row.preferred-height;
+                height: header-row.preferred-height;
                 background: transparent;
-                counts-row := HorizontalLayout {
+                header-row := HorizontalLayout {
                     padding-left: 22px;
                     padding-right: 22px;
-                    padding-top: 20px;
-                    padding-bottom: 20px;
-                    spacing: 40px;
-                    alignment: start;
-                    VerticalLayout {
+                    padding-top: 16px;
+                    padding-bottom: 16px;
+                    spacing: 24px;
+                    Text { text: "Watch progress"; color: Theme.text; font-size: 14px; font-weight: 600; font-family: Theme.ui_font; vertical-alignment: center; }
+                    if (root.active_profile != "") : HorizontalLayout {
                         spacing: 6px;
-                        Text { text: "PLAYED"; color: Theme.text_mute; font-size: 10.5px; font-weight: 600; font-family: Theme.ui_font; }
-                        Text { text: root.played_count; color: Theme.text; font-size: 30px; font-family: Theme.mono_font; }
+                        Text { text: "Syncing via"; color: Theme.text_mute; font-size: 11px; font-family: Theme.ui_font; vertical-alignment: center; }
+                        Rectangle {
+                            width: profile-label.preferred-width + 14px;
+                            height: 20px;
+                            border-radius: 5px;
+                            background: Theme.accent_soft;
+                            profile-label := Text { text: root.active_profile; color: Theme.accent_hi; font-size: 11px; font-weight: 500; font-family: Theme.ui_font; vertical-alignment: center; horizontal-alignment: center; }
+                        }
                     }
-                    VerticalLayout {
-                        spacing: 6px;
-                        Text { text: "KNOWN"; color: Theme.text_mute; font-size: 10.5px; font-weight: 600; font-family: Theme.ui_font; }
-                        Text { text: root.known_count; color: Theme.text; font-size: 30px; font-family: Theme.mono_font; }
-                    }
-                    Rectangle { horizontal-stretch: 1; background: transparent; }
-                    VerticalLayout {
+                    if (root.active_profile != "") : Rectangle { width: 1px; height: 20px; background: Theme.border; }
+                    HorizontalLayout {
                         spacing: 4px;
-                        alignment: center;
-                        Text { text: "Active profile"; color: Theme.text_mute; font-size: 11px; font-family: Theme.ui_font; horizontal-alignment: right; }
-                        Text { text: root.active_profile == "" ? "None" : root.active_profile; color: Theme.text; font-size: 13.5px; font-weight: 600; font-family: Theme.ui_font; horizontal-alignment: right; }
+                        Text { text: root.played_count; color: Theme.accent_hi; font-size: 17px; font-weight: 600; font-family: Theme.mono_font; vertical-alignment: center; }
+                        Text { text: "watched"; color: Theme.text_mute; font-size: 11px; font-family: Theme.ui_font; vertical-alignment: center; }
+                    }
+                    HorizontalLayout {
+                        spacing: 4px;
+                        Text { text: root.known_count; color: Theme.text; font-size: 17px; font-weight: 600; font-family: Theme.mono_font; vertical-alignment: center; }
+                        Text { text: "tracked"; color: Theme.text_mute; font-size: 11px; font-family: Theme.ui_font; vertical-alignment: center; }
+                    }
+                    if (root.known_count > 0) : Text {
+                        text: Math.round(root.played_count * 100 / root.known_count) + "%";
+                        color: Theme.text_mute;
+                        font-size: 11px;
+                        font-family: Theme.ui_font;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    HorizontalLayout {
+                        spacing: 12px;
+                        ButtonChip { label: "Sync now"; icon_name: "refresh"; clicked => { root.sync_now(); } }
+                        ButtonChip { label: "Disable"; icon_name: "close"; danger: true; clicked => { root.disable_sync(); } }
                     }
                 }
+                Rectangle { y: parent.height - 1px; width: parent.width; height: 1px; background: Theme.border; }
             }
         }
     }
@@ -160,7 +179,7 @@ export component WatchSyncSettingsPanel inherits VerticalLayout {
                     spacing: 8px;
                     alignment: end;
                     Dropdown { width: 240px; items: root.profile_labels; selected_index <=> root.existing_index; open <=> root.dropdown_open; placeholder: "Select profile"; selected(index) => { root.profile_selected(index); } }
-                    ButtonChip { label: "Use existing"; primary: true; enabled: root.existing_index >= 0; clicked => { root.use_existing(); } }
+                    ButtonChip { width: new-btn.width; label: "Use existing"; primary: true; center_content: true; enabled: root.existing_index >= 0; clicked => { root.use_existing(); } }
                 }
             }
             SettingsRow {
@@ -170,20 +189,7 @@ export component WatchSyncSettingsPanel inherits VerticalLayout {
                     spacing: 8px;
                     alignment: end;
                     TextFieldBox { width: 240px; placeholder: "Profile name"; text <=> root.new_name; }
-                    ButtonChip { label: "Use / create profile"; primary: true; clicked => { root.use_new(); } }
-                }
-            }
-            Rectangle {
-                height: 60px;
-                background: transparent;
-                HorizontalLayout {
-                    x: 22px;
-                    y: 14px;
-                    width: parent.width - 44px;
-                    spacing: 8px;
-                    alignment: start;
-                    ButtonChip { label: "Sync now"; icon_name: "refresh"; clicked => { root.sync_now(); } }
-                    ButtonChip { label: "Disable sync"; icon_name: "close"; danger: true; clicked => { root.disable_sync(); } }
+                    new-btn := ButtonChip { label: "Use / create profile"; primary: true; center_content: true; clicked => { root.use_new(); } }
                 }
             }
         }
