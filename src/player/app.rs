@@ -17,9 +17,11 @@ use crate::sync::watch_session::WatchSyncService;
 use crate::{AppWindow, PlayerPlaylistItem, PlayerTrack};
 
 use super::media_controls::{MediaCommand, MediaControlsWrapper};
+use super::sleep_inhibitor::SleepInhibitor;
 use super::{PlayerEngine, PlayerRenderer};
 
 type SharedMediaControls = Arc<Mutex<MediaControlsWrapper>>;
+type SharedSleepInhibitor = Arc<Mutex<SleepInhibitor>>;
 
 #[cfg(target_os = "windows")]
 fn extract_hwnd(_app: &AppWindow) -> Option<usize> {
@@ -62,6 +64,7 @@ pub struct EmbeddedPlayer {
     player_view: i32,
     previous_view: Arc<Mutex<i32>>,
     media_controls: Option<SharedMediaControls>,
+    sleep_inhibitor: SharedSleepInhibitor,
 }
 
 impl EmbeddedPlayer {
@@ -86,6 +89,7 @@ impl EmbeddedPlayer {
         let media_controls = engine
             .as_ref()
             .map(|engine| build_media_controls(app, engine.clone()));
+        let sleep_inhibitor = Arc::new(Mutex::new(SleepInhibitor::new()));
 
         if let Some(engine) = engine.clone() {
             register_renderer(app, engine, player_view);
@@ -101,6 +105,7 @@ impl EmbeddedPlayer {
                 watch_sync.clone(),
                 player_view,
                 media_controls.clone(),
+                sleep_inhibitor.clone(),
             );
         }
         if let Some(engine) = engine.clone() {
@@ -126,6 +131,7 @@ impl EmbeddedPlayer {
             player_view,
             previous_view: Arc::new(Mutex::new(files_view)),
             media_controls,
+            sleep_inhibitor,
         };
         player.register_close(app);
         player
@@ -183,6 +189,7 @@ impl EmbeddedPlayer {
         let watch_sync = self.watch_sync.clone();
         let previous_view = self.previous_view.clone();
         let media_controls = self.media_controls.clone();
+        let sleep_inhibitor = self.sleep_inhibitor.clone();
         app.on_player_close(move || {
             watch_sync.on_session_end();
             if let Some(engine) = engine.as_ref() {
@@ -193,6 +200,7 @@ impl EmbeddedPlayer {
             if let Some(mc) = media_controls.as_ref() {
                 mc.lock().unwrap().release();
             }
+            sleep_inhibitor.lock().unwrap().release();
             {
                 let mut state = playback_state.lock().unwrap();
                 state.active = false;
@@ -313,6 +321,7 @@ fn register_events(
     watch_sync: Arc<WatchSyncService>,
     player_view: i32,
     media_controls: Option<SharedMediaControls>,
+    sleep_inhibitor: SharedSleepInhibitor,
 ) {
     match engine.create_event_client() {
         Ok(mut event_client) => {
@@ -360,6 +369,7 @@ fn register_events(
                                 if let Some(mc) = media_controls.as_ref() {
                                     mc.lock().unwrap().release();
                                 }
+                                sleep_inhibitor.lock().unwrap().release();
                             }
                         } else {
                             watch_sync.on_session_end();
@@ -367,6 +377,7 @@ fn register_events(
                             if let Some(mc) = media_controls.as_ref() {
                                 mc.lock().unwrap().release();
                             }
+                            sleep_inhibitor.lock().unwrap().release();
                         }
                     }
                     Some(Ok(Event::FileLoaded)) => {
@@ -397,6 +408,14 @@ fn register_events(
                                 mc.lock().unwrap().ensure_active(&title, duration_opt);
                             }
                         }
+                        let paused_now = event_client
+                            .get_property::<bool>("pause")
+                            .unwrap_or(false);
+                        if paused_now {
+                            sleep_inhibitor.lock().unwrap().release();
+                        } else {
+                            sleep_inhibitor.lock().unwrap().acquire();
+                        }
                         let tracks = read_tracks(&event_client);
                         let _ = weak.upgrade_in_event_loop(move |app| {
                             apply_tracks(&app, tracks);
@@ -425,6 +444,8 @@ fn register_events(
                                 &weak,
                                 &watch_sync,
                                 media_controls.as_ref(),
+                                &sleep_inhibitor,
+                                &playback_state,
                                 name,
                                 change,
                             );
@@ -858,6 +879,8 @@ fn apply_property_change(
     weak: &slint::Weak<AppWindow>,
     watch_sync: &WatchSyncService,
     media_controls: Option<&SharedMediaControls>,
+    sleep_inhibitor: &SharedSleepInhibitor,
+    playback_state: &Arc<Mutex<PlayerPlaybackState>>,
     name: &str,
     change: PropertyData<'_>,
 ) {
@@ -866,6 +889,13 @@ fn apply_property_change(
             watch_sync.on_pause(paused);
             if let Some(mc) = media_controls {
                 mc.lock().unwrap().set_paused(paused);
+            }
+            if playback_state.lock().unwrap().active {
+                if paused {
+                    sleep_inhibitor.lock().unwrap().release();
+                } else {
+                    sleep_inhibitor.lock().unwrap().acquire();
+                }
             }
             let _ = weak.upgrade_in_event_loop(move |app| app.set_player_paused(paused));
         }
