@@ -168,6 +168,7 @@ export component AppWindow inherits Window {
     callback files_refresh();
     callback files_close_detail();
     callback files_menu_action(action: string, id: int);
+    callback files_context_menu_action(action: string);
     callback metadata_toggle_item(id: int);
     callback metadata_toggle_expand(id: int);
     callback metadata_select_unmatched();
@@ -362,6 +363,7 @@ export component AppWindow inherits Window {
         refresh_requested => { root.files_refresh(); }
         close_detail => { root.files_close_detail(); }
         menu_action(action, id) => { root.files_menu_action(action, id); }
+        context_menu_action(action) => { root.files_context_menu_action(action); }
         play_item(id) => { root.files_menu_action("play", id); }
     }
 

@@ -513,12 +513,16 @@ export component TransfersPage inherits Rectangle {
                         width: parent.width;
                         height: 96px;
                         Text {
-                            x: 18px;
-                            y: 28px;
+                            x: 0px;
+                            y: 0px;
+                            width: parent.width;
+                            height: parent.height;
                             text: root.busy ? "Loading transfers..." : "No active transfers.";
                             color: Theme.text_dim;
                             font-size: 13px;
                             font-family: Theme.ui_font;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
                         }
                     }
 

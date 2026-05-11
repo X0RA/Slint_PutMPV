@@ -140,6 +140,27 @@ component KebabMenu inherits Rectangle {
     }
 }
 
+component ContextMenu inherits Rectangle {
+    callback action(name: string);
+    callback close();
+
+    width: 200px;
+    height: ctx-menu.preferred-height;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.border_hi;
+    background: #1a1a24;
+    clip: true;
+
+    ctx-menu := VerticalLayout {
+        width: parent.width;
+        padding: 4px;
+        spacing: 2px;
+
+        MenuEntry { icon_name: "folder"; label: "New Folder"; clicked => { root.action("new-folder"); } }
+    }
+}
+
 component GridCard inherits Rectangle {
     in property <FileItem> item;
     in property <bool> selected: false;
@@ -387,6 +408,7 @@ export component FilesPage inherits FocusScope {
     callback refresh_requested();
     callback close_detail();
     callback menu_action(action: string, id: int);
+    callback context_menu_action(action: string);
     callback play_item(id: int);
 
     focus-on-click: true;
@@ -424,6 +446,9 @@ export component FilesPage inherits FocusScope {
     private property <int> menu_item_id: -1;
     private property <string> menu_item_type: "";
     private property <bool> menu_item_watched: false;
+    private property <bool> context_menu_open: false;
+    private property <length> context_menu_x: 0px;
+    private property <length> context_menu_y: 0px;
 
     title-text := Text {
         x: page_padding;
@@ -683,6 +708,15 @@ export component FilesPage inherits FocusScope {
                 width: parent.width;
                 height: parent.height;
                 clicked => { root.dismiss_search_focus(); }
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
+                        root.dismiss_search_focus();
+                        root.menu_open = false;
+                        root.context_menu_x = self.absolute-position.x + self.mouse-x - root.absolute-position.x;
+                        root.context_menu_y = self.absolute-position.y + self.mouse-y - root.absolute-position.y;
+                        root.context_menu_open = true;
+                    }
+                }
             }
 
             for item[index] in root.items : GridCard {
@@ -718,6 +752,15 @@ export component FilesPage inherits FocusScope {
                 width: parent.width;
                 height: parent.height;
                 clicked => { root.dismiss_search_focus(); }
+                pointer-event(event) => {
+                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
+                        root.dismiss_search_focus();
+                        root.menu_open = false;
+                        root.context_menu_x = self.absolute-position.x + self.mouse-x - root.absolute-position.x;
+                        root.context_menu_y = self.absolute-position.y + self.mouse-y - root.absolute-position.y;
+                        root.context_menu_open = true;
+                    }
+                }
             }
 
             Rectangle {
@@ -942,6 +985,35 @@ export component FilesPage inherits FocusScope {
             close => {
                 root.dismiss_search_focus();
                 root.menu_open = false;
+            }
+        }
+    }
+
+    if (root.context_menu_open) : ctx-overlay := Rectangle {
+        x: 0px;
+        y: root.header_height;
+        width: root.width;
+        height: root.height - root.header_height;
+        background: transparent;
+
+        TouchArea {
+            clicked => {
+                root.dismiss_search_focus();
+                root.context_menu_open = false;
+            }
+        }
+
+        ContextMenu {
+            x: root.context_menu_x;
+            y: root.context_menu_y - root.header_height;
+            action(name) => {
+                root.dismiss_search_focus();
+                root.context_menu_open = false;
+                root.context_menu_action(name);
+            }
+            close => {
+                root.dismiss_search_focus();
+                root.context_menu_open = false;
             }
         }
     }
