@@ -50,11 +50,13 @@ component MenuEntry inherits Rectangle {
     in property <string> label;
     in property <string> shortcut: "";
     in property <bool> danger: false;
+    in property <bool> disabled: false;
     callback clicked();
 
     height: 34px;
     border-radius: 6px;
-    background: touch.has-hover ? (danger ? #f8717114 : Theme.surface_hi) : transparent;
+    background: root.disabled ? transparent : (touch.has-hover ? (danger ? #f8717114 : Theme.surface_hi) : transparent);
+    opacity: root.disabled ? 0.35 : 1.0;
 
     Icon {
         x: 9px;
@@ -83,6 +85,7 @@ component MenuEntry inherits Rectangle {
     }
 
     touch := TouchArea {
+        enabled: !root.disabled;
         clicked => { root.clicked(); }
     }
 }
@@ -111,17 +114,16 @@ component KebabMenu inherits Rectangle {
             spacing: 2px;
             MenuEntry { icon_name: "folder"; label: "Open"; clicked => { root.action("open-folder", root.item_id); } }
             MenuEntry { icon_name: "refresh"; label: "Rename"; clicked => { root.action("rename", root.item_id); } }
-            MenuEntry { icon_name: "folder"; label: "Move to…"; clicked => { root.action("move", root.item_id); } }
-            MenuEntry { icon_name: "download"; label: "Zip and download"; clicked => { root.action("zip-download", root.item_id); } }
+            MenuEntry { icon_name: "folder"; label: "Move to…"; disabled: true; clicked => { root.action("move", root.item_id); } }
+            MenuEntry { icon_name: "download"; label: "Zip and download"; disabled: true; clicked => { root.action("zip-download", root.item_id); } }
         }
 
         if (!root.is_folder) : VerticalLayout {
             spacing: 2px;
             MenuEntry { icon_name: "play"; label: "Play"; clicked => { root.action("play", root.item_id); } }
             MenuEntry { icon_name: "refresh"; label: "Rename"; clicked => { root.action("rename", root.item_id); } }
-            MenuEntry { icon_name: "folder"; label: "Move to"; clicked => { root.action("move", root.item_id); } }
-            MenuEntry { icon_name: "download"; label: "Download"; clicked => { root.action("download", root.item_id); } }
-            MenuEntry { icon_name: "share"; label: "Copy share link"; clicked => { root.action("share", root.item_id); } }
+            MenuEntry { icon_name: "folder"; label: "Move to"; disabled: true; clicked => { root.action("move", root.item_id); } }
+            MenuEntry { icon_name: "download"; label: "Download"; disabled: true; clicked => { root.action("download", root.item_id); } }
             MenuEntry {
                 icon_name: "image";
                 label: root.is_watched ? "Mark as unwatched" : "Mark as watched";

@@ -1,0 +1,140 @@
+import { Theme } from "../theme.slint";
+import { Icon } from "./icons.slint";
+
+export component ToastView inherits Rectangle {
+    in property <int> kind: 0;
+    in property <string> title;
+    in property <string> body;
+    callback dismissed();
+
+    private property <color> accent_color:
+        root.kind == 1 ? Theme.success :
+        root.kind == 2 ? Theme.warning :
+        root.kind == 3 ? Theme.danger :
+        Theme.accent_hi;
+    private property <color> accent_soft_color:
+        root.kind == 1 ? #86efac1a :
+        root.kind == 2 ? #fbbf241a :
+        root.kind == 3 ? #f871711a :
+        Theme.accent_soft;
+    private property <color> accent_border_color:
+        root.kind == 1 ? #86efac4d :
+        root.kind == 2 ? #fbbf244d :
+        root.kind == 3 ? #f871714d :
+        Theme.accent_border;
+    private property <string> status_icon:
+        root.kind == 1 ? "check" :
+        root.kind == 2 ? "clock" :
+        root.kind == 3 ? "close" :
+        "metadata";
+    private property <length> content_padding_y: 12px;
+    private property <length> title_body_gap: -2px;
+    private property <length> title_height: title_text.preferred-height;
+    private property <length> content_height:
+        root.body != ""
+            ? root.title_height + root.title_body_gap + body_measurer.preferred-height
+            : root.title_height;
+
+    height: root.content_height + (root.content_padding_y * 2);
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: Theme.border_hi;
+    background: Theme.surface_higher;
+    clip: true;
+
+    Rectangle {
+        x: 0px;
+        y: 0px;
+        width: 3px;
+        height: parent.height;
+        background: root.accent_color;
+    }
+
+    Rectangle {
+        x: 13px;
+        y: (parent.height - self.height) / 2;
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        border-width: 1px;
+        border-color: root.accent_border_color;
+        background: root.accent_soft_color;
+
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            name: root.status_icon;
+            icon_size: 12px;
+            tint: root.accent_color;
+        }
+    }
+
+    content := Rectangle {
+        x: 53px;
+        y: root.content_padding_y;
+        width: parent.width - 104px;
+        height: root.content_height;
+        background: transparent;
+
+        title_text := Text {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            text: root.title;
+            color: Theme.text;
+            font-size: 12.5px;
+            font-weight: 700;
+            font-family: Theme.ui_font;
+            overflow: elide;
+        }
+
+        body_measurer := Text {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            text: root.body;
+            color: transparent;
+            font-size: 11.5px;
+            font-family: Theme.ui_font;
+            wrap: word-wrap;
+        }
+
+        if (root.body != "") : body_text := Text {
+            x: 0px;
+            y: root.title_height + root.title_body_gap;
+            width: parent.width;
+            text: root.body;
+            color: Theme.text_dim;
+            font-size: 11.5px;
+            font-family: Theme.ui_font;
+            wrap: word-wrap;
+        }
+    }
+
+    close_button := Rectangle {
+        x: parent.width - self.width - 8px;
+        y: (parent.height - self.height) / 2;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: transparent;
+
+        states [
+            hover when close_touch.has-hover : {
+                background: #ffffff08;
+            }
+        ]
+
+        Icon {
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            name: "close";
+            icon_size: 16px;
+            tint: Theme.text_mute;
+        }
+
+        close_touch := TouchArea {
+            clicked => { root.dismissed(); }
+        }
+    }
+}

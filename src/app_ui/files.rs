@@ -16,6 +16,7 @@ use crate::{AppWindow, FileItem, PathSegment};
 
 use super::models::UiModels;
 use super::state::UiState;
+use super::toast::{self, ToastKind};
 use super::util::{format_size, format_updated, truncate_id};
 use super::{Services, VIEW_PLAYER};
 
@@ -746,10 +747,14 @@ pub(crate) fn install(
         let weak = app.as_weak();
         let tree = tree.clone();
         let current_folder = current_folder.clone();
+        let path_stack = path_stack.clone();
         let embedded_player = embedded_player.clone();
         let watch_sync = watch_sync.clone();
         let request_refresh = request_refresh.clone();
         let file_state = file_state.clone();
+        let client = client.clone();
+        let config = config.clone();
+        let rt = rt.clone();
         move |action, id| {
             info!("menu action: {action} on {id}");
             let Some(app) = weak.upgrade() else {
@@ -757,49 +762,173 @@ pub(crate) fn install(
             };
 
             let tree_borrow = tree.read().unwrap();
-            if action.as_str() == "watched" {
-                let Some((entry, location_stack)) = find_entry_by_id(&tree_borrow.root, id) else {
-                    return;
-                };
-                let file_id = entry.file.id;
-                let current = {
-                    let file_state_entries = file_state.read().unwrap();
-                    file_state_entries
-                        .entries()
-                        .get(&file_id.to_string())
-                        .map(|entry| entry.is_completed())
-                        .unwrap_or(false)
-                };
-                drop(tree_borrow);
-                watch_sync.mark_watched(file_id, !current);
-                request_refresh();
-                if app.get_detail_open() {
-                    let entries = file_state.read().unwrap().entries().clone();
-                    app.set_detail_item(put_to_file_item(
-                        &entry,
-                        &location_text(&location_stack),
-                        &entries,
-                    ));
+            match action.as_str() {
+                "open-folder" => {
+                    let Some((entry, _)) = find_entry_by_id(&tree_borrow.root, id) else {
+                        return;
+                    };
+                    if entry.file.file_type != "FOLDER" {
+                        return;
+                    }
+                    let real_id = entry.file.id;
+                    let folder_path =
+                        find_path_to_folder(&tree_borrow.root, real_id).unwrap_or_else(|| {
+                            let mut path = path_stack.borrow().clone();
+                            path.push((real_id, entry.file.name.clone()));
+                            path
+                        });
+                    drop(tree_borrow);
+                    *current_folder.borrow_mut() = real_id;
+                    *path_stack.borrow_mut() = folder_path;
+                    app.set_files_query("".into());
+                    app.set_detail_open(false);
+                    app.set_detail_item(empty_file_item());
+                    request_refresh();
                 }
-                app.invoke_media_refresh();
-                app.invoke_settings_refresh();
-                return;
+                "watched" => {
+                    let Some((entry, location_stack)) =
+                        find_entry_by_id(&tree_borrow.root, id)
+                    else {
+                        return;
+                    };
+                    let file_id = entry.file.id;
+                    let current = {
+                        let file_state_entries = file_state.read().unwrap();
+                        file_state_entries
+                            .entries()
+                            .get(&file_id.to_string())
+                            .map(|entry| entry.is_completed())
+                            .unwrap_or(false)
+                    };
+                    drop(tree_borrow);
+                    watch_sync.mark_watched(file_id, !current);
+                    request_refresh();
+                    if app.get_detail_open() {
+                        let entries = file_state.read().unwrap().entries().clone();
+                        app.set_detail_item(put_to_file_item(
+                            &entry,
+                            &location_text(&location_stack),
+                            &entries,
+                        ));
+                    }
+                    app.invoke_media_refresh();
+                    app.invoke_settings_refresh();
+                }
+                "play" => {
+                    let Some((queue, file_id)) =
+                        files_playback_queue(&app, &tree_borrow, *current_folder.borrow(), id)
+                    else {
+                        app.set_player_title("Could not find the selected media file.".into());
+                        app.set_view(VIEW_PLAYER);
+                        return;
+                    };
+                    drop(tree_borrow);
+                    embedded_player.play_queue(&app, queue, file_id);
+                }
+                "rename" => {
+                    let Some((entry, _)) = find_entry_by_id(&tree_borrow.root, id) else {
+                        return;
+                    };
+                    let file_id = entry.file.id;
+                    let old_name = entry.file.name.clone();
+                    drop(tree_borrow);
+
+                    let weak = weak.clone();
+                    let client = client.clone();
+                    let config = config.clone();
+                    rt.spawn(async move {
+                        let new_name = tokio::task::spawn_blocking({
+                            let old_name = old_name.clone();
+                            move || {
+                                std::process::Command::new("zenity")
+                                    .args([
+                                        "--entry",
+                                        "--title=Rename",
+                                        "--text=Enter new name:",
+                                        &format!("--entry-text={old_name}"),
+                                    ])
+                                    .output()
+                                    .ok()
+                                    .filter(|o| o.status.success())
+                                    .and_then(|o| {
+                                        let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                                        if s.is_empty() { None } else { Some(s) }
+                                    })
+                            }
+                        })
+                        .await
+                        .ok()
+                        .flatten();
+
+                        let Some(new_name) = new_name else {
+                            return;
+                        };
+                        let token = config.oauth_token();
+                        if token.is_empty() {
+                            return;
+                        }
+                        match putio::folders::rename_file(&client, &token, file_id, &new_name).await
+                        {
+                            Ok(()) => {
+                                let _ = weak.upgrade_in_event_loop(move |app| {
+                                    app.invoke_request_refresh();
+                                    toast::show(&app, ToastKind::Success, "Renamed", format!("Renamed to \"{new_name}\""));
+                                });
+                            }
+                            Err(e) => {
+                                warn!("rename failed: {e}");
+                                let _ = weak.upgrade_in_event_loop(move |app| {
+                                    toast::show(&app, ToastKind::Error, "Rename failed", e.to_string());
+                                });
+                            }
+                        }
+                    });
+                }
+                "delete" => {
+                    let Some((entry, _)) = find_entry_by_id(&tree_borrow.root, id) else {
+                        return;
+                    };
+                    let file_id = entry.file.id;
+                    let file_name = entry.file.name.clone();
+                    drop(tree_borrow);
+
+                    let confirmed = rfd::AsyncMessageDialog::new()
+                        .set_title("Delete")
+                        .set_description(format!(
+                            "Are you sure you want to delete \"{file_name}\"?"
+                        ))
+                        .set_level(rfd::MessageLevel::Warning)
+                        .set_buttons(rfd::MessageButtons::OkCancel)
+                        .show();
+
+                    let weak = weak.clone();
+                    let client = client.clone();
+                    let config = config.clone();
+                    rt.spawn(async move {
+                        if !matches!(confirmed.await, rfd::MessageDialogResult::Ok) {
+                            return;
+                        }
+                        let token = config.oauth_token();
+                        if token.is_empty() {
+                            return;
+                        }
+                        match putio::folders::delete_files(&client, &token, &[file_id]).await {
+                            Ok(()) => {
+                                let _ = weak.upgrade_in_event_loop(|app| {
+                                    app.set_detail_open(false);
+                                    app.set_detail_item(empty_file_item());
+                                    app.invoke_request_refresh();
+                                });
+                            }
+                            Err(e) => warn!("delete failed: {e}"),
+                        }
+                    });
+                }
+                "download" => {
+                    // TODO: implement download with file save dialog
+                }
+                _ => {}
             }
-
-            if action.as_str() != "play" {
-                return;
-            }
-
-            let Some((queue, file_id)) =
-                files_playback_queue(&app, &tree_borrow, *current_folder.borrow(), id)
-            else {
-                app.set_player_title("Could not find the selected media file.".into());
-                app.set_view(VIEW_PLAYER);
-                return;
-            };
-            drop(tree_borrow);
-
-            embedded_player.play_queue(&app, queue, file_id);
         }
     });
 }

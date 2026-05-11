@@ -10,6 +10,7 @@ use crate::app_ui::util::format_size;
 use crate::putio;
 use crate::{AppWindow, MagnetItem};
 
+use super::toast::{self, ToastKind};
 use super::{Services, UiState};
 
 #[derive(Default)]
@@ -79,12 +80,24 @@ pub(crate) fn install(app: &AppWindow, services: &Services, _state: &UiState, rt
                     Ok(()) => {
                         if let Some(app) = weak.upgrade() {
                             app.set_magnets_status("Magnet copied.".into());
+                            toast::show(
+                                &app,
+                                ToastKind::Success,
+                                "Magnet copied",
+                                "The magnet link is on your clipboard.",
+                            );
                         }
                     }
                     Err(e) => {
                         warn!("clipboard write failed: {e}");
                         if let Some(app) = weak.upgrade() {
                             app.set_magnets_status(format!("Could not copy: {e}").into());
+                            toast::show(
+                                &app,
+                                ToastKind::Error,
+                                "Could not copy magnet",
+                                e.to_string(),
+                            );
                         }
                     }
                 },
@@ -92,6 +105,12 @@ pub(crate) fn install(app: &AppWindow, services: &Services, _state: &UiState, rt
                     warn!("clipboard init failed: {e}");
                     if let Some(app) = weak.upgrade() {
                         app.set_magnets_status(format!("Could not copy: {e}").into());
+                        toast::show(
+                            &app,
+                            ToastKind::Error,
+                            "Could not access clipboard",
+                            e.to_string(),
+                        );
                     }
                 }
             }
@@ -120,12 +139,27 @@ pub(crate) fn install(app: &AppWindow, services: &Services, _state: &UiState, rt
             let weak = weak.clone();
             let client = client.clone();
             rt.spawn(async move {
-                let message = match putio::transfers::add_url(&client, &token, &magnet).await {
+                let result = putio::transfers::add_url(&client, &token, &magnet).await;
+                let message = match &result {
                     Ok(_) => "Transfer added.".to_string(),
                     Err(e) => format!("Could not add transfer: {e}"),
                 };
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     app.set_magnets_status(message.into());
+                    match result {
+                        Ok(_) => toast::show(
+                            &app,
+                            ToastKind::Success,
+                            "Transfer added",
+                            "The magnet transfer was sent to put.io.",
+                        ),
+                        Err(e) => toast::show(
+                            &app,
+                            ToastKind::Error,
+                            "Could not add transfer",
+                            e.to_string(),
+                        ),
+                    }
                 });
             });
         }

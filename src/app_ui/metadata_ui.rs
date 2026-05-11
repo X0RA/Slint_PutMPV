@@ -18,6 +18,7 @@ use crate::{AppWindow, MetadataItem};
 
 use super::media::collect_tree_file_ids;
 use super::state::UiState;
+use super::toast::{self, ToastKind};
 use super::util::stable_i32_id;
 use super::Services;
 
@@ -755,6 +756,25 @@ pub(crate) fn install(
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     app.set_metadata_busy(false);
                     app.set_metadata_status(message.into());
+                    if summary.errors.is_empty() {
+                        toast::show(
+                            &app,
+                            ToastKind::Success,
+                            "Metadata fetch complete",
+                            summary.media_success_text(),
+                        );
+                    } else {
+                        toast::show(
+                            &app,
+                            ToastKind::Error,
+                            "Metadata fetch finished with errors",
+                            summary
+                                .errors
+                                .first()
+                                .map(String::as_str)
+                                .unwrap_or("One or more metadata requests failed."),
+                        );
+                    }
                     app.invoke_metadata_clear_selection();
                     app.invoke_metadata_criteria_changed();
                     app.invoke_settings_refresh();
@@ -856,6 +876,25 @@ pub(crate) fn install(
                 );
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     app.set_metadata_status(message.into());
+                    if summary.errors.is_empty() {
+                        toast::show(
+                            &app,
+                            ToastKind::Success,
+                            "Automatic metadata fetch complete",
+                            summary.media_success_text(),
+                        );
+                    } else {
+                        toast::show(
+                            &app,
+                            ToastKind::Error,
+                            "Automatic metadata fetch had errors",
+                            summary
+                                .errors
+                                .first()
+                                .map(String::as_str)
+                                .unwrap_or("One or more metadata requests failed."),
+                        );
+                    }
                     app.invoke_metadata_criteria_changed();
                     app.invoke_settings_refresh();
                     app.invoke_media_refresh();

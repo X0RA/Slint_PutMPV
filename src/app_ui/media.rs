@@ -21,6 +21,7 @@ use crate::{AppWindow, MediaItem};
 use super::metadata_ui::{build_unmatched_candidates_from_tree, fetch_metadata_candidates};
 use super::models::UiModels;
 use super::state::UiState;
+use super::toast::{self, ToastKind};
 use super::util::{format_runtime, make_initials};
 use super::{Services, VIEW_FILES, VIEW_TV_SHOW};
 
@@ -565,10 +566,22 @@ pub(crate) fn install(
                     if had_success {
                         app.set_media_show_success_flash(true);
                         app.set_media_success_flash_text(success_text.as_str().into());
+                        toast::show(
+                            &app,
+                            ToastKind::Success,
+                            "Metadata matches saved",
+                            success_text.as_str(),
+                        );
                     }
                     if had_errors {
                         app.set_media_show_error_flash(true);
                         app.set_media_error_flash_text(error_text.as_str().into());
+                        toast::show(
+                            &app,
+                            ToastKind::Error,
+                            "Could not scrape unmatched media",
+                            error_text.as_str(),
+                        );
                     }
                     app.invoke_settings_refresh();
                     app.invoke_media_refresh();

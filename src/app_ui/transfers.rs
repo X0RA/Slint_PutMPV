@@ -12,6 +12,7 @@ use crate::putio;
 use crate::putio::transfers::PutIoTransfer;
 use crate::{AppWindow, TransferItem};
 
+use super::toast::{self, ToastKind};
 use super::{Services, UiState, VIEW_FILES};
 
 // id -> last-known status string from /transfers/list
@@ -86,13 +87,28 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
             let weak = weak.clone();
             let client = client.clone();
             rt.spawn(async move {
-                let message = match putio::transfers::add_url(&client, &token, &magnet).await {
-                    Ok(_) => "Transfer added.".to_string(),
-                    Err(e) => format!("Could not add transfer: {e}"),
-                };
+                let (message, kind, title, body) =
+                    match putio::transfers::add_url(&client, &token, &magnet).await {
+                        Ok(_) => (
+                            "Transfer added.".to_string(),
+                            ToastKind::Success,
+                            "Transfer added",
+                            "The magnet transfer was sent to put.io.".to_string(),
+                        ),
+                        Err(e) => {
+                            let error = e.to_string();
+                            (
+                                format!("Could not add transfer: {error}"),
+                                ToastKind::Error,
+                                "Could not add transfer",
+                                error,
+                            )
+                        }
+                    };
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     app.set_transfers_busy(false);
                     app.set_transfers_status(message.into());
+                    toast::show(&app, kind, title, body);
                     app.invoke_transfers_refresh();
                 });
             });
@@ -130,20 +146,42 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
             let weak = weak.clone();
             let client = client.clone();
             rt.spawn(async move {
-                let message = match std::fs::read(&path) {
+                let (message, kind, title, body) = match std::fs::read(&path) {
                     Ok(body) => {
                         match putio::transfers::upload_torrent(&client, &token, &filename, body)
                             .await
                         {
-                            Ok(_) => format!("Uploaded {filename}."),
-                            Err(e) => format!("Could not upload torrent: {e}"),
+                            Ok(_) => (
+                                format!("Uploaded {filename}."),
+                                ToastKind::Success,
+                                "Torrent uploaded",
+                                format!("{filename} was sent to put.io."),
+                            ),
+                            Err(e) => {
+                                let error = e.to_string();
+                                (
+                                    format!("Could not upload torrent: {error}"),
+                                    ToastKind::Error,
+                                    "Could not upload torrent",
+                                    error,
+                                )
+                            }
                         }
                     }
-                    Err(e) => format!("Could not read torrent file: {e}"),
+                    Err(e) => {
+                        let error = e.to_string();
+                        (
+                            format!("Could not read torrent file: {error}"),
+                            ToastKind::Error,
+                            "Could not read torrent file",
+                            error,
+                        )
+                    }
                 };
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     app.set_transfers_busy(false);
                     app.set_transfers_status(message.into());
+                    toast::show(&app, kind, title, body);
                     app.invoke_transfers_refresh();
                 });
             });
@@ -196,6 +234,20 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
                     }
                 };
                 let _ = weak.upgrade_in_event_loop(move |app| {
+                    show_result_toast(
+                        &app,
+                        &message,
+                        if is_error {
+                            "Transfer retried"
+                        } else {
+                            "Transfer reannounced"
+                        },
+                        if is_error {
+                            "Could not retry transfer"
+                        } else {
+                            "Could not reannounce transfer"
+                        },
+                    );
                     app.set_transfers_status(message.into());
                     app.invoke_transfers_refresh();
                 });
@@ -259,6 +311,12 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
                     Err(e) => format!("Could not cancel transfer: {e}"),
                 };
                 let _ = weak.upgrade_in_event_loop(move |app| {
+                    show_result_toast(
+                        &app,
+                        &message,
+                        "Transfer canceled",
+                        "Could not cancel transfer",
+                    );
                     app.set_transfers_status(message.into());
                     app.invoke_transfers_refresh();
                 });
@@ -289,6 +347,12 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
                     Err(e) => format!("Could not clear completed transfers: {e}"),
                 };
                 let _ = weak.upgrade_in_event_loop(move |app| {
+                    show_result_toast(
+                        &app,
+                        &message,
+                        "Completed transfers cleared",
+                        "Could not clear completed transfers",
+                    );
                     app.set_transfers_status(message.into());
                     app.invoke_transfers_refresh();
                 });
@@ -400,6 +464,14 @@ fn close_add_overlay(app: &AppWindow) {
 
 fn parse_transfer_id(id: &str) -> Option<u64> {
     id.parse::<u64>().ok()
+}
+
+fn show_result_toast(app: &AppWindow, message: &str, success_title: &str, error_title: &str) {
+    if message.starts_with("Could not") {
+        toast::show(app, ToastKind::Error, error_title, message);
+    } else {
+        toast::show(app, ToastKind::Success, success_title, message);
+    }
 }
 
 fn transfer_to_item(transfer: &PutIoTransfer) -> TransferItem {

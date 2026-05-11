@@ -1,6 +1,7 @@
 import { Theme } from "./theme.slint";
 import { TopNavButton, ButtonChip } from "./components/primitives.slint";
 import { Icon } from "./components/icons.slint";
+import { ToastView } from "./components/toast.slint";
 import { LoadingPage } from "./pages/loading.slint";
 import { SplashPage } from "./pages/splash.slint";
 import { CodePage } from "./pages/code.slint";
@@ -123,6 +124,10 @@ export component AppWindow inherits Window {
     in-out property <bool> magnets_fx264: false;
     in-out property <bool> magnets_fx265: false;
     in-out property <bool> magnets_fhdr: false;
+    in-out property <bool> toast_visible: false;
+    in-out property <int> toast_kind: 0;
+    in-out property <string> toast_title: "";
+    in-out property <string> toast_body: "";
 
     in-out property <string> tv_show_title: "";
     in-out property <string> tv_show_tagline: "";
@@ -228,6 +233,28 @@ export component AppWindow inherits Window {
     callback tv_show_play_episode(string);
     callback tv_show_episode_subtitles(string);
     callback tv_show_episode_watch_toggle(string);
+
+    public function show_toast(kind: int, title: string, body: string) {
+        root.toast_kind = kind;
+        root.toast_title = title;
+        root.toast_body = body;
+        root.toast_visible = true;
+        toast-timer.restart();
+    }
+
+    public function dismiss_toast() {
+        root.toast_visible = false;
+        toast-timer.stop();
+    }
+
+    toast-timer := Timer {
+        interval: 3500ms;
+        running: false;
+        triggered => {
+            root.toast_visible = false;
+            toast-timer.running = false;
+        }
+    }
 
     if (root.view != 7) : title-bar := Rectangle {
         x: 0px;
@@ -538,5 +565,15 @@ export component AppWindow inherits Window {
         metadata_fetch => { root.metadata_fetch(); }
         metadata_criteria_changed => { root.metadata_criteria_changed(); }
         auto_metadata_fetch_changed(enabled) => { root.auto_metadata_fetch_changed(enabled); }
+    }
+
+    if (root.toast_visible && root.view != 7) : toast := ToastView {
+        width: min(parent.width - 36px, 440px);
+        x: 18px;
+        y: parent.height - self.height - 18px;
+        kind: root.toast_kind;
+        title: root.toast_title;
+        body: root.toast_body;
+        dismissed => { root.dismiss_toast(); }
     }
 }

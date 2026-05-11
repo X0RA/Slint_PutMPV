@@ -9,6 +9,7 @@ pub(crate) mod metadata_ui;
 pub(crate) mod models;
 pub(crate) mod settings;
 pub(crate) mod state;
+pub(crate) mod toast;
 pub(crate) mod transfers;
 pub(crate) mod tv_show;
 pub(crate) mod util;
