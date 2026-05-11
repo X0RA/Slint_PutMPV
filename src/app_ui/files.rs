@@ -159,6 +159,57 @@ fn find_entry_by_id(node: &DirectoryNode, id: i32) -> Option<(DisplayEntry, Vec<
     walk(node, id, &mut vec![(0, "put.io".to_string())])
 }
 
+fn rename_entry_in_tree(tree: &mut UnifiedDirectoryTree, file_id: u64, new_name: &str) -> bool {
+    fn walk(node: &mut DirectoryNode, file_id: u64, new_name: &str) -> bool {
+        for child in &mut node.children {
+            if let Some(f) = &mut child.file {
+                if f.id == file_id {
+                    f.name = new_name.to_string();
+                    return true;
+                }
+            }
+            if walk(child, file_id, new_name) {
+                return true;
+            }
+        }
+        for f in &mut node.files {
+            if f.id == file_id {
+                f.name = new_name.to_string();
+                return true;
+            }
+        }
+        false
+    }
+    if file_id == 0 {
+        return false;
+    }
+    walk(&mut tree.root, file_id, new_name)
+}
+
+fn delete_entry_from_tree(tree: &mut UnifiedDirectoryTree, file_id: u64) -> bool {
+    fn walk(node: &mut DirectoryNode, file_id: u64) -> bool {
+        let before = node.children.len();
+        node.children.retain(|c| {
+            c.file.as_ref().is_none_or(|f| f.id != file_id)
+        });
+        if node.children.len() < before {
+            return true;
+        }
+        for child in &mut node.children {
+            if walk(child, file_id) {
+                return true;
+            }
+        }
+        let before = node.files.len();
+        node.files.retain(|f| f.id != file_id);
+        node.files.len() < before
+    }
+    if file_id == 0 {
+        return false;
+    }
+    walk(&mut tree.root, file_id)
+}
+
 fn reconcile_path_stack(tree: &UnifiedDirectoryTree, stack: &mut Vec<(u64, String)>) -> bool {
     let original = stack.clone();
     if stack.is_empty() {
@@ -836,6 +887,7 @@ pub(crate) fn install(
                     let weak = weak.clone();
                     let client = client.clone();
                     let config = config.clone();
+                    let tree = tree.clone();
                     rt.spawn(async move {
                         let new_name = tokio::task::spawn_blocking({
                             let old_name = old_name.clone();
@@ -870,7 +922,9 @@ pub(crate) fn install(
                         match putio::folders::rename_file(&client, &token, file_id, &new_name).await
                         {
                             Ok(()) => {
+                                let tree = tree.clone();
                                 let _ = weak.upgrade_in_event_loop(move |app| {
+                                    rename_entry_in_tree(&mut tree.write().unwrap(), file_id, &new_name);
                                     app.invoke_request_refresh();
                                     toast::show(&app, ToastKind::Success, "Renamed", format!("Renamed to \"{new_name}\""));
                                 });
@@ -904,6 +958,7 @@ pub(crate) fn install(
                     let weak = weak.clone();
                     let client = client.clone();
                     let config = config.clone();
+                    let tree = tree.clone();
                     rt.spawn(async move {
                         if !matches!(confirmed.await, rfd::MessageDialogResult::Ok) {
                             return;
@@ -914,7 +969,9 @@ pub(crate) fn install(
                         }
                         match putio::folders::delete_files(&client, &token, &[file_id]).await {
                             Ok(()) => {
-                                let _ = weak.upgrade_in_event_loop(|app| {
+                                let tree = tree.clone();
+                                let _ = weak.upgrade_in_event_loop(move |app| {
+                                    delete_entry_from_tree(&mut tree.write().unwrap(), file_id);
                                     app.set_detail_open(false);
                                     app.set_detail_item(empty_file_item());
                                     app.invoke_request_refresh();

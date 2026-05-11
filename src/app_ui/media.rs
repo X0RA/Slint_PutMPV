@@ -3,7 +3,6 @@
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
-use serde_json;
 use slint::{ComponentHandle, Model, VecModel};
 use std::collections::HashMap;
 use tokio::runtime::Runtime;

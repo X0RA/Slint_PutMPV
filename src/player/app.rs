@@ -239,6 +239,7 @@ fn register_renderer(app: &AppWindow, engine: Arc<PlayerEngine>, player_view: i3
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn register_events(
     app: &AppWindow,
     engine: Arc<PlayerEngine>,
@@ -380,6 +381,7 @@ fn register_events(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn register_callbacks(
     app: &AppWindow,
     engine: Arc<PlayerEngine>,

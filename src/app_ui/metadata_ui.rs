@@ -359,6 +359,7 @@ fn unresolved_episode_refs(
 }
 
 fn episode_match_items(resolved: &HashMap<String, i32>, source: &str) -> Vec<MatchItemByFileID> {
+    #[allow(clippy::filter_map_bool_then)]
     resolved
         .iter()
         .filter_map(|(file_id, tmdb_id)| {
@@ -600,10 +601,8 @@ pub(crate) fn refresh_metadata_ui(
         if filter == 2 && (is_show || is_episode) {
             continue;
         }
-        if hide_matched {
-            if row.matched {
-                continue;
-            }
+        if hide_matched && row.matched {
+            continue;
         }
         if !row_matches_query(row, &query) {
             continue;

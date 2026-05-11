@@ -249,10 +249,7 @@ pub(crate) fn refresh_tv_show_ui(
     use std::collections::HashSet;
 
     let matched = matched_store.get_matched_snapshot().unwrap_or_default();
-    let tmdb_cache = match tmdb_store.get_cache_snapshot() {
-        Ok(c) => c,
-        Err(_) => crate::storage::tmdb_store::TMDBCache::default(),
-    };
+    let tmdb_cache = tmdb_store.get_cache_snapshot().unwrap_or_default();
     let mut existing_file_ids = HashSet::<String>::new();
     {
         let tree_guard = tree.read().unwrap();

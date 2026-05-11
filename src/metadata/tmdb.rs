@@ -17,6 +17,7 @@ const LANGUAGE: &str = "en-US";
 const IMAGE_LANGUAGES: &str = "en,null";
 
 #[derive(Debug, Clone)]
+#[allow(clippy::upper_case_acronyms)]
 pub struct TMDBAPI {
     http: Client,
     cfg: Arc<ConfigStore>,

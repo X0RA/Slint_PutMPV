@@ -477,14 +477,18 @@ fn show_result_toast(app: &AppWindow, message: &str, success_title: &str, error_
 fn transfer_to_item(transfer: &PutIoTransfer) -> TransferItem {
     TransferItem {
         id: transfer.id.to_string().into(),
-        file_id: (transfer.file_id > 0)
-            .then(|| transfer.file_id.to_string())
-            .unwrap_or_default()
-            .into(),
-        parent_id: (transfer.save_parent_id > 0)
-            .then(|| transfer.save_parent_id.to_string())
-            .unwrap_or_default()
-            .into(),
+        file_id: if transfer.file_id > 0 {
+            transfer.file_id.to_string()
+        } else {
+            String::new()
+        }
+        .into(),
+        parent_id: if transfer.save_parent_id > 0 {
+            transfer.save_parent_id.to_string()
+        } else {
+            String::new()
+        }
+        .into(),
         title: transfer_title(transfer).into(),
         meta: transfer_meta(transfer).into(),
         progress: (transfer.percent_done.clamp(0.0, 100.0) / 100.0) as f32,
