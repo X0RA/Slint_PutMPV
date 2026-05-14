@@ -1,6 +1,7 @@
 mod app;
 mod gl;
 mod media_controls;
+mod sleep_inhibitor;
 
 pub use app::{EmbeddedPlayer, PlaybackQueueItem};
 

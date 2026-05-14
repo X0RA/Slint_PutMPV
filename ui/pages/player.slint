@@ -162,7 +162,6 @@ export component PlayerPage inherits FocusScope {
         y: 0px;
         width: parent.width;
         height: parent.height;
-        mouse-cursor: root.controls_visible ? default : none;
         pointer-event(event) => {
             if (event.kind == PointerEventKind.move) {
                 root.reveal_controls();
@@ -288,6 +287,47 @@ export component PlayerPage inherits FocusScope {
         current_id: root.playlist_current_id;
         play_item(file_id) => {
             root.playlist_play(file_id);
+        }
+    }
+
+    cursor-overlay := TouchArea {
+        x: 0px;
+        y: 0px;
+        width: parent.width;
+        height: parent.height;
+        enabled: !root.controls_visible && !root.playlist_open;
+        mouse-cursor: none;
+        property <bool> baseline_set: false;
+        property <length> baseline_x: 0px;
+        property <length> baseline_y: 0px;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.move) {
+                if (!self.baseline_set) {
+                    self.baseline_x = self.mouse-x;
+                    self.baseline_y = self.mouse-y;
+                    self.baseline_set = true;
+                } else if (abs(self.mouse-x - self.baseline_x) > 8px
+                        || abs(self.mouse-y - self.baseline_y) > 8px) {
+                    self.baseline_set = false;
+                    root.reveal_controls();
+                }
+            }
+        }
+        changed enabled => {
+            if (!self.enabled) {
+                self.baseline_set = false;
+            }
+        }
+        clicked => {
+            click-timer.restart();
+        }
+        double-clicked => {
+            click-timer.stop();
+            root.focus();
+            root.reveal_controls();
+            controls.close_menus();
+            root.playlist_open = false;
+            root.toggle_fullscreen();
         }
     }
 }
