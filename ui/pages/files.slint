@@ -205,14 +205,50 @@ component GridCard inherits Rectangle {
         overflow: elide;
     }
 
-    Text {
+    HorizontalLayout {
         x: 56px;
-        y: 56px;
+        y: 54px;
         width: parent.width - 76px;
-        text: item.grid_meta;
-        color: Theme.text_mute;
-        font-size: 10.5px;
-        font-family: Theme.ui_font;
+        height: 18px;
+        spacing: 6px;
+        alignment: start;
+
+        Text {
+            text: item.grid_meta;
+            color: Theme.text_mute;
+            font-size: 10.5px;
+            font-family: Theme.ui_font;
+            vertical-alignment: center;
+        }
+
+        if (item.watch_badge_visible) : Rectangle {
+            border-radius: 5px;
+            border-width: 1px;
+            border-color: item.watch_badge_in_progress ? #f59e0b66 : #22c55e66;
+            background: item.watch_badge_in_progress ? #f59e0b22 : #22c55e22;
+
+            HorizontalLayout {
+                padding-left: 5px;
+                padding-right: 5px;
+                height: parent.height;
+                alignment: center;
+
+                if (item.watch_badge_in_progress) : Text {
+                    text: "\{item.watch_badge_percent}%";
+                    color: #fde047;
+                    font-size: 10px;
+                    font-weight: 600;
+                    font-family: Theme.ui_font;
+                    vertical-alignment: center;
+                }
+
+                if (!item.watch_badge_in_progress) : Icon {
+                    name: "check";
+                    icon_size: 11px;
+                    tint: Theme.success;
+                }
+            }
+        }
     }
 
     touch := TouchArea {
@@ -820,15 +856,52 @@ export component FilesPage inherits FocusScope {
                     tint: item.item_type == "folder" ? Theme.accent : Theme.text_dim;
                 }
 
-                Text {
+                HorizontalLayout {
                     x: 36px;
-                    y: 12px;
+                    y: 0px;
+                    height: parent.height;
                     width: parent.width - 384px;
-                    text: item.name;
-                    color: Theme.text;
-                    font-size: 12.5px;
-                    font-family: Theme.ui_font;
-                    overflow: elide;
+                    spacing: 8px;
+                    alignment: start;
+
+                    Text {
+                        horizontal-stretch: 1;
+                        min-width: 0px;
+                        text: item.name;
+                        color: Theme.text;
+                        font-size: 12.5px;
+                        font-family: Theme.ui_font;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    if (item.watch_badge_visible) : VerticalLayout {
+                        alignment: center;
+
+                        Rectangle {
+                            border-radius: 5px;
+                            border-width: 1px;
+                            border-color: item.watch_badge_in_progress ? #f59e0b66 : #22c55e66;
+                            background: item.watch_badge_in_progress ? #f59e0b22 : #22c55e22;
+                            height: 18px;
+
+                            HorizontalLayout {
+                                padding-left: 7px;
+                                padding-right: 7px;
+                                height: parent.height;
+                                alignment: center;
+
+                                Text {
+                                    text: item.watch_badge_in_progress ? "\{item.watch_badge_percent}% watched" : "Watched";
+                                    color: item.watch_badge_in_progress ? #fde047 : Theme.success;
+                                    font-size: 10px;
+                                    font-weight: 600;
+                                    font-family: Theme.ui_font;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
                 }
 
                 Text {

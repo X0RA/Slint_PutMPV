@@ -11,7 +11,7 @@ use tracing::{info, warn};
 use crate::player::PlaybackQueueItem;
 use crate::putio::types::{DirectoryNode, PutIoFile, UnifiedDirectoryTree};
 use crate::putio::{self};
-use crate::storage::file_state::FileStateEntry;
+use crate::storage::file_state::{FileStateEntry, WatchState};
 use crate::{AppWindow, FileItem, PathSegment};
 
 use super::models::UiModels;
@@ -46,6 +46,9 @@ pub(crate) fn empty_file_item() -> FileItem {
         location: "".into(),
         is_media: false,
         is_watched: false,
+        watch_badge_visible: false,
+        watch_badge_in_progress: false,
+        watch_badge_percent: 0,
     }
 }
 
@@ -427,6 +430,24 @@ fn put_to_file_item(
     };
     let item_type = if is_folder { "folder" } else { "file" };
     let is_media = matches!(kind, "movie" | "tv" | "music");
+    let state = file_state.get(&file.id.to_string());
+    let is_watched = state.map(|entry| entry.is_completed()).unwrap_or(false);
+    let (watch_badge_visible, watch_badge_in_progress, watch_badge_percent) =
+        if is_folder {
+            (false, false, 0)
+        } else if let Some(entry) = state {
+            match entry.watch_state() {
+                WatchState::Partial => (
+                    true,
+                    true,
+                    ((entry.progress_ratio() * 100.0).round() as i32).clamp(0, 100),
+                ),
+                WatchState::Watched => (true, false, 100),
+                WatchState::Unwatched => (false, false, 0),
+            }
+        } else {
+            (false, false, 0)
+        };
     FileItem {
         id: truncate_id(file.id),
         item_type: item_type.into(),
@@ -444,10 +465,10 @@ fn put_to_file_item(
         detail_extra_b_value: "".into(),
         location: location.into(),
         is_media,
-        is_watched: file_state
-            .get(&file.id.to_string())
-            .map(|entry| entry.is_completed())
-            .unwrap_or(false),
+        is_watched,
+        watch_badge_visible,
+        watch_badge_in_progress,
+        watch_badge_percent,
     }
 }
 
