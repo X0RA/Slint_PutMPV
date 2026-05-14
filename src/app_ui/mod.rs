@@ -12,6 +12,7 @@ pub(crate) mod state;
 pub(crate) mod toast;
 pub(crate) mod transfers;
 pub(crate) mod tv_show;
+pub(crate) mod updates;
 pub(crate) mod util;
 
 use std::rc::Rc;
@@ -152,6 +153,7 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
     auth::install(app, &ctx.services, &ctx.state, &ctx.services.rt);
     transfers::install(app, &ctx.services, &ctx.state, &ctx.services.rt);
     magnets::install(app, &ctx.services, &ctx.state, &ctx.services.rt);
+    updates::install(app, &ctx.services.rt);
 
     metadata_ui::install(
         app,

@@ -62,6 +62,8 @@ jobs:
           cache-bin: false
 
       - name: Build release binary
+        env:
+          PUTMPV_VERSION: ${{ inputs.version }}
         run: cargo build --release --locked
 
       - name: Stage Linux binary
@@ -142,6 +144,8 @@ jobs:
           cache-bin: false
 
       - name: Build release executable
+        env:
+          PUTMPV_VERSION: ${{ inputs.version }}
         run: cargo build --release --locked
 
       - name: Stage Windows executable
@@ -208,6 +212,8 @@ jobs:
           cache-bin: false
 
       - name: Build macOS release target
+        env:
+          PUTMPV_VERSION: ${{ inputs.version }}
         run: cargo build --release --locked --target aarch64-apple-darwin
 
       - name: Build macOS .icns from app icon

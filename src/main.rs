@@ -57,6 +57,7 @@ fn main() -> Result<()> {
     );
 
     let app = AppWindow::new()?;
+    app.set_app_version(env!("PUTMPV_DISPLAY_VERSION").into());
     app.set_files_mode(config.files_mode());
     app.set_files_sort(config.files_sort());
     app.set_files_sort_descending(config.files_sort_descending());

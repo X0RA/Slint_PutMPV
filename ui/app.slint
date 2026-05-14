@@ -26,6 +26,7 @@ export component AppWindow inherits Window {
     default-font-family: Theme.ui_font;
     default-font-size: 13px;
 
+    in-out property <string> app_version;
     in-out property <int> view: 0;
     in-out property <string> loading_message: "Checking sign-in…";
     in-out property <string> device_code: "";
@@ -128,6 +129,13 @@ export component AppWindow inherits Window {
     in-out property <int> toast_kind: 0;
     in-out property <string> toast_title: "";
     in-out property <string> toast_body: "";
+    in-out property <string> latest_version: "";
+    in-out property <string> update_status: "Check for updates to compare this build with the latest GitHub release.";
+    in-out property <bool> update_busy: false;
+    in-out property <bool> update_available: false;
+    in-out property <string> update_action_label: "Download";
+    in-out property <bool> update_action_enabled: false;
+    in-out property <bool> update_install_supported: false;
 
     in-out property <string> tv_show_title: "";
     in-out property <string> tv_show_tagline: "";
@@ -229,6 +237,8 @@ export component AppWindow inherits Window {
     callback magnets_filter_changed();
     callback magnets_sort_changed(index: int);
     callback magnets_sort_direction_toggled();
+    callback updates_check();
+    callback updates_install();
     callback tv_show_back();
     callback tv_show_season_changed(int);
     callback tv_show_play_episode(string);
@@ -519,6 +529,7 @@ export component AppWindow inherits Window {
         y: Theme.title_bar_height;
         width: parent.width;
         height: parent.height - Theme.title_bar_height;
+        app_version: root.app_version;
         section <=> root.settings_section;
         tmdb_local_key <=> root.tmdb_local_key;
         tmdb_putio_key <=> root.tmdb_putio_key;
@@ -546,6 +557,13 @@ export component AppWindow inherits Window {
         metadata_status: root.metadata_status;
         metadata_busy: root.metadata_busy;
         auto_metadata_fetch_enabled: root.auto_metadata_fetch_enabled;
+        latest_version: root.latest_version;
+        update_status: root.update_status;
+        update_busy: root.update_busy;
+        update_available: root.update_available;
+        update_action_label: root.update_action_label;
+        update_action_enabled: root.update_action_enabled;
+        update_install_supported: root.update_install_supported;
         settings_refresh => { root.settings_refresh(); }
         tmdb_source_changed(source) => { root.tmdb_source_changed(source); }
         tmdb_save_local => { root.tmdb_save_local(); }
@@ -567,6 +585,8 @@ export component AppWindow inherits Window {
         metadata_fetch => { root.metadata_fetch(); }
         metadata_criteria_changed => { root.metadata_criteria_changed(); }
         auto_metadata_fetch_changed(enabled) => { root.auto_metadata_fetch_changed(enabled); }
+        updates_check => { root.updates_check(); }
+        updates_install => { root.updates_install(); }
     }
 
     if (root.toast_visible && root.view != 7) : toast := ToastView {

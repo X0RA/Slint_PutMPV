@@ -1,0 +1,216 @@
+import { Theme } from "../../theme.slint";
+import { ButtonChip } from "../primitives.slint";
+
+export component UpdateSettingsPanel inherits VerticalLayout {
+    in property <string> current_version;
+    in property <string> latest_version;
+    in property <string> status;
+    in property <bool> busy: false;
+    in property <bool> update_available: false;
+    in property <string> action_label: "Download";
+    in property <bool> action_enabled: false;
+    in property <bool> install_supported: false;
+    callback check_updates();
+    callback install_update();
+
+    spacing: 16px;
+    padding-top: 32px;
+    padding-bottom: 40px;
+    padding-left: 44px;
+    padding-right: 44px;
+    alignment: start;
+
+    Text {
+        text: "Update";
+        color: Theme.text;
+        font-size: 22px;
+        font-weight: 600;
+        font-family: Theme.ui_font;
+    }
+
+    Text {
+        text: "Check for new releases and download the latest version of PutMPV.";
+        color: Theme.text_dim;
+        font-size: 13px;
+        font-family: Theme.ui_font;
+        wrap: word-wrap;
+    }
+
+    Rectangle { height: 8px; }
+
+    version-card := Rectangle {
+        width: parent.width;
+        height: card-layout.preferred-height;
+        border-radius: 10px;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.surface;
+        clip: true;
+
+        card-layout := VerticalLayout {
+            width: parent.width;
+            spacing: 0px;
+
+            current-inner := HorizontalLayout {
+                padding-left: 24px;
+                padding-right: 24px;
+                padding-top: 22px;
+                padding-bottom: 20px;
+                spacing: 24px;
+                alignment: start;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 6px;
+                    alignment: start;
+
+                    Text {
+                        text: "Installed version";
+                        color: Theme.text_mute;
+                        font-size: 10.5px;
+                        font-weight: 600;
+                        letter-spacing: 1px;
+                        font-family: Theme.ui_font;
+                    }
+
+                    Text {
+                        text: root.current_version;
+                        color: Theme.text;
+                        font-size: 22px;
+                        font-weight: 700;
+                        font-family: Theme.mono_font;
+                    }
+                }
+            }
+
+            if (root.latest_version != "") : Rectangle {
+                width: parent.width;
+                height: 1px;
+                background: Theme.border;
+            }
+
+            if (root.latest_version != "") : latest-inner := HorizontalLayout {
+                padding-left: 24px;
+                padding-right: 24px;
+                padding-top: 18px;
+                padding-bottom: 16px;
+                spacing: 24px;
+                alignment: start;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 6px;
+                    alignment: start;
+
+                    Text {
+                        text: "Latest release";
+                        color: Theme.text_mute;
+                        font-size: 10.5px;
+                        font-weight: 600;
+                        letter-spacing: 1px;
+                        font-family: Theme.ui_font;
+                    }
+
+                    version-row := HorizontalLayout {
+                        spacing: 12px;
+                        alignment: start;
+
+                        Text {
+                            text: root.latest_version;
+                            color: root.update_available ? Theme.warning : Theme.success;
+                            font-size: 18px;
+                            font-weight: 700;
+                            font-family: Theme.mono_font;
+                            vertical-alignment: center;
+                        }
+
+                        status-badge := Rectangle {
+                            height: 28px;
+                            border-radius: 6px;
+                            background: root.update_available ? #fbbf2418 : #86efac18;
+                            width: badge-inner.preferred-width;
+
+                            badge-inner := HorizontalLayout {
+                                padding-left: 10px;
+                                padding-right: 10px;
+                                spacing: 7px;
+                                alignment: center;
+
+                                Rectangle {
+                                    y: (parent.height - self.height) / 2;
+                                    width: 6px;
+                                    height: 6px;
+                                    border-radius: 3px;
+                                    background: root.update_available ? Theme.warning : Theme.success;
+                                }
+
+                                Text {
+                                    text: root.update_available ? "Update available" : "Up to date";
+                                    color: root.update_available ? Theme.warning : Theme.success;
+                                    font-size: 11px;
+                                    font-weight: 600;
+                                    font-family: Theme.ui_font;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                width: parent.width;
+                height: 1px;
+                background: Theme.border;
+            }
+
+            actions-inner := HorizontalLayout {
+                padding-left: 24px;
+                padding-right: 24px;
+                padding-top: 14px;
+                padding-bottom: 14px;
+                spacing: 12px;
+                alignment: start;
+
+                ButtonChip {
+                    label: root.busy ? "Checking..." : "Check for updates";
+                    icon_name: "refresh";
+                    enabled: !root.busy;
+                    clicked => { root.check_updates(); }
+                }
+
+                if (root.install_supported) : ButtonChip {
+                    label: root.action_label;
+                    icon_name: "download";
+                    primary: true;
+                    enabled: root.action_enabled && !root.busy;
+                    clicked => { root.install_update(); }
+                }
+            }
+        }
+    }
+
+    if (root.status != "") : Rectangle {
+        width: parent.width;
+        height: status-bar.preferred-height;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: #a78bfa33;
+        background: #a78bfa10;
+        status-bar := VerticalLayout {
+            width: parent.width;
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 12px;
+            padding-bottom: 12px;
+            spacing: 4px;
+            Text {
+                text: root.status;
+                color: Theme.accent_hi;
+                font-size: 12px;
+                font-family: Theme.ui_font;
+                wrap: word-wrap;
+            }
+        }
+    }
+}

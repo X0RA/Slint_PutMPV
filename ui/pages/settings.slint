@@ -3,6 +3,7 @@ import { Theme } from "../theme.slint";
 import { SidebarSectionButton, ButtonChip, TextFieldBox, RadioRow, Dropdown } from "../components/primitives.slint";
 import { MetadataSettingsPanel } from "../components/settings/metadata.slint";
 import { WatchSyncSettingsPanel } from "../components/settings/watch-sync.slint";
+import { UpdateSettingsPanel } from "../components/settings/updates.slint";
 import { LocalDataRow, MetadataItem } from "../types.slint";
 
 component SettingsHead inherits VerticalLayout {
@@ -122,6 +123,7 @@ component DataRow inherits Rectangle {
 }
 
 export component SettingsPage inherits Rectangle {
+    in property <string> app_version;
     in-out property <int> section: 0;
 
     in-out property <string> tmdb_local_key;
@@ -151,6 +153,13 @@ export component SettingsPage inherits Rectangle {
     in property <string> metadata_status: "";
     in property <bool> metadata_busy: false;
     in property <bool> auto_metadata_fetch_enabled: false;
+    in property <string> latest_version: "";
+    in property <string> update_status: "";
+    in property <bool> update_busy: false;
+    in property <bool> update_available: false;
+    in property <string> update_action_label: "Download";
+    in property <bool> update_action_enabled: false;
+    in property <bool> update_install_supported: false;
     in-out property <string> metadata_query;
     in-out property <int> metadata_filter_index;
     in-out property <bool> metadata_hide_matched;
@@ -176,6 +185,8 @@ export component SettingsPage inherits Rectangle {
     callback metadata_clear_selection();
     callback metadata_fetch();
     callback auto_metadata_fetch_changed(bool);
+    callback updates_check();
+    callback updates_install();
 
     background: Theme.bg;
 
@@ -200,7 +211,7 @@ export component SettingsPage inherits Rectangle {
                 padding-bottom: 16px;
                 spacing: 3px;
                 Text { text: "Settings"; color: Theme.text; font-size: 22px; font-weight: 600; font-family: Theme.ui_font; }
-                Text { text: "Version 1.0.0"; color: Theme.text_mute; font-size: 11.5px; font-family: Theme.ui_font; }
+                Text { text: "Version " + root.app_version; color: Theme.text_mute; font-size: 11.5px; font-family: Theme.ui_font; }
             }
             Rectangle { height: 1px; background: Theme.border; }
             Rectangle { height: 12px; }
@@ -211,6 +222,8 @@ export component SettingsPage inherits Rectangle {
             SidebarSectionButton { label: "Metadata"; subtitle: "Match files with TMDB"; icon_name: "metadata"; active: root.section == 3; clicked => { root.section = 3; root.metadata_criteria_changed(); } }
             Rectangle { height: 2px; }
             SidebarSectionButton { label: "Local Data"; subtitle: "Caches & stores"; icon_name: "document"; active: root.section == 2; clicked => { root.section = 2; root.settings_refresh(); } }
+            Rectangle { height: 2px; }
+            SidebarSectionButton { label: "Update"; subtitle: "Version & downloads"; icon_name: "download"; active: root.section == 4; clicked => { root.section = 4; } }
             Rectangle { vertical-stretch: 1; }
         }
     }
@@ -346,6 +359,19 @@ export component SettingsPage inherits Rectangle {
                 }
                 InfoBanner { title: "Warning."; body: "Clearing data cannot be undone. The application will need to rebuild caches and re-fetch metadata as needed."; }
                 if (root.local_data_status != "") : InfoBanner { title: "Local data"; body: root.local_data_status; }
+            }
+
+            if (root.section == 4) : update-page := UpdateSettingsPanel {
+                current_version: root.app_version;
+                latest_version: root.latest_version;
+                status: root.update_status;
+                busy: root.update_busy;
+                update_available: root.update_available;
+                action_label: root.update_action_label;
+                action_enabled: root.update_action_enabled;
+                install_supported: root.update_install_supported;
+                check_updates => { root.updates_check(); }
+                install_update => { root.updates_install(); }
             }
         }
     }
