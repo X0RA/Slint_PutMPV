@@ -1,0 +1,80 @@
+import { Theme } from "../theme.slint";
+import { ToastView } from "../components/toast.slint";
+
+export component ToastPreview inherits Window {
+    title: "Toast Preview";
+    preferred-width: 560px;
+    preferred-height: 660px;
+    background: Theme.bg;
+    default-font-family: Theme.ui_font;
+    default-font-size: 13px;
+
+    ToastView {
+        x: 32px;
+        y: 32px;
+        width: 496px;
+        kind: 0;
+        title: "Metadata refreshed";
+        body: "Fetched fresh metadata for 42 files.";
+    }
+
+    ToastView {
+        x: 32px;
+        y: 102px;
+        width: 496px;
+        kind: 1;
+        title: "Transfer started";
+        body: "Big Buck Bunny is downloading to your local library.";
+        action_label: "View";
+    }
+
+    ToastView {
+        x: 32px;
+        y: 184px;
+        width: 496px;
+        kind: 2;
+        title: "Still checking files";
+        body: "Some folders are taking longer than usual to scan.";
+        action_label: "Details";
+    }
+
+    ToastView {
+        x: 32px;
+        y: 266px;
+        width: 496px;
+        kind: 3;
+        title: "Upload failed";
+        body: "put.io rejected the request.";
+        action_label: "Retry";
+    }
+
+    ToastView {
+        x: 32px;
+        y: 348px;
+        width: 496px;
+        kind: 1;
+        title: "Two-line body example";
+        body: "This body should wrap onto two lines at the preview width so you can check the spacing, icon position, and CTA alignment.";
+        action_label: "View";
+    }
+
+    ToastView {
+        x: 32px;
+        y: 444px;
+        width: 496px;
+        kind: 2;
+        title: "Three-line body example";
+        body: "This slightly longer body should wrap onto three lines in the preview, giving the toast enough vertical space to show how taller status messages sit with the top-left icon and close button.";
+        action_label: "Details";
+    }
+
+    ToastView {
+        x: 32px;
+        y: 552px;
+        width: 496px;
+        kind: 0;
+        title: "Long metadata message";
+        body: "This is a deliberately long toast body so you can see how the component wraps multi-line text in the live preview when the app sends a detailed status update, warning, or error message that needs a little more room than usual.";
+        action_label: "Open logs";
+    }
+}

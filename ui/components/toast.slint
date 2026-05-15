@@ -10,20 +10,55 @@ export component ToastView inherits Rectangle {
     callback action_clicked();
 
     private property <color> accent_color:
-        root.kind == 1 ? Theme.success :
-        root.kind == 2 ? Theme.warning :
-        root.kind == 3 ? Theme.danger :
-        Theme.accent_hi;
+        root.kind == 1 ? #3ec28a :
+        root.kind == 2 ? #f0b948 :
+        root.kind == 3 ? #f06b6b :
+        #8b8cf7;
     private property <color> accent_soft_color:
-        root.kind == 1 ? #86efac1a :
-        root.kind == 2 ? #fbbf241a :
-        root.kind == 3 ? #f871711a :
-        Theme.accent_soft;
+        root.kind == 1 ? #3ec28a24 :
+        root.kind == 2 ? #f0b94824 :
+        root.kind == 3 ? #f06b6b24 :
+        #8b8cf724;
     private property <color> accent_border_color:
-        root.kind == 1 ? #86efac4d :
-        root.kind == 2 ? #fbbf244d :
-        root.kind == 3 ? #f871714d :
-        Theme.accent_border;
+        root.kind == 1 ? #3ec28a38 :
+        root.kind == 2 ? #f0b94838 :
+        root.kind == 3 ? #f06b6b38 :
+        #8b8cf738;
+    private property <color> accent_edge_color:
+        root.kind == 1 ? #3ec28a80 :
+        root.kind == 2 ? #f0b94880 :
+        root.kind == 3 ? #f06b6b80 :
+        #8b8cf780;
+    private property <color> accent_glow_color:
+        root.kind == 1 ? #3ec28a22 :
+        root.kind == 2 ? #f0b94822 :
+        root.kind == 3 ? #f06b6b22 :
+        #8b8cf722;
+    private property <color> accent_glow_strong_color:
+        root.kind == 1 ? #3ec28a30 :
+        root.kind == 2 ? #f0b94830 :
+        root.kind == 3 ? #f06b6b30 :
+        #8b8cf730;
+    private property <color> accent_button_color:
+        root.kind == 1 ? #3ec28a1a :
+        root.kind == 2 ? #f0b9481a :
+        root.kind == 3 ? #f06b6b1a :
+        #8b8cf71a;
+    private property <color> accent_button_hover_color:
+        root.kind == 1 ? #3ec28a2e :
+        root.kind == 2 ? #f0b9482e :
+        root.kind == 3 ? #f06b6b2e :
+        #8b8cf72e;
+    private property <color> accent_button_border_color:
+        root.kind == 1 ? #3ec28a47 :
+        root.kind == 2 ? #f0b94847 :
+        root.kind == 3 ? #f06b6b47 :
+        #8b8cf747;
+    private property <color> accent_button_border_hover_color:
+        root.kind == 1 ? #3ec28a6b :
+        root.kind == 2 ? #f0b9486b :
+        root.kind == 3 ? #f06b6b6b :
+        #8b8cf76b;
     private property <string> status_icon:
         root.kind == 1 ? "check" :
         root.kind == 2 ? "clock" :
@@ -31,37 +66,115 @@ export component ToastView inherits Rectangle {
         "metadata";
     private property <bool> has_body: root.body != "";
     private property <bool> has_action: root.action_label != "";
-    private property <length> content_padding_y: 12px;
-    private property <length> title_body_gap: -2px;
-    private property <length> action_gap: 7px;
+    private property <length> toast_padding_left: 14px;
+    private property <length> toast_padding_right: 12px;
+    private property <length> padding_y: 11px;
+    private property <length> icon_size: 28px;
+    private property <length> icon_gap: 12px;
+    private property <length> close_size: 22px;
+    private property <length> close_gap: 12px;
+    private property <length> action_gap: 14px;
+    private property <length> action_width: root.has_action ? action_label_measurer.preferred-width + 20px : 0px;
+    private property <length> text_x: root.toast_padding_left + root.icon_size + root.icon_gap;
+    private property <length> text_width:
+        max(
+            120px,
+            root.width
+                - root.text_x
+                - root.close_gap
+                - root.close_size
+                - root.toast_padding_right
+                - (root.has_action ? root.action_gap + root.action_width : 0px)
+        );
+    private property <length> title_body_gap: 3px;
     private property <length> title_height: title_text.preferred-height;
+    private property <length> body_line_height: body_line_measurer.preferred-height;
     private property <length> body_height: root.has_body ? body_measurer.preferred-height : 0px;
-    private property <length> content_height:
+    private property <bool> body_is_more_than_two_lines: root.has_body && root.body_height > root.body_line_height * 2 + 2px;
+    private property <length> text_height:
         root.title_height
             + (root.has_body ? root.title_body_gap + root.body_height : 0px)
-            + (root.has_action ? root.action_gap + 20px : 0px);
+    ;
+    private property <length> body_center_y: root.height / 2;
 
-    height: root.content_height + (root.content_padding_y * 2);
-    border-radius: 8px;
-    border-width: 1px;
-    border-color: Theme.border_hi;
-    background: Theme.surface_higher;
-    clip: true;
+    width: 440px;
+    height: max(root.icon_size + root.padding_y * 2, root.text_height + root.padding_y * 2);
+    background: transparent;
+    clip: false;
+
+    action_label_measurer := Text {
+        text: root.action_label;
+        color: transparent;
+        font-size: 11px;
+        font-weight: 500;
+        font-family: Theme.ui_font;
+    }
+
+    body_line_measurer := Text {
+        text: "Line";
+        color: transparent;
+        font-size: 12px;
+        font-family: Theme.ui_font;
+    }
 
     Rectangle {
         x: 0px;
         y: 0px;
-        width: 3px;
+        width: parent.width;
         height: parent.height;
-        background: root.accent_color;
+        border-radius: 12px;
+        border-width: 1px;
+        border-color: #ffffff10;
+        background: Theme.surface;
+        drop-shadow-blur: 24px;
+        drop-shadow-color: #00000099;
+        clip: true;
+
+        Rectangle {
+            x: 0px;
+            y: 1px;
+            width: 10px;
+            opacity: 50%;
+            height: parent.height - 2px;
+            background: @linear-gradient(90deg, root.accent_glow_color 0%, #00000000 100%);
+        }
+
+        Rectangle {
+            x: 0px;
+            y: 1px;
+            width: 90px;
+            height: parent.height - 2px;
+            opacity: 20%;
+            background: @linear-gradient(90deg, root.accent_glow_strong_color 0%, #00000000 100%);
+        }
+
+        left_edge_clip := Rectangle {
+            x: 0px;
+            y: 0px;
+            width: 3px;
+            height: parent.height;
+            background: transparent;
+            clip: true;
+
+            Rectangle {
+                x: 0px;
+                y: 0px;
+                width: root.width;
+                height: root.height;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: root.accent_edge_color;
+                background: transparent;
+            }
+        }
     }
 
     Rectangle {
-        x: 13px;
-        y: (parent.height - self.height) / 2;
-        width: 24px;
-        height: 24px;
-        border-radius: 6px;
+        x: root.toast_padding_left;
+        y: root.body_is_more_than_two_lines ? root.padding_y : (parent.height - self.height) / 2;
+        width: root.icon_size;
+        height: root.icon_size;
+        border-radius: 8px;
         border-width: 1px;
         border-color: root.accent_border_color;
         background: root.accent_soft_color;
@@ -70,26 +183,26 @@ export component ToastView inherits Rectangle {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             name: root.status_icon;
-            icon_size: 12px;
+            icon_size: 14px;
             tint: root.accent_color;
         }
     }
 
     content := Rectangle {
-        x: 53px;
-        y: root.content_padding_y;
-        width: parent.width - 104px;
-        height: root.content_height;
+        x: root.text_x;
+        y: root.body_center_y - root.text_height / 2;
+        width: root.text_width;
+        height: root.text_height;
         background: transparent;
 
         title_text := Text {
             x: 0px;
             y: 0px;
-            width: parent.width;
+            width: root.text_width;
             text: root.title;
-            color: Theme.text;
-            font-size: 12.5px;
-            font-weight: 700;
+            color: #e7e9ee;
+            font-size: 13px;
+            font-weight: 600;
             font-family: Theme.ui_font;
             overflow: elide;
         }
@@ -97,10 +210,10 @@ export component ToastView inherits Rectangle {
         body_measurer := Text {
             x: 0px;
             y: 0px;
-            width: parent.width;
+            width: root.text_width;
             text: root.body;
             color: transparent;
-            font-size: 11.5px;
+            font-size: 12px;
             font-family: Theme.ui_font;
             wrap: word-wrap;
         }
@@ -108,57 +221,58 @@ export component ToastView inherits Rectangle {
         if (root.has_body) : body_text := Text {
             x: 0px;
             y: root.title_height + root.title_body_gap;
-            width: parent.width;
+            width: root.text_width;
             text: root.body;
-            color: Theme.text_dim;
-            font-size: 11.5px;
+            color: #9aa1ad;
+            font-size: 12px;
             font-family: Theme.ui_font;
             wrap: word-wrap;
         }
+    }
 
-        if (root.has_action) : action_button := Rectangle {
-            x: 0px;
-            y: root.title_height + (root.has_body ? root.title_body_gap + root.body_height : 0px) + root.action_gap;
-            height: 20px;
-            width: action-label-text.preferred-width + 22px;
-            border-radius: 5px;
-            border-width: 1px;
-            border-color: root.accent_border_color;
-            background: root.accent_soft_color;
+    if (root.has_action) : action_button := Rectangle {
+        x: close_button.x - root.close_gap - self.width;
+        y: (parent.height - self.height) / 2;
+        height: 24px;
+        width: root.action_width;
+        border-radius: 7px;
+        border-width: 1px;
+        border-color: root.accent_button_border_color;
+        background: root.accent_button_color;
 
-            states [
-                hover when action-touch.has-hover : {
-                    background: root.accent_border_color;
-                }
-            ]
-
-            action-label-text := Text {
-                x: 11px;
-                y: (parent.height - self.height) / 2 + 0.5px;
-                text: root.action_label;
-                color: root.accent_color;
-                font-size: 10.5px;
-                font-weight: 600;
-                font-family: Theme.ui_font;
+        states [
+            hover when action-touch.has-hover : {
+                background: root.accent_button_hover_color;
+                border-color: root.accent_button_border_hover_color;
             }
+        ]
 
-            action-touch := TouchArea {
-                clicked => { root.action_clicked(); }
-            }
+        action-label-text := Text {
+            x: 10px;
+            y: (parent.height - self.height) / 2;
+            text: root.action_label;
+            color: root.accent_color;
+            font-size: 11px;
+            font-weight: 500;
+            font-family: Theme.ui_font;
+        }
+
+        action-touch := TouchArea {
+            clicked => { root.action_clicked(); }
         }
     }
 
     close_button := Rectangle {
-        x: parent.width - self.width - 8px;
+        x: parent.width - self.width - root.toast_padding_right;
         y: (parent.height - self.height) / 2;
-        width: 30px;
-        height: 30px;
-        border-radius: 8px;
+        width: root.close_size;
+        height: root.close_size;
+        border-radius: 6px;
         background: transparent;
 
         states [
             hover when close_touch.has-hover : {
-                background: #ffffff08;
+                background: #ffffff0f;
             }
         ]
 
@@ -166,8 +280,8 @@ export component ToastView inherits Rectangle {
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
             name: "close";
-            icon_size: 16px;
-            tint: Theme.text_mute;
+            icon_size: 12px;
+            tint: close_touch.has-hover ? #e7e9ee : #6b7280;
         }
 
         close_touch := TouchArea {
