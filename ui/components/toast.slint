@@ -5,7 +5,9 @@ export component ToastView inherits Rectangle {
     in property <int> kind: 0;
     in property <string> title;
     in property <string> body;
+    in property <string> action_label: "";
     callback dismissed();
+    callback action_clicked();
 
     private property <color> accent_color:
         root.kind == 1 ? Theme.success :
@@ -27,13 +29,17 @@ export component ToastView inherits Rectangle {
         root.kind == 2 ? "clock" :
         root.kind == 3 ? "close" :
         "metadata";
+    private property <bool> has_body: root.body != "";
+    private property <bool> has_action: root.action_label != "";
     private property <length> content_padding_y: 12px;
     private property <length> title_body_gap: -2px;
+    private property <length> action_gap: 7px;
     private property <length> title_height: title_text.preferred-height;
+    private property <length> body_height: root.has_body ? body_measurer.preferred-height : 0px;
     private property <length> content_height:
-        root.body != ""
-            ? root.title_height + root.title_body_gap + body_measurer.preferred-height
-            : root.title_height;
+        root.title_height
+            + (root.has_body ? root.title_body_gap + root.body_height : 0px)
+            + (root.has_action ? root.action_gap + 20px : 0px);
 
     height: root.content_height + (root.content_padding_y * 2);
     border-radius: 8px;
@@ -99,7 +105,7 @@ export component ToastView inherits Rectangle {
             wrap: word-wrap;
         }
 
-        if (root.body != "") : body_text := Text {
+        if (root.has_body) : body_text := Text {
             x: 0px;
             y: root.title_height + root.title_body_gap;
             width: parent.width;
@@ -108,6 +114,37 @@ export component ToastView inherits Rectangle {
             font-size: 11.5px;
             font-family: Theme.ui_font;
             wrap: word-wrap;
+        }
+
+        if (root.has_action) : action_button := Rectangle {
+            x: 0px;
+            y: root.title_height + (root.has_body ? root.title_body_gap + root.body_height : 0px) + root.action_gap;
+            height: 20px;
+            width: action-label-text.preferred-width + 22px;
+            border-radius: 5px;
+            border-width: 1px;
+            border-color: root.accent_border_color;
+            background: root.accent_soft_color;
+
+            states [
+                hover when action-touch.has-hover : {
+                    background: root.accent_border_color;
+                }
+            ]
+
+            action-label-text := Text {
+                x: 11px;
+                y: (parent.height - self.height) / 2 + 0.5px;
+                text: root.action_label;
+                color: root.accent_color;
+                font-size: 10.5px;
+                font-weight: 600;
+                font-family: Theme.ui_font;
+            }
+
+            action-touch := TouchArea {
+                clicked => { root.action_clicked(); }
+            }
         }
     }
 

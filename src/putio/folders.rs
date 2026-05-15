@@ -118,10 +118,7 @@ pub async fn rename_file(
         .post_form::<DeleteResponse>(
             "https://api.put.io/v2/files/rename",
             token,
-            &[
-                ("file_id", file_id.to_string()),
-                ("name", name.to_string()),
-            ],
+            &[("file_id", file_id.to_string()), ("name", name.to_string())],
         )
         .await?;
     if resp.status == "OK" {

@@ -6,8 +6,8 @@ fn main() {
         .ok()
         .filter(|version| !version.trim().is_empty())
         .unwrap_or_else(|| {
-            let package_version = std::env::var("CARGO_PKG_VERSION")
-                .unwrap_or_else(|_| "0.0.0".to_string());
+            let package_version =
+                std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "0.0.0".to_string());
             match std::env::var("GITHUB_SHA") {
                 Ok(sha) if sha.len() >= 7 => {
                     format!("{package_version}-dev+{}", &sha[..7])

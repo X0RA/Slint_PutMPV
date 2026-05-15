@@ -197,7 +197,9 @@ pub(crate) fn install(app: &AppWindow, services: &Services, _state: &UiState, rt
 }
 
 fn empty_model() -> ModelRc<MagnetItem> {
-    ModelRc::from(Rc::new(VecModel::<MagnetItem>::from(Vec::<MagnetItem>::new())))
+    ModelRc::from(Rc::new(VecModel::<MagnetItem>::from(
+        Vec::<MagnetItem>::new(),
+    )))
 }
 
 fn apply_view(app: &AppWindow, cache: &Arc<Mutex<MagnetsCache>>) {

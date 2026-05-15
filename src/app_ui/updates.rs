@@ -15,6 +15,7 @@ use sha2::{Digest, Sha256};
 use slint::ComponentHandle;
 use tokio::runtime::Runtime;
 
+use super::toast::{self, ToastKind};
 use crate::AppWindow;
 
 const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/X0RA/Slint_PutMPV/releases/latest";
@@ -102,7 +103,9 @@ pub(crate) fn install(app: &AppWindow, rt: &Arc<Runtime>) {
             };
             app.set_update_busy(true);
             app.set_update_action_enabled(false);
-            app.set_update_status(format!("Downloading PutMPV {} installer...", update.version).into());
+            app.set_update_status(
+                format!("Downloading PutMPV {} installer...", update.version).into(),
+            );
 
             let weak = weak.clone();
             rt.spawn(async move {
@@ -133,6 +136,8 @@ pub(crate) fn install(app: &AppWindow, rt: &Arc<Runtime>) {
             });
         }
     });
+
+    run_startup_check(app, rt, latest);
 }
 
 #[derive(Debug)]
@@ -149,8 +154,12 @@ async fn check_latest(current_version: &str) -> Result<CheckState> {
     let current = parse_version(current_version)
         .with_context(|| format!("current version '{current_version}' is not valid semver"))?;
     let release = fetch_latest_release(current_version).await?;
-    let latest = parse_version(&release.tag_name)
-        .with_context(|| format!("latest release tag '{}' is not valid semver", release.tag_name))?;
+    let latest = parse_version(&release.tag_name).with_context(|| {
+        format!(
+            "latest release tag '{}' is not valid semver",
+            release.tag_name
+        )
+    })?;
     let latest_label = latest.to_string();
 
     if latest <= current {
@@ -165,7 +174,8 @@ async fn check_latest(current_version: &str) -> Result<CheckState> {
     }
 
     let installer = select_windows_installer(&release.assets, &latest_label);
-    let platform_message = platform_update_message(&latest_label, &release.html_url, installer.as_ref());
+    let platform_message =
+        platform_update_message(&latest_label, &release.html_url, installer.as_ref());
     let action_enabled = cfg!(windows) && installer.is_some();
 
     Ok(CheckState {
@@ -204,7 +214,10 @@ async fn fetch_latest_release(current_version: &str) -> Result<GitHubRelease> {
         let body = response.text().await.unwrap_or_default();
         bail!("GitHub returned {status}: {}", body.trim());
     }
-    response.json().await.context("failed to parse GitHub release")
+    response
+        .json()
+        .await
+        .context("failed to parse GitHub release")
 }
 
 fn apply_check_result(
@@ -222,11 +235,43 @@ fn apply_check_result(
     }
 }
 
+fn run_startup_check(app: &AppWindow, rt: &Arc<Runtime>, latest: Arc<Mutex<Option<LatestUpdate>>>) {
+    let current_version = app.get_app_version().to_string();
+    let weak = app.as_weak();
+    rt.spawn(async move {
+        let result = check_latest(&current_version).await;
+        let _ = weak.upgrade_in_event_loop(move |app| match result {
+            Ok(state) => {
+                let update_available = state.update_available;
+                let latest_version = state.latest_version.clone();
+                apply_check_result(&app, state, &latest);
+                if update_available {
+                    toast::show_with_action(
+                        &app,
+                        ToastKind::Warning,
+                        "Update available",
+                        format!("PutMPV {latest_version} is ready."),
+                        "View update",
+                    );
+                }
+            }
+            Err(err) => {
+                app.set_update_status(format!("Update check failed: {err}").into());
+                app.set_update_available(false);
+                app.set_update_action_enabled(false);
+            }
+        });
+    });
+}
+
 fn parse_version(input: &str) -> Result<Version, semver::Error> {
     Version::parse(input.trim().trim_start_matches('v'))
 }
 
-fn select_windows_installer<'a>(assets: &'a [GitHubAsset], version: &str) -> Option<&'a GitHubAsset> {
+fn select_windows_installer<'a>(
+    assets: &'a [GitHubAsset],
+    version: &str,
+) -> Option<&'a GitHubAsset> {
     let exact = format!("PutMPV-{version}-Setup.exe");
     assets.iter().find(|asset| asset.name == exact)
 }
@@ -261,7 +306,9 @@ fn default_action_label() -> &'static str {
 
 enum InstallAction {
     #[cfg(windows)]
-    QuitApp { checksum_verified: bool },
+    QuitApp {
+        checksum_verified: bool,
+    },
     Manual(String),
 }
 
@@ -385,7 +432,10 @@ mod tests {
 
     #[test]
     fn parses_version_tags() {
-        assert_eq!(parse_version("v1.2.3").unwrap(), Version::parse("1.2.3").unwrap());
+        assert_eq!(
+            parse_version("v1.2.3").unwrap(),
+            Version::parse("1.2.3").unwrap()
+        );
         assert_eq!(
             parse_version("1.0.0-dev+abcdef1").unwrap(),
             Version::parse("1.0.0-dev+abcdef1").unwrap()
@@ -402,7 +452,10 @@ mod tests {
     #[test]
     fn compares_patch_versions() {
         assert!(parse_version("1.0.1").unwrap() > parse_version("1.0.0").unwrap());
-        assert_eq!(parse_version("1.0.0").unwrap(), parse_version("1.0.0").unwrap());
+        assert_eq!(
+            parse_version("1.0.0").unwrap(),
+            parse_version("1.0.0").unwrap()
+        );
     }
 
     #[test]

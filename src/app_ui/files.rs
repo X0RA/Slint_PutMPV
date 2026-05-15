@@ -192,9 +192,8 @@ fn rename_entry_in_tree(tree: &mut UnifiedDirectoryTree, file_id: u64, new_name:
 fn delete_entry_from_tree(tree: &mut UnifiedDirectoryTree, file_id: u64) -> bool {
     fn walk(node: &mut DirectoryNode, file_id: u64) -> bool {
         let before = node.children.len();
-        node.children.retain(|c| {
-            c.file.as_ref().is_none_or(|f| f.id != file_id)
-        });
+        node.children
+            .retain(|c| c.file.as_ref().is_none_or(|f| f.id != file_id));
         if node.children.len() < before {
             return true;
         }
@@ -432,22 +431,21 @@ fn put_to_file_item(
     let is_media = matches!(kind, "movie" | "tv" | "music");
     let state = file_state.get(&file.id.to_string());
     let is_watched = state.map(|entry| entry.is_completed()).unwrap_or(false);
-    let (watch_badge_visible, watch_badge_in_progress, watch_badge_percent) =
-        if is_folder {
-            (false, false, 0)
-        } else if let Some(entry) = state {
-            match entry.watch_state() {
-                WatchState::Partial => (
-                    true,
-                    true,
-                    ((entry.progress_ratio() * 100.0).round() as i32).clamp(0, 100),
-                ),
-                WatchState::Watched => (true, false, 100),
-                WatchState::Unwatched => (false, false, 0),
-            }
-        } else {
-            (false, false, 0)
-        };
+    let (watch_badge_visible, watch_badge_in_progress, watch_badge_percent) = if is_folder {
+        (false, false, 0)
+    } else if let Some(entry) = state {
+        match entry.watch_state() {
+            WatchState::Partial => (
+                true,
+                true,
+                ((entry.progress_ratio() * 100.0).round() as i32).clamp(0, 100),
+            ),
+            WatchState::Watched => (true, false, 100),
+            WatchState::Unwatched => (false, false, 0),
+        }
+    } else {
+        (false, false, 0)
+    };
     FileItem {
         id: truncate_id(file.id),
         item_type: item_type.into(),
@@ -876,8 +874,8 @@ pub(crate) fn install(
                         return;
                     }
                     let real_id = entry.file.id;
-                    let folder_path =
-                        find_path_to_folder(&tree_borrow.root, real_id).unwrap_or_else(|| {
+                    let folder_path = find_path_to_folder(&tree_borrow.root, real_id)
+                        .unwrap_or_else(|| {
                             let mut path = path_stack.borrow().clone();
                             path.push((real_id, entry.file.name.clone()));
                             path
@@ -891,8 +889,7 @@ pub(crate) fn install(
                     request_refresh();
                 }
                 "watched" => {
-                    let Some((entry, location_stack)) =
-                        find_entry_by_id(&tree_borrow.root, id)
+                    let Some((entry, location_stack)) = find_entry_by_id(&tree_borrow.root, id)
                     else {
                         return;
                     };
@@ -957,8 +954,13 @@ pub(crate) fn install(
                                     .ok()
                                     .filter(|o| o.status.success())
                                     .and_then(|o| {
-                                        let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                                        if s.is_empty() { None } else { Some(s) }
+                                        let s =
+                                            String::from_utf8_lossy(&o.stdout).trim().to_string();
+                                        if s.is_empty() {
+                                            None
+                                        } else {
+                                            Some(s)
+                                        }
                                     })
                             }
                         })
@@ -978,15 +980,29 @@ pub(crate) fn install(
                             Ok(()) => {
                                 let tree = tree.clone();
                                 let _ = weak.upgrade_in_event_loop(move |app| {
-                                    rename_entry_in_tree(&mut tree.write().unwrap(), file_id, &new_name);
+                                    rename_entry_in_tree(
+                                        &mut tree.write().unwrap(),
+                                        file_id,
+                                        &new_name,
+                                    );
                                     app.invoke_request_refresh();
-                                    toast::show(&app, ToastKind::Success, "Renamed", format!("Renamed to \"{new_name}\""));
+                                    toast::show(
+                                        &app,
+                                        ToastKind::Success,
+                                        "Renamed",
+                                        format!("Renamed to \"{new_name}\""),
+                                    );
                                 });
                             }
                             Err(e) => {
                                 warn!("rename failed: {e}");
                                 let _ = weak.upgrade_in_event_loop(move |app| {
-                                    toast::show(&app, ToastKind::Error, "Rename failed", e.to_string());
+                                    toast::show(
+                                        &app,
+                                        ToastKind::Error,
+                                        "Rename failed",
+                                        e.to_string(),
+                                    );
                                 });
                             }
                         }
@@ -1073,7 +1089,11 @@ pub(crate) fn install(
                                 .filter(|o| o.status.success())
                                 .and_then(|o| {
                                     let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                                    if s.is_empty() { None } else { Some(s) }
+                                    if s.is_empty() {
+                                        None
+                                    } else {
+                                        Some(s)
+                                    }
                                 })
                         })
                         .await
@@ -1098,13 +1118,23 @@ pub(crate) fn install(
                                         new_folder,
                                     );
                                     app.invoke_request_refresh();
-                                    toast::show(&app, ToastKind::Success, "Folder created", format!("Created \"{name}\""));
+                                    toast::show(
+                                        &app,
+                                        ToastKind::Success,
+                                        "Folder created",
+                                        format!("Created \"{name}\""),
+                                    );
                                 });
                             }
                             Err(e) => {
                                 warn!("create folder failed: {e}");
                                 let _ = weak.upgrade_in_event_loop(move |app| {
-                                    toast::show(&app, ToastKind::Error, "Create folder failed", e.to_string());
+                                    toast::show(
+                                        &app,
+                                        ToastKind::Error,
+                                        "Create folder failed",
+                                        e.to_string(),
+                                    );
                                 });
                             }
                         }

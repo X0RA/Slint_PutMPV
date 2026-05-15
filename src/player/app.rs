@@ -408,9 +408,8 @@ fn register_events(
                                 mc.lock().unwrap().ensure_active(&title, duration_opt);
                             }
                         }
-                        let paused_now = event_client
-                            .get_property::<bool>("pause")
-                            .unwrap_or(false);
+                        let paused_now =
+                            event_client.get_property::<bool>("pause").unwrap_or(false);
                         if paused_now {
                             sleep_inhibitor.lock().unwrap().release();
                         } else {

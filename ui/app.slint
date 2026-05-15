@@ -129,6 +129,7 @@ export component AppWindow inherits Window {
     in-out property <int> toast_kind: 0;
     in-out property <string> toast_title: "";
     in-out property <string> toast_body: "";
+    in-out property <string> toast_action_label: "";
     in-out property <string> latest_version: "";
     in-out property <string> update_status: "Check for updates to compare this build with the latest GitHub release.";
     in-out property <bool> update_busy: false;
@@ -249,6 +250,16 @@ export component AppWindow inherits Window {
         root.toast_kind = kind;
         root.toast_title = title;
         root.toast_body = body;
+        root.toast_action_label = "";
+        root.toast_visible = true;
+        toast-timer.restart();
+    }
+
+    public function show_toast_action(kind: int, title: string, body: string, action_label: string) {
+        root.toast_kind = kind;
+        root.toast_title = title;
+        root.toast_body = body;
+        root.toast_action_label = action_label;
         root.toast_visible = true;
         toast-timer.restart();
     }
@@ -596,6 +607,12 @@ export component AppWindow inherits Window {
         kind: root.toast_kind;
         title: root.toast_title;
         body: root.toast_body;
+        action_label: root.toast_action_label;
         dismissed => { root.dismiss_toast(); }
+        action_clicked => {
+            root.dismiss_toast();
+            root.view = 6;
+            root.settings_section = 4;
+        }
     }
 }
