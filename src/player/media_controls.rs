@@ -53,6 +53,12 @@ impl MediaControlsWrapper {
     /// metadata. Idempotent — safe to call on every `FileLoaded`.
     pub fn ensure_active(&mut self, title: &str, duration_secs: Option<f64>) {
         if self.inner.is_none() {
+            // souvlaki 0.8.x on Windows calls .expect() on the HWND and panics
+            // when None is passed — bail out rather than abort the process.
+            #[cfg(target_os = "windows")]
+            if self.hwnd.is_none() {
+                return;
+            }
             let config = PlatformConfig {
                 dbus_name: "putmpv",
                 display_name: "PutMPV",
