@@ -101,6 +101,14 @@ impl MediaControlsWrapper {
         self.push_playback();
     }
 
+    /// Update the stored HWND before controls are first activated.
+    /// No-op once `ensure_active` has already created the inner controls.
+    pub fn update_hwnd(&mut self, hwnd: Option<usize>) {
+        if self.inner.is_none() {
+            self.hwnd = hwnd;
+        }
+    }
+
     /// Drop the OS registration. Releases the D-Bus name on Linux,
     /// unregisters SMTC on Windows, clears Now Playing on macOS.
     pub fn release(&mut self) {

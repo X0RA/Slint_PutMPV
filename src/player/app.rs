@@ -24,11 +24,14 @@ type SharedMediaControls = Arc<Mutex<MediaControlsWrapper>>;
 type SharedSleepInhibitor = Arc<Mutex<SleepInhibitor>>;
 
 #[cfg(target_os = "windows")]
-fn extract_hwnd(_app: &AppWindow) -> Option<usize> {
-    // TODO: extract HWND via raw-window-handle once Slint exposes it on
-    // this build. Returning None means MediaControls::new will fail on
-    // Windows and the wrapper stays inactive (logged warn, no panic).
-    None
+fn extract_hwnd(app: &AppWindow) -> Option<usize> {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let slint_handle = app.window().window_handle();
+    let rwh = slint_handle.window_handle().ok()?;
+    match rwh.as_raw() {
+        RawWindowHandle::Win32(h) => Some(h.hwnd.get() as usize),
+        _ => None,
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -394,20 +397,16 @@ fn register_events(
                                 warn!("could not auto-resume playback: {e}");
                             }
                         }
-                        if let Some(mc) = media_controls.as_ref() {
-                            let title = {
+                        let mc_payload: Option<(SharedMediaControls, String, Option<f64>)> =
+                            media_controls.as_ref().and_then(|mc| {
                                 let state = playback_state.lock().unwrap();
-                                state
+                                let title = state
                                     .current_index
                                     .and_then(|idx| state.queue.get(idx))
-                                    .map(|item| item.title.clone())
-                            };
-                            if let Some(title) = title {
-                                let duration_opt =
-                                    if duration > 0.0 { Some(duration) } else { None };
-                                mc.lock().unwrap().ensure_active(&title, duration_opt);
-                            }
-                        }
+                                    .map(|item| item.title.clone())?;
+                                let dur = if duration > 0.0 { Some(duration) } else { None };
+                                Some((mc.clone(), title, dur))
+                            });
                         let paused_now =
                             event_client.get_property::<bool>("pause").unwrap_or(false);
                         if paused_now {
@@ -417,6 +416,12 @@ fn register_events(
                         }
                         let tracks = read_tracks(&event_client);
                         let _ = weak.upgrade_in_event_loop(move |app| {
+                            if let Some((mc, title, dur)) = mc_payload {
+                                let hwnd = extract_hwnd(&app);
+                                let mut guard = mc.lock().unwrap();
+                                guard.update_hwnd(hwnd);
+                                guard.ensure_active(&title, dur);
+                            }
                             apply_tracks(&app, tracks);
                         });
                     }

@@ -9,6 +9,7 @@ slint = { version = "1.16", default-features = false, features = [
     "compat-1-2",
     "backend-winit-wayland",
     "renderer-femtovg",
+    "raw-window-handle-06",
 ] }
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
@@ -43,6 +44,7 @@ windows-sys = { version = "0.61", features = [
     "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
 ] }
+raw-window-handle = "0.6"
 
 [build-dependencies]
 slint-build = "1.16"
