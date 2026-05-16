@@ -221,7 +221,7 @@ impl EmbeddedPlayer {
                 )))));
                 let dest = *previous_view.lock().unwrap();
                 app.set_view(dest);
-                refresh_watch_state_views(&app);
+                // refresh fires from the MPV EndFile handler once stop() lands.
             }
         });
     }
@@ -771,7 +771,6 @@ fn start_queue_item(
 
     let fallback_url = putio::stream::fallback_mp4_stream_url(&token, item.file_id);
     watch_sync.on_session_end();
-    refresh_watch_state_views(app);
     {
         let mut state = playback_state.lock().unwrap();
         state.active = true;
@@ -866,7 +865,7 @@ fn reset_player_state(app: &AppWindow) {
     ))));
 }
 
-fn refresh_watch_state_views(app: &AppWindow) {
+pub(crate) fn refresh_watch_state_views(app: &AppWindow) {
     app.invoke_request_refresh();
     app.invoke_media_refresh();
     if app.get_tv_show_series_id() > 0 {

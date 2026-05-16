@@ -103,8 +103,21 @@ fn main() -> Result<()> {
     };
 
     app_ui::install(&app, &ctx);
+    {
+        let weak = app.as_weak();
+        ctx.services.watch_sync.set_refresh_notifier(move || {
+            let weak = weak.clone();
+            let _ = slint::invoke_from_event_loop(move || {
+                if let Some(app) = weak.upgrade() {
+                    player::refresh_watch_state_views(&app);
+                }
+            });
+        });
+    }
+    // The initial remote pull happens inside auth::run_startup before it
+    // flips to the Files view, so the user can't kick off playback against
+    // stale local state. No fire-and-forget pull here.
     app_ui::auth::run_startup(&app, &ctx.services, &ctx.state, &ctx.services.rt);
-    ctx.services.watch_sync.pull_to_local();
 
     app.run()?;
     ctx.services.watch_sync.shutdown_blocking();

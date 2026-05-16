@@ -73,19 +73,6 @@ pub async fn select_profile(
     Ok(slug)
 }
 
-pub async fn sync_now(
-    client: &PutioClient,
-    token: &str,
-    cfg: &ConfigStore,
-    store: &mut FileStateStore,
-) -> Result<()> {
-    let (slug, _) = cfg.file_state_sync_profile();
-    if slug.trim().is_empty() {
-        return Err(anyhow!("no sync profile selected"));
-    }
-    sync_profile(client, token, store, &slug).await
-}
-
 pub fn disable_sync(cfg: &ConfigStore) -> Result<()> {
     cfg.clear_file_state_sync_profile()
 }
@@ -109,23 +96,34 @@ pub async fn sync_profile(
         entries: store.entries().clone(),
     })?;
     let canonical = profile_filename(slug);
+    let pre_upload_boundary = profile_file
+        .as_ref()
+        .and_then(|f| f.updated_at.clone());
     let uploaded = upload_file(client, token, folder_id, &canonical, body).await?;
     let mut trashed: Vec<u64> = Vec::new();
     if let Some(old) = profile_file {
         if old.id != uploaded.id {
-            trashed =
-                delete_profile_duplicates(client, token, folder_id, slug, uploaded.id).await?;
+            trashed = delete_profile_duplicates(
+                client,
+                token,
+                folder_id,
+                slug,
+                uploaded.id,
+                pre_upload_boundary.as_deref(),
+            )
+            .await?;
         }
     }
     if uploaded.name != canonical {
         if let Err(e) = rename_file(client, token, uploaded.id, &canonical).await {
+            // Cosmetic; the file is uploaded and indexable by slug regardless.
             warn!("could not rename uploaded profile to canonical name: {e}");
         }
     }
     if !trashed.is_empty() {
-        if let Err(e) = delete_trash_files(client, token, &trashed).await {
-            warn!("could not purge profile files from put.io trash: {e}");
-        }
+        delete_trash_files(client, token, &trashed)
+            .await
+            .map_err(|e| anyhow!("could not purge profile files from put.io trash: {e}"))?;
     }
     Ok(())
 }
@@ -152,6 +150,13 @@ async fn delete_profile_duplicates(
     folder_id: u64,
     slug: &str,
     keep_file_id: u64,
+    // ISO8601 updated_at of the profile file we downloaded at the start of
+    // this sync. Files newer than this were uploaded by another device after
+    // we began and must not be trashed — the next sync will merge their
+    // state in. If None, we never saw a prior profile (first sync), so the
+    // boundary is "before our upload" — equivalent to "any file other than
+    // the one we just uploaded".
+    pre_upload_boundary: Option<&str>,
 ) -> Result<Vec<u64>> {
     let filename = profile_filename(slug);
     let ids = list_folder(client, token, folder_id)
@@ -163,6 +168,13 @@ async fn delete_profile_duplicates(
                 && (file.name == filename
                     || parse_profile_slug(&file.name).as_deref() == Some(slug))
                 && file.id != keep_file_id
+                && match (pre_upload_boundary, file.updated_at.as_deref()) {
+                    (Some(boundary), Some(updated)) => updated <= boundary,
+                    // If we don't know the boundary or the file lacks a
+                    // timestamp, fall back to the old "delete everything
+                    // except keep_file_id" behavior.
+                    _ => true,
+                }
         })
         .map(|file| file.id)
         .collect::<Vec<_>>();

@@ -11,6 +11,7 @@ use crate::putio::types::UnifiedDirectoryTree;
 use crate::putio::{self, oauth, PutioClient};
 use crate::storage::config::ConfigStore;
 use crate::storage::files_store::FilesStore;
+use crate::sync::watch_session::WatchSyncService;
 use crate::AppWindow;
 
 use super::state::{OauthFlow, UiState};
@@ -23,6 +24,7 @@ struct AuthenticatedSessionRefresh {
     client: PutioClient,
     tree: Arc<RwLock<UnifiedDirectoryTree>>,
     sync_profiles: Arc<RwLock<Vec<putio::sync::SyncProfile>>>,
+    watch_sync: Arc<WatchSyncService>,
     token: String,
     tree_success_log: Option<&'static str>,
     tree_error_log: &'static str,
@@ -30,6 +32,20 @@ struct AuthenticatedSessionRefresh {
 
 impl AuthenticatedSessionRefresh {
     async fn run(self) {
+        // If a sync profile is configured, block on the initial pull so the
+        // user can't kick off playback against stale local state. Cap the
+        // wait so an unreachable put.io doesn't lock them out forever — on
+        // timeout the next playback simply uses the local store.
+        let (slug, _) = self.cfg.file_state_sync_profile();
+        if !slug.trim().is_empty() {
+            let pull = self.watch_sync.sync_now();
+            match tokio::time::timeout(std::time::Duration::from_secs(10), pull).await {
+                Ok(Ok(())) => {}
+                Ok(Err(e)) => warn!("initial sync pull failed: {e}"),
+                Err(_) => warn!("initial sync pull timed out after 10s; using local state"),
+            }
+        }
+
         let _ = self.weak.upgrade_in_event_loop(|app| {
             app.set_view(VIEW_FILES);
             app.invoke_request_refresh();
@@ -84,6 +100,7 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
     let tree = state.tree.clone();
     let files_store = services.files_store.clone();
     let sync_profiles = state.sync_profiles.clone();
+    let watch_sync = services.watch_sync.clone();
 
     app.on_sign_in({
         let weak = weak.clone();
@@ -94,6 +111,7 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
         let tree = tree.clone();
         let files_store = files_store.clone();
         let sync_profiles = sync_profiles.clone();
+        let watch_sync = watch_sync.clone();
         move || {
             if let Some(app) = weak.upgrade() {
                 app.set_view(VIEW_LOADING);
@@ -108,6 +126,7 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
             let tree = tree.clone();
             let files_store = files_store.clone();
             let sync_profiles = sync_profiles.clone();
+            let watch_sync = watch_sync.clone();
             let cancel = Arc::new(AtomicBool::new(false));
             oauth_flow_ref.borrow_mut().cancel = Some(cancel.clone());
             rt.spawn(async move {
@@ -151,6 +170,7 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
                                 client: client.clone(),
                                 tree,
                                 sync_profiles,
+                                watch_sync,
                                 token,
                                 tree_success_log: None,
                                 tree_error_log: "initial tree build failed",
@@ -273,6 +293,7 @@ pub(crate) fn run_startup(
     let tree = state.tree.clone();
     let token = services.config.oauth_token();
     let sync_profiles = state.sync_profiles.clone();
+    let watch_sync = services.watch_sync.clone();
 
     if token.is_empty() {
         app.set_view(VIEW_SPLASH);
@@ -300,6 +321,7 @@ pub(crate) fn run_startup(
                 client,
                 tree,
                 sync_profiles,
+                watch_sync,
                 token,
                 tree_success_log: Some("tree refresh done"),
                 tree_error_log: "tree refresh failed",

@@ -9,7 +9,7 @@ use tracing::warn;
 
 use crate::putio::types::UnifiedDirectoryTree;
 use crate::putio::{self};
-use crate::storage::file_state::{count_completed, FileStateStore};
+use crate::storage::file_state::count_completed;
 use crate::{AppWindow, LocalDataRow};
 
 use super::state::UiState;
@@ -332,11 +332,9 @@ pub(crate) fn install(
 
     app.on_sync_use_existing({
         let weak = weak.clone();
-        let cfg = config.clone();
-        let client = services.client.clone();
         let rt = rt.clone();
         let profiles = sync_profiles.clone();
-        let file_state = file_state.clone();
+        let watch_sync = services.watch_sync.clone();
         move || {
             let Some(app) = weak.upgrade() else {
                 return;
@@ -346,34 +344,13 @@ pub(crate) fn install(
                 app.set_sync_status("Choose a shared profile first.".into());
                 return;
             };
-            let token = cfg.oauth_token();
-            if token.is_empty() {
-                app.set_sync_status("Sign in before using shared profiles.".into());
-                return;
-            }
             app.set_sync_status(format!("Using shared profile {}...", profile.name).into());
             let weak = weak.clone();
-            let cfg = cfg.clone();
-            let client = client.clone();
-            let file_state = file_state.clone();
+            let watch_sync = watch_sync.clone();
             rt.spawn(async move {
-                let message = match FileStateStore::load() {
-                    Ok(mut store) => match putio::sync::select_profile(
-                        &client,
-                        &token,
-                        &cfg,
-                        &mut store,
-                        &profile.name,
-                    )
-                    .await
-                    {
-                        Ok(_) => {
-                            *file_state.write().unwrap() = store;
-                            format!("Using shared profile {}.", profile.name)
-                        }
-                        Err(e) => format!("Could not use profile: {e}"),
-                    },
-                    Err(e) => format!("Could not load local file state: {e}"),
+                let message = match watch_sync.use_profile(&profile.name).await {
+                    Ok(_) => format!("Using shared profile {}.", profile.name),
+                    Err(e) => format!("Could not use profile: {e}"),
                 };
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     app.set_sync_status(message.into());
@@ -388,43 +365,33 @@ pub(crate) fn install(
         let cfg = config.clone();
         let client = services.client.clone();
         let rt = rt.clone();
-        let file_state = file_state.clone();
         let sync_profiles = sync_profiles.clone();
+        let watch_sync = services.watch_sync.clone();
         move || {
             let Some(app) = weak.upgrade() else {
                 return;
             };
             let name = app.get_sync_new_name().to_string();
-            let token = cfg.oauth_token();
-            if token.is_empty() {
-                app.set_sync_status("Sign in before creating shared profiles.".into());
-                return;
-            }
             app.set_sync_status(format!("Creating or using profile {}...", name).into());
             let weak = weak.clone();
             let cfg = cfg.clone();
             let client = client.clone();
-            let file_state = file_state.clone();
             let sync_profiles = sync_profiles.clone();
+            let watch_sync = watch_sync.clone();
             rt.spawn(async move {
-                let message = match FileStateStore::load() {
-                    Ok(mut store) => {
-                        match putio::sync::select_profile(&client, &token, &cfg, &mut store, &name)
-                            .await
-                        {
-                            Ok(_) => {
-                                *file_state.write().unwrap() = store;
-                                if let Ok(profiles) =
-                                    putio::sync::list_profiles(&client, &token, &cfg).await
-                                {
-                                    *sync_profiles.write().unwrap() = profiles;
-                                }
-                                format!("Using shared profile {}.", name)
+                let message = match watch_sync.use_profile(&name).await {
+                    Ok(_) => {
+                        let token = cfg.oauth_token();
+                        if !token.is_empty() {
+                            if let Ok(profiles) =
+                                putio::sync::list_profiles(&client, &token, &cfg).await
+                            {
+                                *sync_profiles.write().unwrap() = profiles;
                             }
-                            Err(e) => format!("Could not create/use profile: {e}"),
                         }
+                        format!("Using shared profile {}.", name)
                     }
-                    Err(e) => format!("Could not load local file state: {e}"),
+                    Err(e) => format!("Could not create/use profile: {e}"),
                 };
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     app.set_sync_status(message.into());
@@ -436,36 +403,19 @@ pub(crate) fn install(
 
     app.on_sync_now({
         let weak = weak.clone();
-        let cfg = config.clone();
-        let client = services.client.clone();
         let rt = rt.clone();
-        let file_state = file_state.clone();
+        let watch_sync = services.watch_sync.clone();
         move || {
-            let token = cfg.oauth_token();
             let Some(app) = weak.upgrade() else {
                 return;
             };
-            if token.is_empty() {
-                app.set_sync_status("Sign in before syncing watched state.".into());
-                return;
-            }
             app.set_sync_status("Syncing watched state...".into());
             let weak = weak.clone();
-            let cfg = cfg.clone();
-            let client = client.clone();
-            let file_state = file_state.clone();
+            let watch_sync = watch_sync.clone();
             rt.spawn(async move {
-                let message = match FileStateStore::load() {
-                    Ok(mut store) => {
-                        match putio::sync::sync_now(&client, &token, &cfg, &mut store).await {
-                            Ok(()) => {
-                                *file_state.write().unwrap() = store;
-                                "Watched state synced.".to_string()
-                            }
-                            Err(e) => format!("Could not sync watched state: {e}"),
-                        }
-                    }
-                    Err(e) => format!("Could not load local file state: {e}"),
+                let message = match watch_sync.sync_now().await {
+                    Ok(()) => "Watched state synced.".to_string(),
+                    Err(e) => format!("Could not sync watched state: {e}"),
                 };
                 let _ = weak.upgrade_in_event_loop(move |app| {
                     app.set_sync_status(message.into());

@@ -13,6 +13,8 @@ const SEEK_DEBOUNCE: Duration = Duration::from_secs(2);
 const HEARTBEAT: Duration = Duration::from_secs(5 * 60);
 const DIRTY_POSITION_DELTA: f64 = 0.5;
 
+type RefreshNotifier = Arc<dyn Fn() + Send + Sync>;
+
 #[derive(Clone)]
 pub struct WatchSyncService {
     store: Arc<RwLock<FileStateStore>>,
@@ -21,6 +23,11 @@ pub struct WatchSyncService {
     rt: Arc<Runtime>,
     session: Arc<Mutex<Option<WatchSession>>>,
     sync_lock: Arc<tokio::sync::Mutex<()>>,
+    refresh_notifier: Arc<RwLock<Option<RefreshNotifier>>>,
+    // Outstanding flush_background task handles. shutdown_blocking drains
+    // these with a short timeout so an in-flight upload+trash cycle gets to
+    // finish before the runtime is dropped.
+    pending_tasks: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
 
 #[derive(Debug)]
@@ -51,17 +58,68 @@ impl WatchSyncService {
             rt,
             session: Arc::new(Mutex::new(None)),
             sync_lock: Arc::new(tokio::sync::Mutex::new(())),
+            refresh_notifier: Arc::new(RwLock::new(None)),
+            pending_tasks: Arc::new(Mutex::new(Vec::new())),
         });
         service.start_scheduler();
         service
     }
 
-    pub fn pull_to_local(&self) {
-        self.flush_background(false);
+    pub fn set_refresh_notifier<F>(&self, notifier: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        *self.refresh_notifier.write().unwrap() = Some(Arc::new(notifier));
+    }
+
+    fn notify_refresh(&self) {
+        let notifier = self.refresh_notifier.read().unwrap().clone();
+        if let Some(notifier) = notifier {
+            notifier();
+        }
+    }
+
+    /// Run the full sync_profile dance against the currently-configured profile,
+    /// holding sync_lock and merging the result back into the live store so
+    /// concurrent writes (playback positions, mark-watched) survive.
+    pub async fn sync_now(&self) -> anyhow::Result<()> {
+        let token = self.config.oauth_token();
+        if token.is_empty() {
+            return Err(anyhow::anyhow!("sign in before syncing watched state"));
+        }
+        let (slug, _) = self.config.file_state_sync_profile();
+        if slug.trim().is_empty() {
+            return Err(anyhow::anyhow!("no sync profile selected"));
+        }
+        let mut store = self.store.read().unwrap().clone();
+        let result = {
+            let _guard = self.sync_lock.lock().await;
+            putio::sync::sync_profile(&self.client, &token, &mut store, &slug).await
+        };
+        result?;
+        self.merge_remote_into_live(store.entries());
+        Ok(())
+    }
+
+    /// Switch to (or create) the named profile and sync against it. Holds
+    /// sync_lock and merges the result back into the live store.
+    pub async fn use_profile(&self, name: &str) -> anyhow::Result<String> {
+        let token = self.config.oauth_token();
+        if token.is_empty() {
+            return Err(anyhow::anyhow!("sign in before using shared profiles"));
+        }
+        let mut store = self.store.read().unwrap().clone();
+        let slug = {
+            let _guard = self.sync_lock.lock().await;
+            putio::sync::select_profile(&self.client, &token, &self.config, &mut store, name)
+                .await?
+        };
+        self.merge_remote_into_live(store.entries());
+        Ok(slug)
     }
 
     pub fn start_session(&self, file_id: u64, duration_hint: f64) -> Option<f64> {
-        self.pull_to_local_blocking();
+        self.flush_background(false);
         let duration = finite_nonnegative(duration_hint);
         let saved = self
             .store
@@ -174,6 +232,12 @@ impl WatchSyncService {
             .as_ref()
             .is_some_and(|s| s.dirty);
         *self.session.lock().unwrap() = None;
+
+        // First, give any in-flight flush_background tasks a chance to land
+        // their upload + trash cycle. Without this they get cancelled when
+        // the runtime drops in main(), leaving duplicates on put.io.
+        self.drain_pending_tasks(std::time::Duration::from_secs(5));
+
         if !dirty {
             if let Err(e) = self.store.read().unwrap().save() {
                 warn!("could not save local watched state on shutdown: {e}");
@@ -198,10 +262,29 @@ impl WatchSyncService {
         });
         match result {
             Ok(store) => {
-                *self.store.write().unwrap() = store;
+                self.merge_remote_into_live(store.entries());
             }
             Err(e) => warn!("could not flush watched state on shutdown: {e}"),
         }
+    }
+
+    fn drain_pending_tasks(&self, timeout: std::time::Duration) {
+        let handles: Vec<_> = std::mem::take(&mut *self.pending_tasks.lock().unwrap());
+        if handles.is_empty() {
+            return;
+        }
+        self.rt.block_on(async move {
+            for handle in handles {
+                if handle.is_finished() {
+                    let _ = handle.await;
+                    continue;
+                }
+                match tokio::time::timeout(timeout, handle).await {
+                    Ok(_) => {}
+                    Err(_) => warn!("flush task still running at shutdown; cancelling"),
+                }
+            }
+        });
     }
 
     pub fn mark_watched(&self, file_id: u64, watched: bool) {
@@ -237,25 +320,19 @@ impl WatchSyncService {
         });
     }
 
-    fn pull_to_local_blocking(&self) {
-        let token = self.config.oauth_token();
-        let (slug, _) = self.config.file_state_sync_profile();
-        if token.is_empty() || slug.trim().is_empty() {
-            return;
-        }
-        let mut store = self.store.read().unwrap().clone();
-        let lock = self.sync_lock.clone();
-        let result = self.rt.block_on(async move {
-            let _guard = lock.lock().await;
-            putio::sync::sync_profile(&self.client, &token, &mut store, &slug)
-                .await
-                .map(|_| store)
-        });
-        match result {
-            Ok(store) => {
-                *self.store.write().unwrap() = store;
+    fn merge_remote_into_live(&self, remote: &std::collections::BTreeMap<String, crate::storage::file_state::FileStateEntry>) {
+        let changed = {
+            let mut live = self.store.write().unwrap();
+            let changed = live.merge(remote);
+            if changed {
+                if let Err(e) = live.save() {
+                    warn!("could not save merged watch state: {e}");
+                }
             }
-            Err(e) => warn!("could not pull watched state before playback: {e}"),
+            changed
+        };
+        if changed {
+            self.notify_refresh();
         }
     }
 
@@ -321,22 +398,34 @@ impl WatchSyncService {
         }
 
         let mut store = self.store.read().unwrap().clone();
-        let shared_store = self.store.clone();
         let client = self.client.clone();
         let service = self.clone();
         let lock = self.sync_lock.clone();
-        self.rt.spawn(async move {
+        let handle = self.rt.spawn(async move {
             let _guard = lock.lock().await;
             match putio::sync::sync_profile(&client, &token, &mut store, &slug).await {
                 Ok(()) => {
-                    *shared_store.write().unwrap() = store;
+                    service.merge_remote_into_live(store.entries());
                     if update_session_snapshot {
                         service.mark_session_flushed();
                     }
                 }
-                Err(e) => warn!("could not sync watched state: {e}"),
+                Err(e) => {
+                    warn!("could not sync watched state: {e}");
+                    // Treat the failure as a "push attempt" so the heartbeat
+                    // (gated on HEARTBEAT since last_pushed_at) doesn't fire
+                    // another flush on every tick. dirty stays true so the
+                    // next heartbeat or user action will retry, just not
+                    // every second.
+                    if update_session_snapshot {
+                        service.mark_flush_attempted();
+                    }
+                }
             }
         });
+        let mut tasks = self.pending_tasks.lock().unwrap();
+        tasks.retain(|h| !h.is_finished());
+        tasks.push(handle);
     }
 
     fn mark_session_flushed(&self) {
@@ -345,6 +434,13 @@ impl WatchSyncService {
             session.last_pushed_position = session.current_position;
             session.last_pushed_at = Instant::now();
             session.dirty = false;
+        }
+    }
+
+    fn mark_flush_attempted(&self) {
+        let mut session = self.session.lock().unwrap();
+        if let Some(session) = session.as_mut() {
+            session.last_pushed_at = Instant::now();
         }
     }
 }
