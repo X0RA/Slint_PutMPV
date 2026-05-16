@@ -3,8 +3,8 @@ mod gl;
 mod media_controls;
 mod sleep_inhibitor;
 
-pub use app::{EmbeddedPlayer, PlaybackQueueItem};
 pub(crate) use app::refresh_watch_state_views;
+pub use app::{EmbeddedPlayer, PlaybackQueueItem};
 
 use std::ffi::{c_void, CStr, CString};
 use std::rc::Rc;

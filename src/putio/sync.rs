@@ -96,9 +96,7 @@ pub async fn sync_profile(
         entries: store.entries().clone(),
     })?;
     let canonical = profile_filename(slug);
-    let pre_upload_boundary = profile_file
-        .as_ref()
-        .and_then(|f| f.updated_at.clone());
+    let pre_upload_boundary = profile_file.as_ref().and_then(|f| f.updated_at.clone());
     let uploaded = upload_file(client, token, folder_id, &canonical, body).await?;
     let mut trashed: Vec<u64> = Vec::new();
     if let Some(old) = profile_file {

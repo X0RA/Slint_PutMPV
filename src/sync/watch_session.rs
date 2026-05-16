@@ -320,7 +320,10 @@ impl WatchSyncService {
         });
     }
 
-    fn merge_remote_into_live(&self, remote: &std::collections::BTreeMap<String, crate::storage::file_state::FileStateEntry>) {
+    fn merge_remote_into_live(
+        &self,
+        remote: &std::collections::BTreeMap<String, crate::storage::file_state::FileStateEntry>,
+    ) {
         let changed = {
             let mut live = self.store.write().unwrap();
             let changed = live.merge(remote);
