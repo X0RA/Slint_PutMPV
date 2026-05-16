@@ -608,6 +608,16 @@ pub(crate) fn install(
                     .map(|(entry, location)| put_to_file_item(entry, location, &file_state_entries))
                     .collect::<Vec<_>>(),
             );
+            if app.get_detail_open() {
+                let detail_id = app.get_detail_item().id;
+                if let Some((entry, location_stack)) = find_entry_by_id(&tree.root, detail_id) {
+                    app.set_detail_item(put_to_file_item(
+                        &entry,
+                        &location_text(&location_stack),
+                        &file_state_entries,
+                    ));
+                }
+            }
             path_model.set_vec(
                 path_stack
                     .borrow()

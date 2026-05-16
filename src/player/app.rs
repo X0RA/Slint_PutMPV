@@ -221,6 +221,7 @@ impl EmbeddedPlayer {
                 )))));
                 let dest = *previous_view.lock().unwrap();
                 app.set_view(dest);
+                refresh_watch_state_views(&app);
             }
         });
     }
@@ -337,6 +338,9 @@ fn register_events(
                     Some(Ok(Event::EndFile(reason))) => {
                         if reason == mpv_end_file_reason::Eof {
                             watch_sync.on_eof();
+                            let _ = weak.upgrade_in_event_loop(|app| {
+                                refresh_watch_state_views(&app);
+                            });
                             let next = {
                                 let state = playback_state.lock().unwrap();
                                 let next_index = state.current_index.map(|idx| idx + 1);
@@ -376,6 +380,9 @@ fn register_events(
                             }
                         } else {
                             watch_sync.on_session_end();
+                            let _ = weak.upgrade_in_event_loop(|app| {
+                                refresh_watch_state_views(&app);
+                            });
                             playback_state.lock().unwrap().active = false;
                             if let Some(mc) = media_controls.as_ref() {
                                 mc.lock().unwrap().release();
@@ -764,6 +771,7 @@ fn start_queue_item(
 
     let fallback_url = putio::stream::fallback_mp4_stream_url(&token, item.file_id);
     watch_sync.on_session_end();
+    refresh_watch_state_views(app);
     {
         let mut state = playback_state.lock().unwrap();
         state.active = true;
@@ -856,6 +864,15 @@ fn reset_player_state(app: &AppWindow) {
     app.set_player_audio_tracks(ModelRc::from(Rc::new(VecModel::from(
         Vec::<PlayerTrack>::new(),
     ))));
+}
+
+fn refresh_watch_state_views(app: &AppWindow) {
+    app.invoke_request_refresh();
+    app.invoke_media_refresh();
+    if app.get_tv_show_series_id() > 0 {
+        app.invoke_tv_show_season_changed(app.get_tv_show_season_idx());
+    }
+    app.invoke_settings_refresh();
 }
 
 fn first_available_subtitle(app: &AppWindow) -> Option<SharedString> {
