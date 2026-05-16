@@ -76,11 +76,10 @@ jobs:
           chmod +r "$SCRIPT"
           sudo -u builder -H --preserve-env=SCRIPT bash -euo pipefail <<'BUILDER'
             export GIT_SSH_COMMAND="ssh -i /home/builder/.ssh/aur_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/builder/.ssh/known_hosts"
-            ssh -T -n -i /home/builder/.ssh/aur_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/builder/.ssh/known_hosts aur@aur.archlinux.org help
 
             workdir="$(mktemp -d)"
             cd "$workdir"
-            git clone ssh://aur@aur.archlinux.org/putmpv-bin.git aur
+            git clone -q ssh://aur@aur.archlinux.org/putmpv-bin.git aur
             cd aur
             python3 "$SCRIPT"
             if git diff --quiet; then
