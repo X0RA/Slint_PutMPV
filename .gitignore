@@ -16,3 +16,6 @@ md/
 
 .codex
 .claude
+
+# Local scratch from ultraplan refinement (keep on disk, ignore in git)
+/ultraplan/

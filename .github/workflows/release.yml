@@ -1,14 +1,21 @@
 name: Release
 
 on:
+  push:
+    branches: [main]
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       version:
-        description: "Version (e.g. 1.0.0)"
-        required: true
+        description: "Override version (plain, e.g. 1.0.0). Blank = auto-bump."
+        required: false
 
 permissions:
   contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -17,9 +24,61 @@ env:
   APP_BUNDLE_ID: io.putmpv.app
 
 jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+      changelog: ${{ steps.bump.outputs.changelog }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Bump version (auto-bump path only)
+        id: bump
+        if: >-
+          (github.event_name == 'push' && github.ref == 'refs/heads/main')
+          || (github.event_name == 'workflow_dispatch' && inputs.version == '')
+        uses: mathieudutour/github-tag-action@v6.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          default_bump: patch
+          tag_prefix: v
+
+      - name: Resolve final version + tag
+        id: resolve
+        env:
+          BUMP_VERSION: ${{ steps.bump.outputs.new_version }}
+          BUMP_TAG: ${{ steps.bump.outputs.new_tag }}
+          INPUT_VERSION: ${{ inputs.version }}
+          EVENT_NAME: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "${EVENT_NAME}" = "push" ] && [[ "${REF}" == refs/tags/v* ]]; then
+            TAG="${REF_NAME}"
+            VERSION="${TAG#v}"
+          elif [ -n "${INPUT_VERSION}" ]; then
+            VERSION="${INPUT_VERSION}"
+            TAG="v${INPUT_VERSION}"
+          else
+            VERSION="${BUMP_VERSION}"
+            TAG="${BUMP_TAG}"
+          fi
+          if [ -z "${VERSION}" ] || [ -z "${TAG}" ]; then
+            echo "Failed to resolve version/tag" >&2
+            exit 1
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
   build-linux:
     name: Build Linux
-    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: version
     runs-on: ubuntu-latest
 
     steps:
@@ -54,24 +113,22 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: putmpv-v1
-          key: linux-release
+          shared-key: linux-release
           cache-on-failure: true
           cache-bin: false
 
       - name: Build release binary
         env:
-          PUTMPV_VERSION: ${{ inputs.version }}
+          PUTMPV_VERSION: ${{ needs.version.outputs.version }}
         run: cargo build --release --locked
 
       - name: Stage Linux binary
-        if: inputs.version != ''
         run: |
           mkdir -p dist
           cp "target/release/${APP_BIN}" "dist/${APP_BIN}-linux-x86_64"
           chmod +x "dist/${APP_BIN}-linux-x86_64"
 
       - name: Upload Linux artifact
-        if: inputs.version != ''
         uses: actions/upload-artifact@v7
         with:
           name: linux-release
@@ -80,7 +137,7 @@ jobs:
 
   build-windows:
     name: Build Windows
-    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: version
     runs-on: windows-latest
 
     steps:
@@ -136,17 +193,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: putmpv-v1
-          key: windows-release
+          shared-key: windows-release
           cache-on-failure: true
           cache-bin: false
 
       - name: Build release executable
         env:
-          PUTMPV_VERSION: ${{ inputs.version }}
+          PUTMPV_VERSION: ${{ needs.version.outputs.version }}
         run: cargo build --release --locked
 
       - name: Stage Windows executable
-        if: inputs.version != ''
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
@@ -156,31 +212,28 @@ jobs:
           if ($dll) { Copy-Item $dll.FullName "dist\libmpv-2.dll" }
 
       - name: Install Inno Setup
-        if: inputs.version != ''
         shell: pwsh
         run: choco install innosetup --no-progress -y
 
       - name: Build Windows installer
-        if: inputs.version != ''
         shell: pwsh
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: .\scripts\powershell\build-installer.ps1 -Version $env:VERSION -BuildDir dist
 
       - name: Upload Windows artifact
-        if: inputs.version != ''
         uses: actions/upload-artifact@v7
         with:
           name: windows-release
           path: |
             dist/${{ env.APP_BIN }}-windows-x86_64.exe
             dist/libmpv-2.dll
-            dist/PutMPV-${{ inputs.version }}-Setup.exe
+            dist/PutMPV-${{ needs.version.outputs.version }}-Setup.exe
           if-no-files-found: error
 
   build-macos:
     name: Build macOS
-    if: ${{ github.ref == 'refs/heads/main' }}
+    needs: version
     runs-on: macos-14
 
     steps:
@@ -204,17 +257,16 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           prefix-key: putmpv-v1
-          key: macos-arm64-release
+          shared-key: macos-arm64-release
           cache-on-failure: true
           cache-bin: false
 
       - name: Build macOS release target
         env:
-          PUTMPV_VERSION: ${{ inputs.version }}
+          PUTMPV_VERSION: ${{ needs.version.outputs.version }}
         run: cargo build --release --locked --target aarch64-apple-darwin
 
       - name: Build macOS .icns from app icon
-        if: inputs.version != ''
         run: |
           set -euo pipefail
           APPICON="ui/assets/appicon.png"
@@ -234,9 +286,8 @@ jobs:
           iconutil -c icns "${ICONSET}" -o "ui/assets/logo.icns"
 
       - name: Assemble macOS app
-        if: inputs.version != ''
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           APP_DIR="dist/app/${APP_NAME}.app"
           mkdir -p "${APP_DIR}/Contents/MacOS"
@@ -249,7 +300,6 @@ jobs:
           fi
 
       - name: Bundle dynamic libraries into app
-        if: inputs.version != ''
         run: |
           APP_DIR="dist/app/${APP_NAME}.app"
           dylibbundler \
@@ -260,9 +310,8 @@ jobs:
             --install-path "@executable_path/../Frameworks/"
 
       - name: Create macOS app metadata
-        if: inputs.version != ''
         env:
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
           APP_DIR="dist/app/${APP_NAME}.app"
           ICON_KEY=""
@@ -304,7 +353,6 @@ jobs:
           EOF
 
       - name: Validate and ad-hoc sign macOS app
-        if: inputs.version != ''
         run: |
           APP_DIR="dist/app/${APP_NAME}.app"
           plutil -lint "${APP_DIR}/Contents/Info.plist"
@@ -313,7 +361,6 @@ jobs:
           codesign --verify --deep --strict --verbose=2 "${APP_DIR}"
 
       - name: Create macOS DMG
-        if: inputs.version != ''
         run: |
           hdiutil create \
             -volname "${APP_NAME}" \
@@ -323,7 +370,6 @@ jobs:
             "dist/${APP_BIN}-macos-arm64.dmg"
 
       - name: Upload macOS DMG artifact
-        if: inputs.version != ''
         uses: actions/upload-artifact@v7
         with:
           name: macos-release
@@ -333,8 +379,8 @@ jobs:
   publish-release:
     name: Publish GitHub Release
     runs-on: ubuntu-latest
-    if: ${{ github.ref == 'refs/heads/main' && inputs.version != '' }}
     needs:
+      - version
       - build-linux
       - build-windows
       - build-macos
@@ -350,12 +396,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          VERSION: ${{ inputs.version }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+          CHANGELOG: ${{ needs.version.outputs.changelog }}
         run: |
-          if gh release view "${VERSION}" >/dev/null 2>&1; then
-            gh release upload "${VERSION}" release-assets/* --clobber
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" release-assets/* --clobber
+          elif [ -n "${CHANGELOG}" ]; then
+            gh release create "${TAG}" release-assets/* \
+              --title "${VERSION}" \
+              --notes "${CHANGELOG}"
           else
-            gh release create "${VERSION}" release-assets/* \
-              --generate-notes \
-              --title "${VERSION}"
+            gh release create "${TAG}" release-assets/* \
+              --title "${VERSION}" \
+              --generate-notes
           fi
