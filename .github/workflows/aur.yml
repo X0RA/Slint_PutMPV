@@ -1,8 +1,9 @@
 name: Update AUR package
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -14,6 +15,7 @@ concurrency:
 jobs:
   publish:
     name: Publish to AUR
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
@@ -59,12 +61,11 @@ jobs:
 
       - name: Clone, update, commit, push (as builder)
         env:
-          VERSION: ${{ github.event.release.tag_name }}
           SCRIPT: ${{ github.workspace }}/scripts/aur-update.py
         run: |
           set -euo pipefail
           chmod +r "$SCRIPT"
-          sudo -u builder -H --preserve-env=SCRIPT,VERSION bash -euo pipefail <<'BUILDER'
+          sudo -u builder -H --preserve-env=SCRIPT bash -euo pipefail <<'BUILDER'
             workdir="$(mktemp -d)"
             cd "$workdir"
             git clone ssh://aur@aur.archlinux.org/putmpv-bin.git aur
@@ -74,9 +75,10 @@ jobs:
               echo "No changes — AUR already up to date."
               exit 0
             fi
+            ver=$(awk -F= '/^pkgver=/ {print $2; exit}' PKGBUILD)
             git config user.name  "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add PKGBUILD .SRCINFO
-            git commit -m "Update to ${VERSION#v}"
+            git commit -m "Update to ${ver}"
             git push
           BUILDER
