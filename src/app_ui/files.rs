@@ -369,7 +369,7 @@ fn sort_display_rows(rows: &mut [(DisplayEntry, String)], sort: i32, descending:
                 .to_lowercase()
                 .cmp(&b.0.file.name.to_lowercase())
         }),
-        2 => rows.sort_by(|a, b| a.0.aggregate_size.cmp(&b.0.aggregate_size)),
+        2 => rows.sort_by_key(|row| row.0.aggregate_size),
         3 => rows.sort_by(|a, b| {
             a.0.file
                 .created_at
@@ -1069,78 +1069,70 @@ pub(crate) fn install(
         move |action| {
             info!("context menu action: {action}");
 
-            match action.as_str() {
-                "new-folder" => {
-                    let parent_id = *current_folder.borrow();
-                    let weak = weak.clone();
-                    let client = client.clone();
-                    let config = config.clone();
-                    let tree = tree.clone();
-                    rt.spawn(async move {
-                        let folder_name = tokio::task::spawn_blocking(|| {
-                            std::process::Command::new("zenity")
-                                .args([
-                                    "--entry",
-                                    "--title=New Folder",
-                                    "--text=Enter folder name:",
-                                ])
-                                .output()
-                                .ok()
-                                .filter(|o| o.status.success())
-                                .and_then(|o| {
-                                    let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-                                    if s.is_empty() {
-                                        None
-                                    } else {
-                                        Some(s)
-                                    }
-                                })
-                        })
-                        .await
-                        .ok()
-                        .flatten();
+            if action.as_str() == "new-folder" {
+                let parent_id = *current_folder.borrow();
+                let weak = weak.clone();
+                let client = client.clone();
+                let config = config.clone();
+                let tree = tree.clone();
+                rt.spawn(async move {
+                    let folder_name = tokio::task::spawn_blocking(|| {
+                        std::process::Command::new("zenity")
+                            .args(["--entry", "--title=New Folder", "--text=Enter folder name:"])
+                            .output()
+                            .ok()
+                            .filter(|o| o.status.success())
+                            .and_then(|o| {
+                                let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                                if s.is_empty() {
+                                    None
+                                } else {
+                                    Some(s)
+                                }
+                            })
+                    })
+                    .await
+                    .ok()
+                    .flatten();
 
-                        let Some(name) = folder_name else {
-                            return;
-                        };
-                        let token = config.oauth_token();
-                        if token.is_empty() {
-                            return;
+                    let Some(name) = folder_name else {
+                        return;
+                    };
+                    let token = config.oauth_token();
+                    if token.is_empty() {
+                        return;
+                    }
+                    match putio::folders::create_folder(&client, &token, &name, parent_id).await {
+                        Ok(new_folder) => {
+                            let tree = tree.clone();
+                            let _ = weak.upgrade_in_event_loop(move |app| {
+                                insert_folder_in_tree(
+                                    &mut tree.write().unwrap(),
+                                    parent_id,
+                                    new_folder,
+                                );
+                                app.invoke_request_refresh();
+                                toast::show(
+                                    &app,
+                                    ToastKind::Success,
+                                    "Folder created",
+                                    format!("Created \"{name}\""),
+                                );
+                            });
                         }
-                        match putio::folders::create_folder(&client, &token, &name, parent_id).await
-                        {
-                            Ok(new_folder) => {
-                                let tree = tree.clone();
-                                let _ = weak.upgrade_in_event_loop(move |app| {
-                                    insert_folder_in_tree(
-                                        &mut tree.write().unwrap(),
-                                        parent_id,
-                                        new_folder,
-                                    );
-                                    app.invoke_request_refresh();
-                                    toast::show(
-                                        &app,
-                                        ToastKind::Success,
-                                        "Folder created",
-                                        format!("Created \"{name}\""),
-                                    );
-                                });
-                            }
-                            Err(e) => {
-                                warn!("create folder failed: {e}");
-                                let _ = weak.upgrade_in_event_loop(move |app| {
-                                    toast::show(
-                                        &app,
-                                        ToastKind::Error,
-                                        "Create folder failed",
-                                        e.to_string(),
-                                    );
-                                });
-                            }
+                        Err(e) => {
+                            warn!("create folder failed: {e}");
+                            let _ = weak.upgrade_in_event_loop(move |app| {
+                                toast::show(
+                                    &app,
+                                    ToastKind::Error,
+                                    "Create folder failed",
+                                    e.to_string(),
+                                );
+                            });
                         }
-                    });
-                }
-                _ => {}
+                    }
+                });
             }
         }
     });

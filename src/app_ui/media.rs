@@ -259,7 +259,9 @@ pub(crate) fn refresh_media_ui(
             }
         })
         .collect();
-    movies.sort_by(|a, b| a.title.to_string().cmp(&b.title.to_string()));
+    // `sort_by_key` would need an owned key here; compare SharedString values directly.
+    #[allow(clippy::unnecessary_sort_by)]
+    movies.sort_by(|a, b| a.title.cmp(&b.title));
 
     let mut show_groups: std::collections::BTreeMap<
         i32,
@@ -351,7 +353,9 @@ pub(crate) fn refresh_media_ui(
             }
         })
         .collect();
-    shows.sort_by(|a, b| a.title.to_string().cmp(&b.title.to_string()));
+    // `sort_by_key` would need an owned key here; compare SharedString values directly.
+    #[allow(clippy::unnecessary_sort_by)]
+    shows.sort_by(|a, b| a.title.cmp(&b.title));
 
     let lib = {
         let tree_guard = tree.read().unwrap();
