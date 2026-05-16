@@ -1,0 +1,82 @@
+name: Update AUR package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aur-update
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to AUR
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+
+    steps:
+      - name: Install container deps
+        run: pacman -Syu --noconfirm --needed openssh git python sudo
+
+      - name: Check out Slint_PutMPV (provides scripts/aur-update.py)
+        uses: actions/checkout@v6
+
+      - name: Create non-root build user
+        run: useradd -m -G wheel builder
+
+      - name: Materialize AUR SSH key
+        env:
+          AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -d -m 700 -o builder -g builder /home/builder/.ssh
+
+          umask 077
+          printenv AUR_SSH_KEY > /home/builder/.ssh/aur_ed25519
+          ssh-keygen -y -f /home/builder/.ssh/aur_ed25519 > /dev/null
+
+          ssh-keyscan -t rsa,ecdsa,ed25519 aur.archlinux.org \
+            > /tmp/aur_scanned 2> /dev/null
+          expected='SHA256:RFzBCUItH9LZS0cKB5UE6ceAYhBD5C8GeOBip8Z11+4'
+          ssh-keygen -lf /tmp/aur_scanned | grep -F "$expected" >/dev/null \
+            || { echo "FATAL: AUR ed25519 host key mismatch" >&2; exit 1; }
+          cp /tmp/aur_scanned /home/builder/.ssh/known_hosts
+
+          cat > /home/builder/.ssh/config <<'EOF'
+          Host aur.archlinux.org
+            User aur
+            IdentityFile ~/.ssh/aur_ed25519
+            IdentitiesOnly yes
+          EOF
+
+          chown -R builder:builder /home/builder/.ssh
+          chmod 600 /home/builder/.ssh/aur_ed25519 /home/builder/.ssh/config
+          chmod 644 /home/builder/.ssh/known_hosts
+
+      - name: Clone, update, commit, push (as builder)
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+          SCRIPT: ${{ github.workspace }}/scripts/aur-update.py
+        run: |
+          set -euo pipefail
+          chmod +r "$SCRIPT"
+          sudo -u builder -H --preserve-env=SCRIPT,VERSION bash -euo pipefail <<'BUILDER'
+            workdir="$(mktemp -d)"
+            cd "$workdir"
+            git clone ssh://aur@aur.archlinux.org/putmpv-bin.git aur
+            cd aur
+            python3 "$SCRIPT"
+            if git diff --quiet; then
+              echo "No changes — AUR already up to date."
+              exit 0
+            fi
+            git config user.name  "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add PKGBUILD .SRCINFO
+            git commit -m "Update to ${VERSION#v}"
+            git push
+          BUILDER
