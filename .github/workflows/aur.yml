@@ -4,6 +4,7 @@ on:
   workflow_run:
     workflows: ["Release"]
     types: [completed]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,7 +16,11 @@ concurrency:
 jobs:
   publish:
     name: Publish to AUR
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    if: >-
+      ${{
+        github.event_name == 'workflow_dispatch'
+        || (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      }}
     runs-on: ubuntu-latest
     container:
       image: archlinux:base-devel
@@ -35,11 +40,15 @@ jobs:
           AUR_SSH_KEY: ${{ secrets.AUR_SSH_KEY }}
         run: |
           set -euo pipefail
+          test -n "${AUR_SSH_KEY:-}" || { echo "FATAL: AUR_SSH_KEY secret is empty" >&2; exit 1; }
+
           install -d -m 700 -o builder -g builder /home/builder/.ssh
 
           umask 077
-          printenv AUR_SSH_KEY > /home/builder/.ssh/aur_ed25519
-          ssh-keygen -y -f /home/builder/.ssh/aur_ed25519 > /dev/null
+          printf '%s\n' "$AUR_SSH_KEY" > /home/builder/.ssh/aur_ed25519
+          ssh-keygen -y -f /home/builder/.ssh/aur_ed25519 > /tmp/aur_ci.pub
+          echo "AUR CI public key fingerprint:"
+          ssh-keygen -lf /tmp/aur_ci.pub
 
           ssh-keyscan -t rsa,ecdsa,ed25519 aur.archlinux.org \
             > /tmp/aur_scanned 2> /dev/null
@@ -66,6 +75,9 @@ jobs:
           set -euo pipefail
           chmod +r "$SCRIPT"
           sudo -u builder -H --preserve-env=SCRIPT bash -euo pipefail <<'BUILDER'
+            export GIT_SSH_COMMAND="ssh -i /home/builder/.ssh/aur_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/builder/.ssh/known_hosts"
+            ssh -T -i /home/builder/.ssh/aur_ed25519 -o IdentitiesOnly=yes -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/home/builder/.ssh/known_hosts aur@aur.archlinux.org help
+
             workdir="$(mktemp -d)"
             cd "$workdir"
             git clone ssh://aur@aur.archlinux.org/putmpv-bin.git aur
