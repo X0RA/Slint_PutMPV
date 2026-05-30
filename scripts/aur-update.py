@@ -51,7 +51,7 @@ def main():
     print(f"Finding release asset: {LINUX_ASSET_NAME}")
     asset = find_release_asset(release, LINUX_ASSET_NAME)
     asset_url = asset["browser_download_url"]
-    pkgbuild_asset_url = f"https://github.com/{REPO}/releases/download/${{pkgver}}/{LINUX_ASSET_NAME}"
+    pkgbuild_asset_url = f"https://github.com/{REPO}/releases/download/v${{pkgver}}/{LINUX_ASSET_NAME}"
     sha256 = get_sha256(asset)
     print(f"  Asset: {asset_url}")
     print(f"  SHA256: {sha256}")
