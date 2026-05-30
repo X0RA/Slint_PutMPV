@@ -1,3 +1,4 @@
+use std::rc::Rc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -12,17 +13,31 @@ use semver::Version;
 use serde::Deserialize;
 #[cfg(windows)]
 use sha2::{Digest, Sha256};
-use slint::ComponentHandle;
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use tokio::runtime::Runtime;
 
 use super::toast::{self, ToastKind};
 use crate::AppWindow;
 
 const LATEST_RELEASE_URL: &str = "https://api.github.com/repos/X0RA/Slint_PutMPV/releases/latest";
+const LINUX_AUR_COMMAND: &str = "yay -S putmpv-bin";
 const LINUX_INSTALL: &str =
     "curl -fsSL https://raw.githubusercontent.com/X0RA/Slint_PutMPV/main/scripts/install-linux.sh | bash";
 const MACOS_INSTALL: &str =
     "curl -fsSL https://raw.githubusercontent.com/X0RA/Slint_PutMPV/main/scripts/install-macos.sh | bash";
+
+fn empty_commands() -> ModelRc<SharedString> {
+    ModelRc::from(Rc::new(VecModel::from(Vec::<SharedString>::new())))
+}
+
+fn commands_model(commands: Vec<String>) -> ModelRc<SharedString> {
+    ModelRc::from(Rc::new(VecModel::from(
+        commands
+            .into_iter()
+            .map(SharedString::from)
+            .collect::<Vec<_>>(),
+    )))
+}
 
 #[cfg_attr(not(windows), allow(dead_code))]
 #[derive(Clone, Debug)]
@@ -65,6 +80,7 @@ pub(crate) fn install(app: &AppWindow, rt: &Arc<Runtime>) {
             app.set_latest_version("".into());
             app.set_update_action_enabled(false);
             app.set_update_action_label(default_action_label().into());
+            app.set_update_commands(empty_commands());
             app.set_update_status("Checking GitHub releases...".into());
 
             let weak = weak.clone();
@@ -79,6 +95,7 @@ pub(crate) fn install(app: &AppWindow, rt: &Arc<Runtime>) {
                             app.set_update_status(format!("Update check failed: {err}").into());
                             app.set_update_available(false);
                             app.set_update_action_enabled(false);
+                            app.set_update_commands(empty_commands());
                         }
                     }
                 });
@@ -137,6 +154,34 @@ pub(crate) fn install(app: &AppWindow, rt: &Arc<Runtime>) {
         }
     });
 
+    app.on_updates_copy_command({
+        let weak = app.as_weak();
+        move |command| {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            let command = command.to_string();
+            match arboard::Clipboard::new() {
+                Ok(mut clipboard) => match clipboard.set_text(&command) {
+                    Ok(()) => {
+                        toast::show(
+                            &app,
+                            ToastKind::Success,
+                            "Copied",
+                            "The update command is on your clipboard.",
+                        );
+                    }
+                    Err(err) => {
+                        app.set_update_status(format!("Could not copy: {err}").into());
+                    }
+                },
+                Err(err) => {
+                    app.set_update_status(format!("Could not access clipboard: {err}").into());
+                }
+            }
+        }
+    });
+
     run_startup_check(app, rt, latest);
 }
 
@@ -145,6 +190,7 @@ struct CheckState {
     latest_version: String,
     update_available: bool,
     status: String,
+    commands: Vec<String>,
     action_enabled: bool,
     action_label: String,
     update: Option<LatestUpdate>,
@@ -167,6 +213,7 @@ async fn check_latest(current_version: &str) -> Result<CheckState> {
             latest_version: latest_label.clone(),
             update_available: false,
             status: format!("You are up to date. Latest release is {latest_label}."),
+            commands: Vec::new(),
             action_enabled: false,
             action_label: default_action_label().to_string(),
             update: None,
@@ -174,14 +221,15 @@ async fn check_latest(current_version: &str) -> Result<CheckState> {
     }
 
     let installer = select_windows_installer(&release.assets, &latest_label);
-    let platform_message =
-        platform_update_message(&latest_label, &release.html_url, installer.as_ref());
+    let (status, commands) =
+        platform_update_state(&latest_label, &release.html_url, installer.as_ref());
     let action_enabled = cfg!(windows) && installer.is_some();
 
     Ok(CheckState {
         latest_version: latest_label.clone(),
         update_available: true,
-        status: platform_message,
+        status,
+        commands,
         action_enabled,
         action_label: if cfg!(windows) {
             "Install update".to_string()
@@ -228,6 +276,7 @@ fn apply_check_result(
     app.set_latest_version(state.latest_version.into());
     app.set_update_available(state.update_available);
     app.set_update_status(state.status.into());
+    app.set_update_commands(commands_model(state.commands));
     app.set_update_action_label(state.action_label.into());
     app.set_update_action_enabled(state.action_enabled);
     if let Ok(mut guard) = latest.lock() {
@@ -259,6 +308,7 @@ fn run_startup_check(app: &AppWindow, rt: &Arc<Runtime>, latest: Arc<Mutex<Optio
                 app.set_update_status(format!("Update check failed: {err}").into());
                 app.set_update_available(false);
                 app.set_update_action_enabled(false);
+                app.set_update_commands(empty_commands());
             }
         });
     });
@@ -276,23 +326,35 @@ fn select_windows_installer<'a>(
     assets.iter().find(|asset| asset.name == exact)
 }
 
-fn platform_update_message(
+fn platform_update_commands() -> Vec<String> {
+    if cfg!(target_os = "macos") {
+        vec![MACOS_INSTALL.to_string()]
+    } else if cfg!(target_os = "linux") {
+        vec![LINUX_AUR_COMMAND.to_string(), LINUX_INSTALL.to_string()]
+    } else {
+        Vec::new()
+    }
+}
+
+fn platform_update_state(
     latest_version: &str,
     release_url: &str,
     installer: Option<&&GitHubAsset>,
-) -> String {
+) -> (String, Vec<String>) {
     if cfg!(windows) {
-        if installer.is_some() {
+        let status = if installer.is_some() {
             format!("Version {latest_version} is available. Use Install update to download and launch the Windows installer.")
         } else {
             format!("Version {latest_version} is available, but no Windows installer asset was found. Download it from {release_url}.")
-        }
-    } else if cfg!(target_os = "macos") {
-        format!("Version {latest_version} is available. Update with:\n{MACOS_INSTALL}")
-    } else if cfg!(target_os = "linux") {
-        format!("Version {latest_version} is available. Update with:\nyay -S putmpv-bin\nor\n{LINUX_INSTALL}")
+        };
+        (status, Vec::new())
+    } else if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
+        (String::new(), platform_update_commands())
     } else {
-        format!("Version {latest_version} is available. Download it from {release_url}.")
+        (
+            format!("Version {latest_version} is available. Download it from {release_url}."),
+            Vec::new(),
+        )
     }
 }
 
@@ -331,14 +393,7 @@ async fn download_and_launch(update: LatestUpdate) -> Result<InstallAction> {
 
 #[cfg(not(windows))]
 async fn download_and_launch(_update: LatestUpdate) -> Result<InstallAction> {
-    let message = if cfg!(target_os = "macos") {
-        format!("Update with:\n{MACOS_INSTALL}")
-    } else if cfg!(target_os = "linux") {
-        format!("Update with:\nyay -S putmpv-bin\nor\n{LINUX_INSTALL}")
-    } else {
-        "Use the latest GitHub release to update PutMPV.".to_string()
-    };
-    Ok(InstallAction::Manual(message))
+    Ok(InstallAction::Manual(String::new()))
 }
 
 #[cfg(windows)]

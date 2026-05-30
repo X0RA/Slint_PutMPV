@@ -155,6 +155,7 @@ export component SettingsPage inherits Rectangle {
     in property <bool> auto_metadata_fetch_enabled: false;
     in property <string> latest_version: "";
     in property <string> update_status: "";
+    in property <[string]> update_commands;
     in property <bool> update_busy: false;
     in property <bool> update_available: false;
     in property <string> update_action_label: "Download";
@@ -187,6 +188,7 @@ export component SettingsPage inherits Rectangle {
     callback auto_metadata_fetch_changed(bool);
     callback updates_check();
     callback updates_install();
+    callback updates_copy_command(command: string);
 
     background: Theme.bg;
 
@@ -365,6 +367,7 @@ export component SettingsPage inherits Rectangle {
                 current_version: root.app_version;
                 latest_version: root.latest_version;
                 status: root.update_status;
+                update_commands: root.update_commands;
                 busy: root.update_busy;
                 update_available: root.update_available;
                 action_label: root.update_action_label;
@@ -372,6 +375,7 @@ export component SettingsPage inherits Rectangle {
                 install_supported: root.update_install_supported;
                 check_updates => { root.updates_check(); }
                 install_update => { root.updates_install(); }
+                copy_update_command(cmd) => { root.updates_copy_command(cmd); }
             }
         }
     }
