@@ -7,6 +7,7 @@ use slint::ComponentHandle;
 use tokio::runtime::Runtime;
 use tracing::{error, info, warn};
 
+use crate::putio::client::ApiError;
 use crate::putio::types::UnifiedDirectoryTree;
 use crate::putio::{self, oauth, PutioClient};
 use crate::storage::config::ConfigStore;
@@ -277,6 +278,33 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
             }
         }
     });
+
+    app.on_offline_retry({
+        let weak = weak.clone();
+        let cfg = cfg.clone();
+        let files_store = files_store.clone();
+        let client = client.clone();
+        let tree = tree.clone();
+        let sync_profiles = sync_profiles.clone();
+        let watch_sync = watch_sync.clone();
+        let rt = rt.clone();
+        move || {
+            if let Some(app) = weak.upgrade() {
+                app.set_loading_error(false);
+                app.set_loading_message("Checking sign-in…".into());
+            }
+            spawn_startup_check(
+                weak.clone(),
+                cfg.clone(),
+                files_store.clone(),
+                client.clone(),
+                tree.clone(),
+                sync_profiles.clone(),
+                watch_sync.clone(),
+                &rt,
+            );
+        }
+    });
 }
 
 /// OAuth token check and background tree refresh after UI is wired.
@@ -286,48 +314,91 @@ pub(crate) fn run_startup(
     state: &UiState,
     rt: &Arc<Runtime>,
 ) {
-    let weak = app.as_weak();
-    let cfg = services.config.clone();
-    let files_store = services.files_store.clone();
-    let client = services.client.clone();
-    let tree = state.tree.clone();
-    let token = services.config.oauth_token();
-    let sync_profiles = state.sync_profiles.clone();
-    let watch_sync = services.watch_sync.clone();
+    spawn_startup_check(
+        app.as_weak(),
+        services.config.clone(),
+        services.files_store.clone(),
+        services.client.clone(),
+        state.tree.clone(),
+        state.sync_profiles.clone(),
+        services.watch_sync.clone(),
+        rt,
+    );
+}
 
+/// Verify the stored OAuth token. On success, kick off the post-auth session
+/// refresh. On a genuine 401, clear the stored token and route to the splash
+/// screen. On a network/server error, *preserve* the token and surface an
+/// offline-retry UI on the loading view — re-launching against a flaky
+/// connection should not wipe valid credentials.
+#[allow(clippy::too_many_arguments)]
+fn spawn_startup_check(
+    weak: slint::Weak<AppWindow>,
+    cfg: Arc<ConfigStore>,
+    files_store: Arc<FilesStore>,
+    client: PutioClient,
+    tree: Arc<RwLock<UnifiedDirectoryTree>>,
+    sync_profiles: Arc<RwLock<Vec<putio::sync::SyncProfile>>>,
+    watch_sync: Arc<WatchSyncService>,
+    rt: &Arc<Runtime>,
+) {
+    let token = cfg.oauth_token();
     if token.is_empty() {
-        app.set_view(VIEW_SPLASH);
-    } else {
-        if let Ok(t) = files_store.read_tree() {
-            *tree.write().unwrap() = t;
-        }
+        let _ = weak.upgrade_in_event_loop(|app| {
+            app.set_loading_error(false);
+            app.set_view(VIEW_SPLASH);
+        });
+        return;
+    }
 
-        rt.spawn(async move {
-            let valid = oauth::check_token_validity(&client, &token)
-                .await
-                .unwrap_or(false);
-            if !valid {
+    if let Ok(t) = files_store.read_tree() {
+        *tree.write().unwrap() = t;
+    }
+
+    rt.spawn(async move {
+        match oauth::check_token_validity(&client, &token).await {
+            Ok(true) => {
+                AuthenticatedSessionRefresh {
+                    weak,
+                    cfg,
+                    files_store,
+                    client,
+                    tree,
+                    sync_profiles,
+                    watch_sync,
+                    token,
+                    tree_success_log: Some("tree refresh done"),
+                    tree_error_log: "tree refresh failed",
+                }
+                .run()
+                .await;
+            }
+            Ok(false) => {
                 info!("stored token invalid, clearing");
                 let _ = cfg.clear_oauth_token();
                 let _ = weak.upgrade_in_event_loop(|app| {
+                    app.set_loading_error(false);
                     app.set_view(VIEW_SPLASH);
                 });
-                return;
             }
-            AuthenticatedSessionRefresh {
-                weak,
-                cfg,
-                files_store,
-                client,
-                tree,
-                sync_profiles,
-                watch_sync,
-                token,
-                tree_success_log: Some("tree refresh done"),
-                tree_error_log: "tree refresh failed",
+            Err(e) => {
+                // Transport, HTTP 5xx, or parse error — none of these prove the
+                // token is bad. Keep it, and let the user retry once their
+                // connection settles.
+                let message = match &e {
+                    ApiError::Transport(_) => {
+                        "No internet connection. Check your network and retry."
+                    }
+                    _ => "Could not reach put.io. Check your connection and retry.",
+                };
+                warn!("startup auth check failed: {e}; preserving token");
+                let message = message.to_string();
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    app.set_loading_error_message(message.into());
+                    app.set_loading_error(true);
+                    app.set_view(VIEW_LOADING);
+                });
             }
-            .run()
-            .await;
-        });
-    }
+        }
+    });
 }

@@ -3,12 +3,16 @@ import { Icon } from "../components/icons.slint";
 
 export component LoadingPage inherits Rectangle {
     in property <string> message: "Checking sign-in…";
+    in property <bool> error_state: false;
+    in property <string> error_message: "No internet connection.";
+
+    callback retry();
 
     background: Theme.bg;
 
     Rectangle {
-        width: 220px;
-        height: 140px;
+        width: 280px;
+        height: root.error_state ? 220px : 140px;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2 - 12px;
         background: transparent;
@@ -34,11 +38,43 @@ export component LoadingPage inherits Rectangle {
         Text {
             y: 100px;
             width: parent.width;
-            text: root.message;
-            color: Theme.text_dim;
+            text: root.error_state ? root.error_message : root.message;
+            color: root.error_state ? Theme.text : Theme.text_dim;
             font-size: 13px;
             font-family: Theme.ui_font;
             horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        if (root.error_state) : retry-button := Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: 160px;
+            width: 140px;
+            height: 38px;
+            border-radius: 8px;
+            background: Theme.accent;
+
+            states [
+                hover when touch.has-hover : {
+                    background: Theme.accent_hi;
+                }
+            ]
+
+            Text {
+                width: parent.width;
+                height: parent.height;
+                text: "Retry";
+                color: Theme.bg;
+                font-size: 13px;
+                font-weight: 600;
+                font-family: Theme.ui_font;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            touch := TouchArea {
+                clicked => { root.retry(); }
+            }
         }
     }
 }

@@ -29,6 +29,8 @@ export component AppWindow inherits Window {
     in-out property <string> app_version;
     in-out property <int> view: 0;
     in-out property <string> loading_message: "Checking sign-in…";
+    in-out property <bool> loading_error: false;
+    in-out property <string> loading_error_message: "No internet connection. Check your network and retry.";
     in-out property <string> device_code: "";
     in-out property <string> device_expires: "10:00";
     in-out property <string> device_link: "https://put.io/link";
@@ -160,6 +162,7 @@ export component AppWindow inherits Window {
     in-out property <[TvEpisodeRow]> tv_show_episodes;
     in-out property <int> tv_show_series_id: 0;
 
+    callback offline_retry();
     callback sign_in();
     callback code_back();
     callback code_open_link();
@@ -333,6 +336,9 @@ export component AppWindow inherits Window {
         width: parent.width;
         height: parent.height - Theme.title_bar_height;
         message: root.loading_message;
+        error_state: root.loading_error;
+        error_message: root.loading_error_message;
+        retry => { root.offline_retry(); }
     }
 
     if (root.view == 1) : splash := SplashPage {
