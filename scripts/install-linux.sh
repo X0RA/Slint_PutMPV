@@ -8,7 +8,7 @@ APP_NAME="PutMPV"
 BINARY_URL="https://github.com/${REPO}/releases/latest/download/${BINARY_NAME}"
 ICON_URL="https://raw.githubusercontent.com/${REPO}/main/ui/assets/appicon.png"
 
-PREFIX="/usr/local"
+PREFIX="/usr"
 BIN_DEST="${PREFIX}/bin/${APP_BIN}"
 DESKTOP_DEST="${PREFIX}/share/applications/putmpv.desktop"
 ICON_DEST="${PREFIX}/share/icons/hicolor/256x256/apps/putmpv.png"
