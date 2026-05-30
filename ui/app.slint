@@ -134,6 +134,7 @@ export component AppWindow inherits Window {
     in-out property <string> toast_action_label: "";
     in-out property <string> latest_version: "";
     in-out property <string> update_status: "Check for updates to compare this build with the latest GitHub release.";
+    in-out property <[string]> update_commands: [];
     in-out property <bool> update_busy: false;
     in-out property <bool> update_available: false;
     in-out property <string> update_action_label: "Download";
@@ -244,6 +245,7 @@ export component AppWindow inherits Window {
     callback magnets_sort_direction_toggled();
     callback updates_check();
     callback updates_install();
+    callback updates_copy_command(command: string);
     callback tv_show_back();
     callback tv_show_season_changed(int);
     callback tv_show_play_episode(string);
@@ -578,6 +580,7 @@ export component AppWindow inherits Window {
         auto_metadata_fetch_enabled: root.auto_metadata_fetch_enabled;
         latest_version: root.latest_version;
         update_status: root.update_status;
+        update_commands: root.update_commands;
         update_busy: root.update_busy;
         update_available: root.update_available;
         update_action_label: root.update_action_label;
@@ -606,6 +609,7 @@ export component AppWindow inherits Window {
         auto_metadata_fetch_changed(enabled) => { root.auto_metadata_fetch_changed(enabled); }
         updates_check => { root.updates_check(); }
         updates_install => { root.updates_install(); }
+        updates_copy_command(cmd) => { root.updates_copy_command(cmd); }
     }
 
     if (root.toast_visible && root.view != 7) : toast := ToastView {

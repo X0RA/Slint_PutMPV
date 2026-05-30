@@ -1,0 +1,38 @@
+import { Theme } from "../theme.slint";
+import { SettingsPage } from "../pages/settings.slint";
+
+export component UpdateAvailablePreview inherits Window {
+    title: "Settings Update Preview";
+    preferred-width: 1100px;
+    preferred-height: 760px;
+    background: Theme.bg;
+    default-font-family: Theme.ui_font;
+    default-font-size: 13px;
+
+    // 0 = Windows, 1 = macOS, 2 = Linux — change in the Slint previewer property panel
+    in-out property <int> preview_platform: 2;
+
+    SettingsPage {
+        width: 100%;
+        height: 100%;
+        section: 4;
+        app_version: "1.0.0";
+        latest_version: "1.2.3";
+        update_available: true;
+        update_busy: false;
+        update_install_supported: root.preview_platform == 0;
+        update_action_label: root.preview_platform == 0 ? "Install update" : "Download";
+        update_action_enabled: root.preview_platform == 0;
+        update_status: root.preview_platform == 0
+            ? "Version 1.2.3 is available. Use Install update to download and launch the Windows installer."
+            : "";
+        update_commands: root.preview_platform == 1
+            ? ["curl -fsSL https://raw.githubusercontent.com/X0RA/Slint_PutMPV/main/scripts/install-macos.sh | bash"]
+            : root.preview_platform == 2
+            ? ["yay -S putmpv-bin", "curl -fsSL https://raw.githubusercontent.com/X0RA/Slint_PutMPV/main/scripts/install-linux.sh | bash"]
+            : [];
+        local_data_rows: [];
+        metadata_items: [];
+        sync_profile_labels: [];
+    }
+}

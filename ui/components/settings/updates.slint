@@ -1,10 +1,55 @@
 import { Theme } from "../../theme.slint";
 import { ButtonChip } from "../primitives.slint";
 
+component UpdateCommandRow inherits HorizontalLayout {
+    in property <string> command;
+    callback copy_command();
+
+    spacing: 10px;
+    alignment: stretch;
+
+    VerticalLayout {
+        alignment: center;
+        ButtonChip {
+            icon_name: "copy";
+            clicked => { root.copy_command(); }
+        }
+    }
+
+    Rectangle {
+        horizontal-stretch: 1;
+        height: text-layout.preferred-height;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: Theme.border;
+        background: Theme.surface_hi;
+
+        text-layout := HorizontalLayout {
+            width: parent.width;
+            padding-left: 14px;
+            padding-right: 14px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+
+            Text {
+                horizontal-stretch: 1;
+                text: root.command;
+                color: Theme.text;
+                font-size: 11.5px;
+                font-family: Theme.mono_font;
+                wrap: word-wrap;
+                horizontal-alignment: left;
+                vertical-alignment: center;
+            }
+        }
+    }
+}
+
 export component UpdateSettingsPanel inherits VerticalLayout {
     in property <string> current_version;
     in property <string> latest_version;
     in property <string> status;
+    in property <[string]> update_commands;
     in property <bool> busy: false;
     in property <bool> update_available: false;
     in property <string> action_label: "Download";
@@ -12,6 +57,7 @@ export component UpdateSettingsPanel inherits VerticalLayout {
     in property <bool> install_supported: false;
     callback check_updates();
     callback install_update();
+    callback copy_update_command(command: string);
 
     spacing: 16px;
     padding-top: 32px;
@@ -39,7 +85,6 @@ export component UpdateSettingsPanel inherits VerticalLayout {
     Rectangle { height: 8px; }
 
     version-card := Rectangle {
-        width: parent.width;
         height: card-layout.preferred-height;
         border-radius: 10px;
         border-width: 1px;
@@ -190,8 +235,49 @@ export component UpdateSettingsPanel inherits VerticalLayout {
         }
     }
 
+    if (root.update_commands.length > 0) : Rectangle {
+        height: instructions-layout.preferred-height;
+        border-radius: 8px;
+        border-width: 1px;
+        border-color: #a78bfa33;
+        background: #a78bfa10;
+
+        instructions-layout := VerticalLayout {
+            width: parent.width;
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 14px;
+            padding-bottom: 16px;
+            spacing: 10px;
+
+            Text {
+                text: "Version " + root.latest_version + " is available. Update with:";
+                color: Theme.accent_hi;
+                font-size: 12px;
+                font-weight: 600;
+                font-family: Theme.ui_font;
+                wrap: word-wrap;
+            }
+
+            for cmd[index] in root.update_commands : command-group := VerticalLayout {
+                spacing: 8px;
+
+                if (index > 0) : Text {
+                    text: "or";
+                    color: Theme.text_mute;
+                    font-size: 11px;
+                    font-family: Theme.ui_font;
+                }
+
+                UpdateCommandRow {
+                    command: cmd;
+                    copy_command => { root.copy_update_command(cmd); }
+                }
+            }
+        }
+    }
+
     if (root.status != "") : Rectangle {
-        width: parent.width;
         height: status-bar.preferred-height;
         border-radius: 8px;
         border-width: 1px;
