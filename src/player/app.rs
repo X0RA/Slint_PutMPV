@@ -222,7 +222,9 @@ impl EmbeddedPlayer {
                 )))));
                 let dest = *previous_view.lock().unwrap();
                 app.set_view(dest);
-                let _ = app.window().with_winit_window(|w| w.set_cursor_visible(true));
+                let _ = app
+                    .window()
+                    .with_winit_window(|w| w.set_cursor_visible(true));
                 // refresh fires from the MPV EndFile handler once stop() lands.
             }
         });
