@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use i_slint_backend_winit::WinitWindowAccessor;
 use libmpv2::{
     events::{Event, PropertyData},
     mpv_end_file_reason, Mpv,
@@ -221,6 +222,7 @@ impl EmbeddedPlayer {
                 )))));
                 let dest = *previous_view.lock().unwrap();
                 app.set_view(dest);
+                let _ = app.window().with_winit_window(|w| w.set_cursor_visible(true));
                 // refresh fires from the MPV EndFile handler once stop() lands.
             }
         });
@@ -746,6 +748,16 @@ fn register_callbacks(
             app.set_player_fullscreen(false);
             app.window().set_fullscreen(false);
         }
+    });
+
+    let weak = app.as_weak();
+    app.on_player_cursor_hidden_changed(move |hide| {
+        let Some(app) = weak.upgrade() else {
+            return;
+        };
+        let _ = app.window().with_winit_window(|w| {
+            w.set_cursor_visible(!hide);
+        });
     });
 }
 

@@ -39,9 +39,15 @@ export component PlayerPage inherits FocusScope {
     callback playlist_next();
     callback toggle_fullscreen();
     callback exit_fullscreen();
+    callback cursor_hidden_changed(bool);
 
     in-out property <bool> controls_visible: true;
     in-out property <bool> playlist_open: false;
+    property <bool> cursor_hidden: !root.controls_visible && !root.playlist_open;
+
+    changed cursor_hidden => {
+        root.cursor_hidden_changed(self.cursor_hidden);
+    }
 
     focus-on-click: true;
     focus-on-tab-navigation: false;
@@ -290,44 +296,4 @@ export component PlayerPage inherits FocusScope {
         }
     }
 
-    cursor-overlay := TouchArea {
-        x: 0px;
-        y: 0px;
-        width: parent.width;
-        height: parent.height;
-        enabled: !root.controls_visible && !root.playlist_open;
-        mouse-cursor: none;
-        property <bool> baseline_set: false;
-        property <length> baseline_x: 0px;
-        property <length> baseline_y: 0px;
-        pointer-event(event) => {
-            if (event.kind == PointerEventKind.move) {
-                if (!self.baseline_set) {
-                    self.baseline_x = self.mouse-x;
-                    self.baseline_y = self.mouse-y;
-                    self.baseline_set = true;
-                } else if (abs(self.mouse-x - self.baseline_x) > 8px
-                        || abs(self.mouse-y - self.baseline_y) > 8px) {
-                    self.baseline_set = false;
-                    root.reveal_controls();
-                }
-            }
-        }
-        changed enabled => {
-            if (!self.enabled) {
-                self.baseline_set = false;
-            }
-        }
-        clicked => {
-            click-timer.restart();
-        }
-        double-clicked => {
-            click-timer.stop();
-            root.focus();
-            root.reveal_controls();
-            controls.close_menus();
-            root.playlist_open = false;
-            root.toggle_fullscreen();
-        }
-    }
 }

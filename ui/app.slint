@@ -215,6 +215,7 @@ export component AppWindow inherits Window {
     callback player_playlist_next();
     callback player_toggle_fullscreen();
     callback player_exit_fullscreen();
+    callback player_cursor_hidden_changed(bool);
     callback local_data_clear(index: int);
     callback local_data_confirm_clear();
     callback local_data_cancel_clear();
@@ -539,6 +540,7 @@ export component AppWindow inherits Window {
         playlist_next => { root.player_playlist_next(); }
         toggle_fullscreen => { root.player_toggle_fullscreen(); }
         exit_fullscreen => { root.player_exit_fullscreen(); }
+        cursor_hidden_changed(hide) => { root.player_cursor_hidden_changed(hide); }
     }
 
     if (root.view == 6) : settings := SettingsPage {

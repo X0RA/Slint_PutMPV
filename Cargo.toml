@@ -11,6 +11,8 @@ slint = { version = "1.16", default-features = false, features = [
     "renderer-femtovg",
     "raw-window-handle-06",
 ] }
+# Must track the slint version exactly; this crate does not follow semver.
+i-slint-backend-winit = "1.16"
 tokio = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "multipart"] }
 serde = { version = "1", features = ["derive"] }

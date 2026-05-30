@@ -4415,6 +4415,7 @@ dependencies = [
  "arboard",
  "directories",
  "glow 0.13.1",
+ "i-slint-backend-winit",
  "keepawake",
  "libmpv2",
  "magneto",
