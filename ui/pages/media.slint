@@ -1,6 +1,6 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
-import { ButtonChip, IconButton } from "../components/primitives.slint";
+import { ButtonChip, IconButton, SearchField } from "../components/primitives.slint";
 import { Icon } from "../components/icons.slint";
 
 export struct MediaItem {
@@ -8,30 +8,57 @@ export struct MediaItem {
     meta: string,
     rating: string,
     poster: image,
+    backdrop: image,
+    overview: string,
+    year_label: string,
+    stats_label: string,
+    genre_line: string,
     resolution: string,
+    progress: float,
+    is_tv: bool,
+    initials: string,
+    file_id: string,
+    added_at: string,
+}
+
+export struct MediaHeroItem {
+    title: string,
+    rating: string,
+    years: string,
+    stats_line: string,
+    overview: string,
+    resume_label: string,
+    poster: image,
+    backdrop: image,
     progress: float,
     is_tv: bool,
     initials: string,
     file_id: string,
 }
 
-component HubPoster inherits Rectangle {
-    in property <string> title;
-    in property <string> initials;
-    in property <length> poster-height;
-    in property <image> art;
-    /// When false, omit the bottom-centered title strip (e.g. hub cards show title below the poster).
-    in property <bool> show-embedded-title: true;
-    /// Fill cell with no frame—outer container handles clipping and corners.
-    in property <bool> flat: false;
+export struct MediaHeroBadge {
+    text: string,
+}
 
-    width: self.height * 2 / 3;
-    height: poster-height;
-    border-radius: flat ? 0px : 8px;
+export struct MediaResumeItem {
+    title: string,
+    kind: string,
+    detail: string,
+    left_label: string,
+    poster: image,
+    initials: string,
+    progress: float,
+    file_id: string,
+}
+
+component PosterArt inherits Rectangle {
+    in property <string> initials;
+    in property <image> art;
+    in property <length> glyph-size: 72px;
+
+    border-radius: 13px;
     clip: true;
     background: art.width > 0 ? #00000000 : @linear-gradient(165deg, Theme.surface_higher 0%, #0a0a12 100%);
-    border-width: flat ? 0px : 1px;
-    border-color: #ffffff12;
 
     if art.width > 0 : Image {
         source: art;
@@ -43,236 +70,328 @@ component HubPoster inherits Rectangle {
     Rectangle {
         width: parent.width;
         height: parent.height;
-        background: @radial-gradient(circle, #ffffff28 0%, #00000000 65%);
+        background: @linear-gradient(150deg, #ffffff12 0%, #00000000 38%, #00000080 100%);
     }
 
     if art.width == 0 : VerticalLayout {
         width: parent.width;
         height: parent.height;
         alignment: center;
-        padding-top: poster-height * 0.12;
-        padding-bottom: poster-height * 0.12;
-        padding-left: poster-height * 0.08;
-        padding-right: poster-height * 0.08;
 
         Text {
-            text: initials == "" ? "·" : initials;
+            text: root.initials == "" ? "·" : root.initials;
             color: #ffffffeb;
-            font-size: poster-height * 0.14;
+            font-size: root.glyph-size;
             font-weight: 800;
-            letter-spacing: -1px;
             horizontal-alignment: center;
             font-family: Theme.ui_font;
         }
     }
+}
 
-    if show-embedded-title : Text {
-        y: parent.height - self.height - 8px;
-        x: 8px;
-        width: parent.width - 16px;
-        text: title;
-        color: #ffffffd9;
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 1.2px;
-        horizontal-alignment: center;
-        wrap: no-wrap;
+component PosterCard inherits Rectangle {
+    in property <MediaItem> data;
+    in property <length> cell-width;
+
+    width: cell-width;
+    height: cell-width * 3 / 2 + 62px;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    background: transparent;
+
+    callback open();
+    callback watch_toggle();
+
+    poster := Rectangle {
+        x: 0px;
+        y: 0px;
+        width: root.cell-width;
+        height: root.cell-width * 3 / 2;
+        border-radius: 13px;
+        clip: true;
+        border-width: 1px;
+        border-color: #ffffff10;
+
+        PosterArt {
+            width: parent.width;
+            height: parent.height;
+            initials: root.data.initials;
+            art: root.data.poster;
+        }
+
+        if root.data.rating != "" : Rectangle {
+            x: 8px;
+            y: parent.height - self.height - 8px;
+            height: 25px;
+            width: rate-t.preferred-width + 30px;
+            border-radius: 8px;
+            background: #0a0a10cc;
+
+            HorizontalLayout {
+                width: parent.width;
+                height: parent.height;
+                spacing: 4px;
+                alignment: center;
+
+                Icon { name: "star"; icon_size: 11px; tint: Theme.accent_hi; y: (parent.height - self.height) / 2; }
+                rate-t := Text {
+                    text: root.data.rating;
+                    color: Theme.text;
+                    font-size: 11.5px;
+                    font-weight: 700;
+                    font-family: Theme.mono_font;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        if root.data.progress >= 0.9 : Rectangle {
+            x: parent.width - 32px;
+            y: 8px;
+            width: 24px;
+            height: 24px;
+            border-radius: 12px;
+            background: Theme.accent;
+
+            Icon { x: 5px; y: 5px; name: "check"; icon_size: 14px; tint: Theme.text; }
+            TouchArea { clicked => { if (!root.data.is_tv) { root.watch_toggle(); } } }
+        }
+
+        if root.data.progress > 0.0 && root.data.progress < 0.9 : Rectangle {
+            x: 0px;
+            y: parent.height - 4px;
+            width: parent.width;
+            height: 4px;
+            background: #ffffff2c;
+
+            Rectangle {
+                x: 0px;
+                width: parent.width * root.data.progress;
+                height: parent.height;
+                background: Theme.accent;
+            }
+        }
+
+        poster-touch := TouchArea {
+            width: parent.width;
+            height: parent.height;
+            clicked => { root.open(); }
+        }
+
+        if poster-touch.has-hover : Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: #00000066;
+
+            Rectangle {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: 54px;
+                height: 54px;
+                border-radius: 27px;
+                background: Theme.accent;
+
+                Icon { x: 18px; y: 17px; name: "play"; icon_size: 20px; tint: Theme.text; }
+            }
+        }
+    }
+
+    Text {
+        x: 2px;
+        y: poster.y + poster.height + 18px;
+        width: root.width - 4px;
+        text: root.data.title;
+        color: Theme.text;
+        font-size: 14px;
+        font-weight: 600;
+        overflow: elide;
+        font-family: Theme.ui_font;
+    }
+
+    Text {
+        x: 2px;
+        y: poster.y + poster.height + 39px;
+        width: root.width - 4px;
+        text: root.data.meta;
+        color: Theme.text_dim;
+        font-size: 12px;
         overflow: elide;
         font-family: Theme.ui_font;
     }
 }
 
-component HubMediaCard inherits TouchArea {
-    in property <MediaItem> data;
-    in property <length> cell-width;
+component HeroBadge inherits Rectangle {
+    in property <string> label;
 
-    width: cell-width;
-    horizontal-stretch: 0;
+    height: 28px;
+    width: label-t.preferred-width + 26px;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: #ffffff14;
+    background: #ffffff08;
 
-    callback open();
-    callback watch_toggle();
+    label-t := Text {
+        x: 13px;
+        y: (parent.height - self.height) / 2;
+        text: root.label;
+        color: Theme.text_dim;
+        font-size: 12px;
+        font-weight: 500;
+        font-family: Theme.ui_font;
+    }
+}
 
-    clicked => {
-        root.open();
+component ToolbarChip inherits Rectangle {
+    in property <string> label;
+    in property <bool> active: false;
+
+    callback clicked();
+
+    height: 36px;
+    width: label-t.preferred-width + 30px;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: active ? Theme.accent_border : Theme.border;
+    background: active ? Theme.accent_soft : #ffffff05;
+
+    states [
+        hover when touch.has-hover : {
+            background: active ? Theme.accent_soft : #ffffff09;
+        }
+    ]
+
+    label-t := Text {
+        x: 15px;
+        y: (parent.height - self.height) / 2;
+        text: root.label;
+        color: active ? Theme.accent_hi : Theme.text_dim;
+        font-size: 13px;
+        font-weight: 500;
+        font-family: Theme.ui_font;
     }
 
-    VerticalLayout {
-        spacing: 0px;
-        width: root.width;
+    touch := TouchArea { clicked => { root.clicked(); } }
+}
 
-        Rectangle {
-            width: parent.width;
-            background: Theme.surface;
-            border-radius: Theme.radius_lg;
-            border-width: 1px;
-            border-color: Theme.border;
-            clip: true;
+component MediaToolbar inherits Rectangle {
+    in-out property <string> query;
+    in-out property <int> filter_index;
+    in-out property <int> sort_index;
 
-            VerticalLayout {
-                spacing: 0px;
-                width: parent.width;
+    callback changed();
+    callback sort_clicked();
 
-                Rectangle {
-                    width: parent.width;
-                    height: root.cell-width * 3 / 2;
-                    clip: true;
+    private property <bool> wrapped: root.width < 900px;
 
-                    HubPoster {
-                        flat: true;
-                        show-embedded-title: false;
-                        width: parent.width;
-                        height: parent.height;
-                        title: root.data.title;
-                        initials: root.data.initials;
-                        poster-height: parent.height;
-                        art: root.data.poster;
-                    }
+    height: wrapped ? 92px : 42px;
+    clip: true;
+    background: transparent;
 
-                    if !root.data.is_tv : Rectangle {
-                        x: parent.width - self.width - 10px;
-                        y: 10px;
-                        width: 28px;
-                        height: 28px;
-                        border-radius: 14px;
-                        border-width: 1px;
-                        border-color: root.data.progress >= 0.9 ? #22c55ecc : root.data.progress > 0.0 ? #fbbf24cc : Theme.border;
-                        background: root.data.progress >= 0.9 ? #22c55e : root.data.progress > 0.0 ? #fbbf24 : Theme.surface_higher;
+    if !root.wrapped : HorizontalLayout {
+        width: parent.width;
+        height: 42px;
+        spacing: 14px;
 
-                        Icon {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            name: "check";
-                            icon_size: 13px;
-                            tint: root.data.progress > 0.0 ? Theme.bg : Theme.text_dim;
-                        }
+        SearchField {
+            horizontal-stretch: 1;
+            min-width: 280px;
+            height: 42px;
+            text <=> root.query;
+            placeholder: "Search movies and shows...";
+            edited => { root.changed(); }
+            accepted => { root.changed(); }
+        }
 
-                        TouchArea {
-                            clicked => { root.watch_toggle(); }
-                        }
-                    }
+        HorizontalLayout {
+            spacing: 14px;
 
-                    if !root.data.is_tv && root.data.progress > 0.0 && root.data.progress < 0.9 : Rectangle {
-                        x: 10px;
-                        y: 10px;
-                        height: 22px;
-                        width: progress-t.preferred-width + 16px;
-                        border-radius: 7px;
-                        background: #000000cc;
-                        border-width: 1px;
-                        border-color: #ffffff22;
+            ToolbarChip { label: "All"; active: root.filter_index == 0; clicked => { root.filter_index = 0; root.changed(); } }
+            ToolbarChip { label: "Movies"; active: root.filter_index == 1; clicked => { root.filter_index = 1; root.changed(); } }
+            ToolbarChip { label: "TV Shows"; active: root.filter_index == 2; clicked => { root.filter_index = 2; root.changed(); } }
+            ToolbarChip { label: "Unwatched"; active: root.filter_index == 3; clicked => { root.filter_index = 3; root.changed(); } }
 
-                        progress-t := Text {
-                            x: 8px;
-                            y: (parent.height - self.height) / 2;
-                            text: Math.round(root.data.progress * 100) + "% watched";
-                            color: #ffffff;
-                            font-size: 10.5px;
-                            font-weight: 700;
-                            font-family: Theme.ui_font;
-                        }
-                    }
+            Rectangle {
+                height: 36px;
+                width: 154px;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: root.sort_index == 1 ? Theme.accent_border : Theme.border;
+                background: root.sort_index == 1 ? Theme.accent_soft : #ffffff04;
 
-                    Rectangle {
-                        y: parent.height - 72px;
-                        width: parent.width;
-                        height: 72px;
-                        background: @linear-gradient(180deg, #00000000 0%, Theme.surface 100%);
-                    }
-
-                    if root.data.rating != "" : Rectangle {
-                        x: parent.width - self.width - 10px;
-                        y: parent.height - self.height - 10px;
-                        height: 24px;
-                        width: rate-t.preferred-width + 34px;
-                        border-radius: 8px;
-                        background: #000000cc;
-                        border-width: 1px;
-                        border-color: #ffffff18;
-
-                        HorizontalLayout {
-                            width: parent.width;
-                            height: parent.height;
-                            spacing: 4px;
-                            alignment: center;
-
-                            Icon {
-                                name: "star";
-                                icon_size: 11px;
-                                tint: Theme.accent;
-                                y: (parent.height - self.height) / 2;
-                            }
-
-                            rate-t := Text {
-                                height: parent.height;
-                                text: root.data.rating;
-                                color: #ffffff;
-                                font-size: 10.5px;
-                                font-weight: 700;
-                                vertical-alignment: center;
-                                font-family: Theme.mono_font;
-                            }
-                        }
-                    }
-
-                    if root.has-hover : Rectangle {
-                        width: parent.width;
-                        height: parent.height;
-                        background: #00000059;
-
-                        Rectangle {
-                            x: (parent.width - self.width) / 2;
-                            y: (parent.height - self.height) / 2;
-                            width: 48px;
-                            height: 48px;
-                            border-radius: 24px;
-                            background: Theme.accent;
-
-                            Icon {
-                                x: (parent.width - self.width) / 2;
-                                y: (parent.height - self.height) / 2;
-                                name: "play";
-                                icon_size: 18px;
-                                tint: Theme.bg;
-                            }
-                        }
-                    }
+                Icon { x: 16px; y: 10px; name: "sort"; icon_size: 15px; tint: root.sort_index == 1 ? Theme.accent_hi : Theme.text_dim; }
+                Text {
+                    x: 40px;
+                    y: (parent.height - self.height) / 2;
+                    text: "Recently added";
+                    color: root.sort_index == 1 ? Theme.accent_hi : Theme.text_dim;
+                    font-size: 12.5px;
+                    font-weight: 500;
+                    font-family: Theme.ui_font;
                 }
 
-                VerticalLayout {
-                    width: parent.width;
-                    padding-left: 14px;
-                    padding-right: 14px;
-                    padding-top: 12px;
-                    padding-bottom: 14px;
-                    spacing: 5px;
-                    alignment: start;
-
-                    Text {
-                        text: root.data.title;
-                        color: Theme.text;
-                        font-size: 13.5px;
-                        font-weight: 700;
-                        wrap: no-wrap;
-                        overflow: elide;
-                        font-family: Theme.ui_font;
-                    }
-
-                    Text {
-                        text: root.data.meta;
-                        color: Theme.text_dim;
-                        font-size: 11px;
-                        font-family: Theme.ui_font;
+                TouchArea {
+                    clicked => {
+                        root.sort_index = 1;
+                        root.sort_clicked();
                     }
                 }
             }
         }
     }
 
+    if root.wrapped : VerticalLayout {
+        width: parent.width;
+        spacing: 8px;
+        alignment: start;
+
+        SearchField {
+            width: parent.width;
+            height: 42px;
+            text <=> root.query;
+            placeholder: "Search movies and shows...";
+            edited => { root.changed(); }
+            accepted => { root.changed(); }
+        }
+
+        HorizontalLayout {
+            spacing: 14px;
+
+            ToolbarChip { label: "All"; active: root.filter_index == 0; clicked => { root.filter_index = 0; root.changed(); } }
+            ToolbarChip { label: "Movies"; active: root.filter_index == 1; clicked => { root.filter_index = 1; root.changed(); } }
+            ToolbarChip { label: "TV Shows"; active: root.filter_index == 2; clicked => { root.filter_index = 2; root.changed(); } }
+            ToolbarChip { label: "Unwatched"; active: root.filter_index == 3; clicked => { root.filter_index = 3; root.changed(); } }
+
+            Rectangle {
+                height: 36px;
+                width: 154px;
+                border-radius: 10px;
+                border-width: 1px;
+                border-color: root.sort_index == 1 ? Theme.accent_border : Theme.border;
+                background: root.sort_index == 1 ? Theme.accent_soft : #ffffff04;
+
+                Icon { x: 16px; y: 10px; name: "sort"; icon_size: 15px; tint: root.sort_index == 1 ? Theme.accent_hi : Theme.text_dim; }
+                Text {
+                    x: 40px;
+                    y: (parent.height - self.height) / 2;
+                    text: "Recently added";
+                    color: root.sort_index == 1 ? Theme.accent_hi : Theme.text_dim;
+                    font-size: 12.5px;
+                    font-weight: 500;
+                    font-family: Theme.ui_font;
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.sort_index = 1;
+                        root.sort_clicked();
+                    }
+                }
+            }
+        }
+    }
 }
 
-component MetadataStrip inherits VerticalLayout {
-    in property <length> gutter;
-    in property <length> content-w;
+component MetadataReminder inherits Rectangle {
     in property <bool> has_unmatched;
     in property <string> unmatched_title;
     in property <string> unmatched_detail;
@@ -285,189 +404,408 @@ component MetadataStrip inherits VerticalLayout {
     callback dismiss_error();
     callback dismiss_success();
 
-    width: 100%;
-    spacing: 0px;
+    height: (has_unmatched || show_error_flash || show_success_flash) ? 58px : 0px;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: Theme.accent_border;
+    background: Theme.accent_soft;
 
-    Rectangle {
+    if root.has_unmatched : Rectangle {
+        x: 16px;
+        y: 14px;
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: #a78bfa22;
+
+        Icon { x: 8px; y: 8px; name: "refresh"; icon_size: 14px; tint: Theme.accent_hi; }
+    }
+
+    if root.has_unmatched : Text {
+        x: 59px;
+        y: 0px;
+        width: max(0px, parent.width - 252px);
+        height: parent.height;
+        text: root.unmatched_title + (root.unmatched_detail == "" ? "" : " · " + root.unmatched_detail);
+        color: Theme.text_dim;
+        font-size: 13px;
+        font-weight: 500;
+        overflow: elide;
+        vertical-alignment: center;
+        font-family: Theme.ui_font;
+    }
+
+    if root.has_unmatched : ButtonChip {
+        x: parent.width - self.width - 58px;
+        y: 13px;
+        active: true;
+        label: "Run scraper";
+        icon_name: "refresh";
+        clicked => { root.scrape_unmatched(); }
+    }
+
+    if root.has_unmatched : IconButton {
+        x: parent.width - self.width - 16px;
+        y: 17px;
+        icon_name: "close";
+        clicked => { root.dismiss_success(); root.dismiss_error(); }
+    }
+
+    if !root.has_unmatched && root.show_error_flash : Icon {
+        x: 18px;
+        y: 21px;
+        name: "metadata";
+        icon_size: 16px;
+        tint: Theme.danger;
+    }
+
+    if !root.has_unmatched && root.show_error_flash : Text {
+        x: 46px;
+        y: 0px;
+        width: max(0px, parent.width - 190px);
+        height: parent.height;
+        text: root.error_flash_text;
+        color: Theme.text_dim;
+        font-size: 13px;
+        overflow: elide;
+        vertical-alignment: center;
+        font-family: Theme.ui_font;
+    }
+
+    if !root.has_unmatched && root.show_error_flash : ButtonChip {
+        x: parent.width - self.width - 58px;
+        y: 13px;
+        label: "Try Again";
+        clicked => { root.scrape_unmatched(); }
+    }
+
+    if !root.has_unmatched && root.show_error_flash : IconButton {
+        x: parent.width - self.width - 16px;
+        y: 17px;
+        icon_name: "close";
+        clicked => { root.dismiss_error(); }
+    }
+
+    if !root.has_unmatched && !root.show_error_flash && root.show_success_flash : Icon {
+        x: 18px;
+        y: 21px;
+        name: "check";
+        icon_size: 16px;
+        tint: Theme.success;
+    }
+
+    if !root.has_unmatched && !root.show_error_flash && root.show_success_flash : Text {
+        x: 46px;
+        y: 0px;
+        width: max(0px, parent.width - 150px);
+        height: parent.height;
+        text: root.success_flash_text == "" ? "Matches saved." : root.success_flash_text;
+        color: Theme.text_dim;
+        font-size: 13px;
+        overflow: elide;
+        vertical-alignment: center;
+        font-family: Theme.ui_font;
+    }
+
+    if !root.has_unmatched && !root.show_error_flash && root.show_success_flash : ButtonChip {
+        x: parent.width - self.width - 16px;
+        y: 13px;
+        label: "Dismiss";
+        clicked => { root.dismiss_success(); }
+    }
+}
+
+component HeroSpotlight inherits Rectangle {
+    in property <MediaHeroItem> item;
+    in property <[MediaHeroBadge]> badges;
+    in property <bool> compact: false;
+
+    callback open();
+
+    height: compact ? 430px : 520px;
+    clip: true;
+    background: Theme.bg;
+
+    if item.backdrop.width > 0 : Image {
         width: parent.width;
-        background: #14141ccc;
+        height: parent.height;
+        source: root.item.backdrop;
+        image-fit: cover;
+        opacity: 0.42;
+    }
 
-        HorizontalLayout {
-            width: parent.width;
-            alignment: center;
-
-            Rectangle {
-                horizontal-stretch: 1;
-                min-width: 0px;
-            }
-
-            VerticalLayout {
-                padding-left: root.gutter;
-                padding-right: root.gutter;
-                padding-top: 10px;
-                padding-bottom: 11px;
-                width: root.content-w;
-                spacing: 8px;
-
-                if root.has_unmatched : HorizontalLayout {
-                    spacing: 14px;
-                    alignment: space-between;
-
-                    VerticalLayout {
-                        spacing: 4px;
-                        horizontal-stretch: 1;
-
-                        Text {
-                            text: root.unmatched_title;
-                            color: Theme.text;
-                            font-size: 14px;
-                            font-weight: 700;
-                            letter-spacing: -0.2px;
-                            font-family: Theme.ui_font;
-                        }
-
-                        Text {
-                            text: root.unmatched_detail;
-                            color: Theme.text_mute;
-                            font-size: 11.5px;
-                            wrap: word-wrap;
-                            font-family: Theme.ui_font;
-                        }
-                    }
-
-                    ButtonChip {
-                        primary: true;
-                        label: "Scrape Unmatched Media";
-                        icon_name: "refresh";
-                        clicked => { root.scrape_unmatched(); }
-                    }
-                }
-
-                if root.has_unmatched && (root.show_error_flash || root.show_success_flash) : Rectangle {
-                    height: 1px;
-                    background: Theme.border_hi;
-                }
-
-                if root.show_error_flash : HorizontalLayout {
-                    spacing: 10px;
-
-                    Rectangle {
-                        width: 16px;
-                        height: 16px;
-
-                        Icon {
-                            x: 0px;
-                            y: 1px;
-                            name: "metadata";
-                            icon_size: 15px;
-                            tint: Theme.danger;
-                        }
-                    }
-
-                    VerticalLayout {
-                        spacing: 2px;
-                        horizontal-stretch: 1;
-
-                        Text {
-                            text: "Couldn't scrape unmatched media.";
-                            color: Theme.text;
-                            font-size: 11.5px;
-                            font-weight: 700;
-                            wrap: word-wrap;
-                            font-family: Theme.ui_font;
-                        }
-
-                        Text {
-                            text: root.error_flash_text;
-                            color: Theme.text_mute;
-                            font-size: 11px;
-                            wrap: word-wrap;
-                            font-family: Theme.ui_font;
-                        }
-                    }
-
-                    ButtonChip {
-                        label: "Try Again";
-                        clicked => { root.scrape_unmatched(); }
-                    }
-
-                    IconButton {
-                        icon_name: "close";
-                        clicked => { root.dismiss_error(); }
-                    }
-                }
-
-                if root.show_success_flash : HorizontalLayout {
-                    spacing: 10px;
-
-                    Rectangle {
-                        width: 16px;
-                        height: 16px;
-
-                        Icon {
-                            name: "check";
-                            icon_size: 15px;
-                            tint: Theme.success;
-                        }
-                    }
-
-                    VerticalLayout {
-                        spacing: 2px;
-                        horizontal-stretch: 1;
-
-                        Text {
-                            text: "Matches saved.";
-                            color: Theme.text;
-                            font-size: 11.5px;
-                            font-weight: 700;
-                            wrap: word-wrap;
-                            font-family: Theme.ui_font;
-                        }
-
-                        Text {
-                            text: root.success_flash_text;
-                            color: Theme.text_mute;
-                            font-size: 11px;
-                            wrap: word-wrap;
-                            font-family: Theme.ui_font;
-                        }
-                    }
-
-                    ButtonChip {
-                        label: "Dismiss";
-                        clicked => { root.dismiss_success(); }
-                    }
-                }
-            }
-
-            Rectangle {
-                horizontal-stretch: 1;
-                min-width: 0px;
-            }
-        }
+    if item.backdrop.width == 0 && item.poster.width > 0 : Image {
+        x: parent.width * 0.56;
+        width: parent.width * 0.44;
+        height: parent.height;
+        source: root.item.poster;
+        image-fit: cover;
+        opacity: 0.28;
     }
 
     Rectangle {
         width: parent.width;
-        height: 1px;
-        background: Theme.border_hi;
+        height: parent.height;
+        background: @radial-gradient(circle, #8b1f1f92 0%, #0b0b1073 50%, Theme.bg 82%);
+    }
+
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: @linear-gradient(90deg, #0b0b10fa 0%, #0b0b10d4 35%, #0b0b1048 72%, #0b0b1088 100%);
+    }
+
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: @linear-gradient(180deg, #00000000 0%, #00000000 64%, Theme.bg 100%);
+    }
+
+    Text {
+        x: parent.width - self.width - 64px;
+        y: (parent.height - self.height) / 2 - 12px;
+        text: root.item.initials == "" ? "M" : root.item.initials;
+        color: #ffffff12;
+        font-size: compact ? 180px : 250px;
+        font-weight: 800;
+        font-family: Theme.ui_font;
+    }
+
+    VerticalLayout {
+        width: parent.width;
+        height: parent.height;
+        padding-left: compact ? 28px : 48px;
+        padding-right: compact ? 28px : 48px;
+        alignment: center;
+
+        VerticalLayout {
+            width: compact ? parent.width - 56px : min(620px, parent.width - 96px);
+            spacing: compact ? 10px : 13px;
+            alignment: start;
+
+        HorizontalLayout {
+            height: 18px;
+            spacing: 8px;
+            Icon { name: "star"; icon_size: 14px; tint: Theme.accent_hi; y: 2px; }
+            Text {
+                text: "FEATURED";
+                color: Theme.accent_hi;
+                font-size: 12px;
+                font-weight: 700;
+                letter-spacing: 2px;
+                font-family: Theme.ui_font;
+            }
+        }
+
+        Text {
+            text: root.item.title == "" ? "Media Library" : root.item.title;
+            color: Theme.text;
+            font-size: compact ? 32px : 50px;
+            font-weight: 800;
+            wrap: word-wrap;
+            font-family: Theme.ui_font;
+        }
+
+        HorizontalLayout {
+            spacing: 12px;
+            alignment: start;
+
+            if root.item.rating != "" : HorizontalLayout {
+                spacing: 5px;
+                Icon { name: "star"; icon_size: 14px; tint: Theme.accent_hi; y: 2px; }
+                Text { text: root.item.rating; color: Theme.text; font-size: 14px; font-weight: 700; font-family: Theme.mono_font; }
+            }
+
+            if root.item.years != "" : Text { text: root.item.years; color: Theme.text_dim; font-size: 14px; font-family: Theme.ui_font; }
+            if root.item.stats_line != "" : Text { text: "·  " + root.item.stats_line; color: Theme.text_dim; font-size: 14px; font-family: Theme.ui_font; }
+        }
+
+        if root.item.overview != "" : Text {
+            width: min(620px, parent.width);
+            text: root.item.overview;
+            color: #d6d4e0;
+            font-size: compact ? 13px : 15px;
+            wrap: word-wrap;
+            font-family: Theme.ui_font;
+        }
+
+        if root.badges.length > 0 : HorizontalLayout {
+            spacing: 8px;
+            width: parent.width;
+            for badge in root.badges: HeroBadge { label: badge.text; }
+        }
+
+        HorizontalLayout {
+            spacing: 12px;
+
+            Rectangle {
+                width: play-t.preferred-width + 56px;
+                height: 46px;
+                border-radius: 12px;
+                background: Theme.accent;
+
+                Icon { x: 18px; y: 14px; name: "play"; icon_size: 17px; tint: Theme.text; }
+                play-t := Text {
+                    x: 44px;
+                    y: (parent.height - self.height) / 2;
+                    text: root.item.resume_label == "" ? "Play" : root.item.resume_label;
+                    color: Theme.text;
+                    font-size: 15px;
+                    font-weight: 700;
+                    font-family: Theme.ui_font;
+                }
+                TouchArea { clicked => { root.open(); } }
+            }
+
+            Rectangle {
+                width: 46px;
+                height: 46px;
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: Theme.border_hi;
+                background: #ffffff12;
+                Text {
+                    text: "i";
+                    color: Theme.text;
+                    font-size: 15px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                    font-family: Theme.ui_font;
+                }
+                TouchArea { clicked => { root.open(); } }
+            }
+        }
+        }
+    }
+}
+
+component ResumeCard inherits Rectangle {
+    in property <MediaResumeItem> data;
+
+    callback open();
+
+    width: 332px;
+    height: 116px;
+    border-radius: 15px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: Theme.surface;
+
+    PosterArt {
+        x: 11px;
+        y: 11px;
+        width: 64px;
+        height: 92px;
+        initials: root.data.initials;
+        art: root.data.poster;
+        glyph-size: 28px;
+    }
+
+    HorizontalLayout {
+        x: 88px;
+        y: 12px;
+        width: parent.width - 100px;
+        height: 16px;
+        spacing: 7px;
+        alignment: start;
+
+        Text { text: root.data.kind; color: Theme.accent_hi; font-size: 10.5px; font-weight: 700; letter-spacing: 1px; font-family: Theme.ui_font; }
+        Text { text: root.data.left_label; color: Theme.text_dim; font-size: 11.5px; overflow: elide; font-family: Theme.ui_font; }
+    }
+
+    Text {
+        x: 88px;
+        y: 32px;
+        width: parent.width - 100px;
+        text: root.data.title;
+        color: Theme.text;
+        font-size: 14px;
+        font-weight: 700;
+        overflow: elide;
+        font-family: Theme.ui_font;
+    }
+
+    Text {
+        x: 88px;
+        y: 52px;
+        width: parent.width - 100px;
+        text: root.data.detail;
+        color: Theme.text_dim;
+        font-size: 12px;
+        overflow: elide;
+        font-family: Theme.ui_font;
+    }
+
+    Rectangle {
+        x: 88px;
+        y: parent.height - 16px;
+        width: parent.width - 100px;
+        height: 4px;
+        border-radius: 2px;
+        background: #ffffff1e;
+        clip: true;
+
+        Rectangle {
+            x: 0px;
+            width: parent.width * root.data.progress;
+            height: parent.height;
+            background: Theme.accent;
+        }
+    }
+
+    touch := TouchArea { clicked => { root.open(); } }
+}
+
+component SectionTitle inherits Rectangle {
+    in property <string> title;
+    in property <int> count;
+    in property <string> noun;
+
+    height: 28px;
+    background: transparent;
+
+    Text {
+        x: 0px;
+        y: (parent.height - self.height) / 2;
+        text: root.title;
+        color: Theme.text;
+        font-size: 21px;
+        font-weight: 700;
+        font-family: Theme.ui_font;
+    }
+
+    Text {
+        x: title-t.preferred-width + 12px;
+        y: (parent.height - self.height) / 2 + 2px;
+        text: root.count + " " + root.noun;
+        color: Theme.text_dim;
+        font-size: 13px;
+        font-family: Theme.ui_font;
+    }
+
+    title-t := Text { text: root.title; opacity: 0; font-size: 21px; font-weight: 700; font-family: Theme.ui_font; }
+
+    HorizontalLayout {
+        x: parent.width - self.width;
+        width: see.preferred-width + 18px;
+        height: parent.height;
+        spacing: 5px;
+        see := Text { text: "See all"; color: Theme.text_dim; font-size: 13px; vertical-alignment: center; font-family: Theme.ui_font; }
+        Icon { name: "chevron-right"; icon_size: 13px; tint: Theme.text_dim; y: 8px; }
     }
 }
 
 export component MediaPage inherits Rectangle {
     background: Theme.bg;
 
-    private property <bool> compact: root.width < 760px;
-    private property <length> gutter: compact ? 20px : 36px;
-    private property <length> inner-max: root.width - gutter * 2;
-    /// Large viewports: keep the hub in the center 60% so posters don't dominate ultra-wide layouts.
-    private property <bool> wide-column: root.width >= 1280px;
-    private property <length> content-w: wide-column ? (root.width * 0.6) : inner-max;
-    /// Extra columns only when `wide-column` is active so medium widths keep the previous 6-col cap.
-    private property <int> hub-cols: root.width < 560px ? 3 : root.width < 820px ? 4 : root.width < 1100px ? 5
-        : wide-column ? (content-w >= 1200px ? 8 : content-w >= 900px ? 7 : 6) : 6;
-    private property <length> hub-gap: 18px;
-    private property <length> hub-cell-w: (content-w - hub-gap * (hub-cols - 1)) / hub-cols;
+    private property <bool> compact: root.width < 900px;
+    private property <length> gutter: compact ? 20px : 32px;
+    private property <length> content-w: root.width - root.gutter * 2;
+    private property <length> shelf-card-w: compact ? 154px : 194px;
+    private property <bool> has-banner-content: root.has_unmatched || root.show_error_flash || root.show_success_flash;
+    private property <bool> show-movies-section: (root.filter_index == 0 || root.filter_index == 1 || root.filter_index == 3) && root.movies.length > 0;
+    private property <bool> show-tv-section: (root.filter_index == 0 || root.filter_index == 2 || root.filter_index == 3) && root.shows.length > 0;
 
     in property <bool> has_unmatched;
     in property <string> unmatched_title;
@@ -477,35 +815,64 @@ export component MediaPage inherits Rectangle {
     in property <bool> show_success_flash;
     in property <string> success_flash_text;
 
-
     in property <[MediaItem]> movies;
     in property <[MediaItem]> shows;
+    in property <MediaHeroItem> hero;
+    in property <[MediaHeroBadge]> hero_badges;
+    in property <[MediaResumeItem]> resume_items;
+    in-out property <string> query;
+    in-out property <int> filter_index: 0;
+    in-out property <int> sort_index: 0;
 
     callback scrape_unmatched();
     callback dismiss_error();
     callback dismiss_success();
     callback media_item_clicked(string);
     callback media_watch_toggle(string);
-
-    private property <bool> has-banner-content: root.has_unmatched || root.show_error_flash || root.show_success_flash;
+    callback media_filter_changed();
+    callback media_sort_changed();
 
     scroll := ScrollView {
         width: parent.width;
         height: parent.height;
         viewport-width: self.visible-width;
-        viewport-height: max(self.visible-height, stack.preferred-height + 48px);
+        viewport-height: max(self.visible-height, stack.preferred-height);
 
         stack := VerticalLayout {
             width: root.width;
             spacing: 0px;
             alignment: start;
 
-            if root.has-banner-content : MetadataStrip {
-                gutter: root.gutter;
-                content-w: root.content-w;
-                has_unmatched: root.has_unmatched;
-                unmatched_title: root.unmatched_title;
-                unmatched_detail: root.unmatched_detail;
+            HeroSpotlight {
+                width: root.width;
+                item: root.hero;
+                badges: root.hero_badges;
+                compact: root.compact;
+                open => { root.media_item_clicked(root.hero.file_id); }
+            }
+
+            VerticalLayout {
+                width: parent.width;
+                padding-left: root.gutter;
+                padding-right: root.gutter;
+                padding-top: 26px;
+                padding-bottom: 52px;
+                spacing: 20px;
+
+                MediaToolbar {
+                    width: root.content-w;
+                    query <=> root.query;
+                    filter_index <=> root.filter_index;
+                    sort_index <=> root.sort_index;
+                    changed => { root.media_filter_changed(); }
+                    sort_clicked => { root.media_sort_changed(); }
+                }
+
+                if root.has-banner-content : MetadataReminder {
+                    width: root.content-w;
+                    has_unmatched: root.has_unmatched;
+                    unmatched_title: root.unmatched_title;
+                    unmatched_detail: root.unmatched_detail;
                 show_error_flash: root.show_error_flash;
                 error_flash_text: root.error_flash_text;
                 show_success_flash: root.show_success_flash;
@@ -515,111 +882,87 @@ export component MediaPage inherits Rectangle {
                 dismiss_success => { root.dismiss_success(); }
             }
 
-            HorizontalLayout {
-                width: parent.width;
-                alignment: center;
+                if root.resume_items.length > 0 : VerticalLayout {
+                    width: root.content-w;
+                    spacing: 16px;
 
-                Rectangle {
-                    horizontal-stretch: 1;
-                    min-width: 0px;
-                }
-
-                VerticalLayout {
-                    width: content-w;
-                    spacing: 0px;
-
-                    VerticalLayout {
-                        padding-top: 28px;
-                        padding-bottom: 8px;
-                        spacing: 16px;
-                        width: parent.width;
-
-                        HorizontalLayout {
-                            alignment: space-between;
-                            spacing: 20px;
-
-                            VerticalLayout {
-                                horizontal-stretch: 1;
-                                spacing: 4px;
-
-                                Text {
-                                    text: "Movies";
-                                    color: Theme.text;
-                                    font-size: 20px;
-                                    font-weight: 600;
-                                    letter-spacing: -0.4px;
-                                    font-family: Theme.ui_font;
-                                }
-                            }
-                        }
-
-                        GridLayout {
-                            spacing: hub-gap;
-                            width: parent.width;
-
-                            for item[idx] in root.movies: HubMediaCard {
-                                row: idx / root.hub-cols;
-                                col: Math.mod(idx, root.hub-cols);
-                                cell-width: root.hub-cell-w;
-                                data: item;
-                                open => {
-                                    root.media_item_clicked(item.file_id);
-                                }
-                                watch_toggle => {
-                                    root.media_watch_toggle(item.file_id);
-                                }
-                            }
-                        }
+                    HorizontalLayout {
+                        height: 24px;
+                        spacing: 9px;
+                        Icon { name: "clock"; icon_size: 18px; tint: Theme.accent_hi; y: 2px; }
+                        Text { text: "Continue Watching"; color: Theme.text; font-size: 20px; font-weight: 700; font-family: Theme.ui_font; }
                     }
 
-                    VerticalLayout {
-                        padding-top: 28px;
-                        padding-bottom: 40px;
-                        spacing: 16px;
-                        width: parent.width;
+                    Rectangle {
+                        width: root.content-w;
+                        height: 116px;
+                        clip: true;
 
                         HorizontalLayout {
-                            alignment: space-between;
-                            spacing: 20px;
+                            width: root.content-w;
+                            height: parent.height;
+                            spacing: 18px;
 
-                            VerticalLayout {
-                                horizontal-stretch: 1;
-                                spacing: 4px;
-
-                                Text {
-                                    text: "TV Shows";
-                                    color: Theme.text;
-                                    font-size: 20px;
-                                    font-weight: 600;
-                                    letter-spacing: -0.4px;
-                                    font-family: Theme.ui_font;
-                                }
-                            }
-                        }
-
-                        GridLayout {
-                            spacing: hub-gap;
-                            width: parent.width;
-
-                            for item[idx] in root.shows: HubMediaCard {
-                                row: idx / root.hub-cols;
-                                col: Math.mod(idx, root.hub-cols);
-                                cell-width: root.hub-cell-w;
+                            for item in root.resume_items: ResumeCard {
                                 data: item;
-                                open => {
-                                    root.media_item_clicked(item.file_id);
-                                }
-                                watch_toggle => {
-                                    root.media_watch_toggle(item.file_id);
-                                }
+                                open => { root.media_item_clicked(item.file_id); }
                             }
                         }
                     }
                 }
 
-                Rectangle {
-                    horizontal-stretch: 1;
-                    min-width: 0px;
+                if root.show-movies-section : VerticalLayout {
+                    width: root.content-w;
+                    spacing: 16px;
+                    padding-top: 12px;
+
+                    SectionTitle { width: root.content-w; title: "Movies"; count: root.movies.length; noun: "titles"; }
+
+                    Rectangle {
+                        width: root.content-w;
+                        height: root.shelf-card-w * 3 / 2 + 62px;
+                        clip: true;
+
+                        HorizontalLayout {
+                            width: root.content-w;
+                            height: parent.height;
+                            spacing: 18px;
+
+                            for item in root.movies: PosterCard {
+                                cell-width: root.shelf-card-w;
+                                data: item;
+                                open => { root.media_item_clicked(item.file_id); }
+                                watch_toggle => { root.media_watch_toggle(item.file_id); }
+                            }
+                        }
+                    }
+                }
+
+                if root.show-tv-section : VerticalLayout {
+                    width: root.content-w;
+                    spacing: 16px;
+                    padding-top: 14px;
+
+                    SectionTitle { width: root.content-w; title: "TV Shows"; count: root.shows.length; noun: "series"; }
+
+                    Rectangle {
+                        width: root.content-w;
+                        height: root.shelf-card-w * 3 / 2 + 62px;
+                        clip: true;
+
+                        HorizontalLayout {
+                            width: root.content-w;
+                            height: parent.height;
+                            spacing: 18px;
+
+                            for item in root.shows: PosterCard {
+                                cell-width: root.shelf-card-w;
+                                data: item;
+                                open => { root.media_item_clicked(item.file_id); }
+                                watch_toggle => { root.media_watch_toggle(item.file_id); }
+                            }
+                        }
+                    }
                 }
             }
         }

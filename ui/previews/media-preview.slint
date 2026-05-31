@@ -1,0 +1,305 @@
+import { Theme } from "../theme.slint";
+import {
+    MediaPage,
+    MediaItem,
+    MediaHeroItem,
+    MediaHeroBadge,
+    MediaResumeItem,
+} from "../pages/media.slint";
+
+export component MediaPreview inherits Window {
+    title: "Media Page Preview";
+    preferred-width: 1100px;
+    preferred-height: 760px;
+    background: Theme.bg;
+    default-font-family: Theme.ui_font;
+    default-font-size: 13px;
+
+    private property <image> no_art;
+
+    // 0 = none, 1 = unmatched banner, 2 = error flash, 3 = success flash
+    in-out property <int> preview_banner: 1;
+    // 0 = full library, 1 = hide resume row
+    in-out property <int> preview_variant: 0;
+
+    private property <MediaHeroItem> sample_hero: {
+        title: "Dune: Part Two",
+        rating: "8.7",
+        years: "2024",
+        stats_line: "2h 46m · 4K",
+        overview: "Paul Atreides unites with the Fremen while on a warpath of revenge against the conspirators who destroyed his family. Facing a choice between the love of his life and the fate of the universe, he must prevent a terrible future only he can foresee.",
+        resume_label: "Resume · 42% watched",
+        poster: @image-url("../assets/appicon-titlebar.png"),
+        backdrop: @image-url("../assets/appicon-titlebar.png"),
+        progress: 0.42,
+        is_tv: false,
+        initials: "DT",
+        file_id: "movie:preview-hero",
+    };
+
+    private property <[MediaHeroBadge]> sample_badges: [
+        { text: "Science Fiction" },
+        { text: "Adventure" },
+        { text: "Drama" },
+    ];
+
+    private property <[MediaItem]> sample_movies: [
+        {
+            title: "The Matrix",
+            meta: "1999 · 2h 16m",
+            rating: "8.7",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "1999",
+            stats_label: "2h 16m",
+            genre_line: "Action · Sci-Fi",
+            resolution: "1080p",
+            progress: 0.0,
+            is_tv: false,
+            initials: "TM",
+            added_at: "",
+            file_id: "movie:matrix",
+        },
+        {
+            title: "Inception",
+            meta: "2010 · 2h 28m",
+            rating: "8.8",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "2010",
+            stats_label: "2h 28m",
+            genre_line: "Sci-Fi · Thriller",
+            resolution: "4K",
+            progress: 0.35,
+            is_tv: false,
+            initials: "IN",
+            added_at: "",
+            file_id: "movie:inception",
+        },
+        {
+            title: "Interstellar",
+            meta: "2014 · 2h 49m",
+            rating: "8.6",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "2014",
+            stats_label: "2h 49m",
+            genre_line: "Sci-Fi · Drama",
+            resolution: "4K",
+            progress: 0.95,
+            is_tv: false,
+            initials: "IS",
+            added_at: "",
+            file_id: "movie:interstellar",
+        },
+        {
+            title: "Blade Runner 2049",
+            meta: "2017 · 2h 44m",
+            rating: "8.0",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "2017",
+            stats_label: "2h 44m",
+            genre_line: "Sci-Fi · Mystery",
+            resolution: "",
+            progress: 0.0,
+            is_tv: false,
+            initials: "BR",
+            added_at: "",
+            file_id: "movie:blade-runner",
+        },
+        {
+            title: "Arrival",
+            meta: "2016 · 1h 56m",
+            rating: "7.9",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "2016",
+            stats_label: "1h 56m",
+            genre_line: "Sci-Fi · Drama",
+            resolution: "1080p",
+            progress: 0.62,
+            is_tv: false,
+            initials: "AR",
+            added_at: "",
+            file_id: "movie:arrival",
+        },
+        {
+            title: "Everything Everywhere All at Once",
+            meta: "2022 · 2h 19m",
+            rating: "7.7",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "2022",
+            stats_label: "2h 19m",
+            genre_line: "Action · Comedy",
+            resolution: "",
+            progress: 0.0,
+            is_tv: false,
+            initials: "EE",
+            added_at: "",
+            file_id: "movie:eeaao",
+        },
+        {
+            title: "Parasite",
+            meta: "2019 · 2h 12m",
+            rating: "8.5",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "2019",
+            stats_label: "2h 12m",
+            genre_line: "Thriller · Drama",
+            resolution: "4K",
+            progress: 1.0,
+            is_tv: false,
+            initials: "PA",
+            added_at: "",
+            file_id: "movie:parasite",
+        },
+    ];
+
+    private property <[MediaItem]> sample_shows: [
+        {
+            title: "Breaking Bad",
+            meta: "5S · 62E · 2008",
+            rating: "9.5",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "2008",
+            stats_label: "5S · 62E",
+            genre_line: "Crime · Drama",
+            resolution: "",
+            progress: 0.88,
+            is_tv: true,
+            initials: "BB",
+            added_at: "",
+            file_id: "tv:breaking-bad",
+        },
+        {
+            title: "Severance",
+            meta: "2S · 18E · 2022",
+            rating: "8.7",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "2022",
+            stats_label: "2S · 18E",
+            genre_line: "Sci-Fi · Thriller",
+            resolution: "4K",
+            progress: 0.2,
+            is_tv: true,
+            initials: "SV",
+            added_at: "",
+            file_id: "tv:severance",
+        },
+        {
+            title: "The Bear",
+            meta: "3S · 28E · 2022",
+            rating: "8.5",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "2022",
+            stats_label: "3S · 28E",
+            genre_line: "Comedy · Drama",
+            resolution: "",
+            progress: 0.0,
+            is_tv: true,
+            initials: "TB",
+            added_at: "",
+            file_id: "tv:the-bear",
+        },
+        {
+            title: "Succession",
+            meta: "4S · 39E · 2018",
+            rating: "8.8",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "2018",
+            stats_label: "4S · 39E",
+            genre_line: "Drama",
+            resolution: "1080p",
+            progress: 0.45,
+            is_tv: true,
+            initials: "SC",
+            added_at: "",
+            file_id: "tv:succession",
+        },
+        {
+            title: "Dark",
+            meta: "3S · 26E · 2017",
+            rating: "8.7",
+            poster: root.no_art,
+            backdrop: root.no_art,
+            overview: "",
+            year_label: "2017",
+            stats_label: "3S · 26E",
+            genre_line: "Sci-Fi · Mystery",
+            resolution: "",
+            progress: 0.0,
+            is_tv: true,
+            initials: "DK",
+            added_at: "",
+            file_id: "tv:dark",
+        },
+    ];
+
+    private property <[MediaResumeItem]> sample_resume: [
+        {
+            title: "Oppenheimer",
+            kind: "MOVIE",
+            detail: "2023 · 3h 0m",
+            left_label: "1h 12m left",
+            poster: root.no_art,
+            initials: "OP",
+            progress: 0.55,
+            file_id: "movie:oppenheimer",
+        },
+        {
+            title: "The Office",
+            kind: "TV",
+            detail: "S2 · E4 - The Fire",
+            left_label: "18m left",
+            poster: root.no_art,
+            initials: "OF",
+            progress: 0.28,
+            file_id: "tv:the-office",
+        },
+        {
+            title: "Past Lives",
+            kind: "MOVIE",
+            detail: "2023 · 1h 45m",
+            left_label: "32m left",
+            poster: root.no_art,
+            initials: "PL",
+            progress: 0.71,
+            file_id: "movie:past-lives",
+        },
+    ];
+
+    MediaPage {
+        width: 100%;
+        height: 100%;
+        movies: root.sample_movies;
+        shows: root.sample_shows;
+        hero: root.sample_hero;
+        hero_badges: root.sample_badges;
+        resume_items: root.preview_variant == 1 ? [] : root.sample_resume;
+        has_unmatched: root.preview_banner == 1;
+        unmatched_title: "12 titles need metadata";
+        unmatched_detail: "3 movies · 9 episodes";
+        show_error_flash: root.preview_banner == 2;
+        error_flash_text: "Scraper timed out after 30s.";
+        show_success_flash: root.preview_banner == 3;
+        success_flash_text: "Matches saved for 8 files.";
+    }
+}

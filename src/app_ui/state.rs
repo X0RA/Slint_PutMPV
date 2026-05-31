@@ -1,13 +1,14 @@
 //! Shared UI-thread and cross-thread state for the Slint bridge.
 
 use std::cell::RefCell;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
 use crate::app_ui::metadata_ui::MetadataUiState;
 use crate::putio::types::UnifiedDirectoryTree;
+use crate::{MediaItem, MediaResumeItem};
 
 #[derive(Default)]
 pub(crate) struct OauthFlow {
@@ -25,6 +26,11 @@ pub(crate) struct UiState {
     pub oauth_flow: Rc<RefCell<OauthFlow>>,
     pub metadata_state: Rc<RefCell<MetadataUiState>>,
     pub auto_metadata_attempted: Rc<RefCell<HashSet<String>>>,
+    pub media_all_movies: Rc<RefCell<Vec<MediaItem>>>,
+    pub media_all_shows: Rc<RefCell<Vec<MediaItem>>>,
+    pub media_all_resume: Rc<RefCell<Vec<MediaResumeItem>>>,
+    pub media_file_state: Rc<RefCell<BTreeMap<String, crate::storage::file_state::FileStateEntry>>>,
+    pub media_tv_episode_ids: Rc<RefCell<HashMap<String, Vec<String>>>>,
 }
 
 impl UiState {
@@ -40,6 +46,11 @@ impl UiState {
             oauth_flow: Rc::new(RefCell::new(OauthFlow::default())),
             metadata_state: Rc::new(RefCell::new(MetadataUiState::new())),
             auto_metadata_attempted: Rc::new(RefCell::new(HashSet::new())),
+            media_all_movies: Rc::new(RefCell::new(Vec::new())),
+            media_all_shows: Rc::new(RefCell::new(Vec::new())),
+            media_all_resume: Rc::new(RefCell::new(Vec::new())),
+            media_file_state: Rc::new(RefCell::new(BTreeMap::new())),
+            media_tv_episode_ids: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 }
