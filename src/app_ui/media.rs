@@ -40,10 +40,7 @@ pub(crate) struct MediaCacheRefs<'a> {
     pub(crate) tv_episode_ids: &'a Rc<RefCell<HashMap<String, Vec<String>>>>,
 }
 
-pub(crate) fn collect_tree_file_ids(
-    node: &DirectoryNode,
-    ids: &mut HashSet<String>,
-) {
+pub(crate) fn collect_tree_file_ids(node: &DirectoryNode, ids: &mut HashSet<String>) {
     for f in &node.files {
         ids.insert(f.id.to_string());
     }
@@ -249,11 +246,17 @@ fn movie_is_watched(file_id: &str, entries: &BTreeMap<String, FileStateEntry>) -
         .unwrap_or(false)
 }
 
-fn series_is_watched(episode_file_ids: &[String], entries: &BTreeMap<String, FileStateEntry>) -> bool {
+fn series_is_watched(
+    episode_file_ids: &[String],
+    entries: &BTreeMap<String, FileStateEntry>,
+) -> bool {
     !episode_file_ids.is_empty()
-        && episode_file_ids
-            .iter()
-            .all(|id| entries.get(id).map(FileStateEntry::is_completed).unwrap_or(false))
+        && episode_file_ids.iter().all(|id| {
+            entries
+                .get(id)
+                .map(FileStateEntry::is_completed)
+                .unwrap_or(false)
+        })
 }
 
 fn media_item_is_watched(
@@ -352,18 +355,14 @@ fn apply_media_filter(app: &AppWindow, models: &MediaModelRefs<'_>, cache: &Medi
         .movies
         .borrow()
         .iter()
-        .filter(|item| {
-            media_matches(item, &query, filter_index, &entries, &tv_episode_ids)
-        })
+        .filter(|item| media_matches(item, &query, filter_index, &entries, &tv_episode_ids))
         .cloned()
         .collect();
     let mut shows: Vec<MediaItem> = cache
         .shows
         .borrow()
         .iter()
-        .filter(|item| {
-            media_matches(item, &query, filter_index, &entries, &tv_episode_ids)
-        })
+        .filter(|item| media_matches(item, &query, filter_index, &entries, &tv_episode_ids))
         .cloned()
         .collect();
     let resume: Vec<MediaResumeItem> = cache
