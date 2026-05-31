@@ -8,7 +8,7 @@ import { CodePage } from "./pages/code.slint";
 import { FilesPage } from "./pages/files.slint";
 import { SettingsPage } from "./pages/settings.slint";
 import { TransfersPage } from "./pages/transfers.slint";
-import { MediaPage, MediaItem } from "./pages/media.slint";
+import { MediaPage, MediaItem, MediaHeroItem, MediaHeroBadge, MediaResumeItem } from "./pages/media.slint";
 import { TvShowPage } from "./pages/tvshow.slint";
 import { PlayerPage } from "./pages/player.slint";
 import { MagnetsPage } from "./pages/magnets.slint";
@@ -99,6 +99,12 @@ export component AppWindow inherits Window {
     in-out property <string> local_data_status;
     in-out property <[MediaItem]> media_movies;
     in-out property <[MediaItem]> media_shows;
+    in-out property <MediaHeroItem> media_hero;
+    in-out property <[MediaHeroBadge]> media_hero_badges;
+    in-out property <[MediaResumeItem]> media_resume_items;
+    in-out property <string> media_query: "";
+    in-out property <int> media_filter_index: 0;
+    in-out property <int> media_sort_index: 0;
     in-out property <bool> media_has_unmatched: false;
     in-out property <string> media_unmatched_title;
     in-out property <string> media_unmatched_detail;
@@ -223,6 +229,8 @@ export component AppWindow inherits Window {
     callback media_refresh();
     callback media_item_clicked(file_id: string);
     callback media_watch_toggle(file_id: string);
+    callback media_filter_changed();
+    callback media_sort_changed();
     callback media_scrape_unmatched();
     callback media_dismiss_error();
     callback media_dismiss_success();
@@ -404,6 +412,12 @@ export component AppWindow inherits Window {
         height: parent.height - Theme.title_bar_height;
         movies: root.media_movies;
         shows: root.media_shows;
+        hero: root.media_hero;
+        hero_badges: root.media_hero_badges;
+        resume_items: root.media_resume_items;
+        query <=> root.media_query;
+        filter_index <=> root.media_filter_index;
+        sort_index <=> root.media_sort_index;
         has_unmatched: root.media_has_unmatched;
         unmatched_title: root.media_unmatched_title;
         unmatched_detail: root.media_unmatched_detail;
@@ -416,6 +430,8 @@ export component AppWindow inherits Window {
         dismiss_success => { root.media_dismiss_success(); }
         media_item_clicked(file_id) => { root.media_item_clicked(file_id); }
         media_watch_toggle(file_id) => { root.media_watch_toggle(file_id); }
+        media_filter_changed => { root.media_filter_changed(); }
+        media_sort_changed => { root.media_sort_changed(); }
     }
 
     if (root.view == 5) : transfers := TransfersPage {

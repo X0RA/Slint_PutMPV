@@ -1,10 +1,11 @@
 //! Media library page: poster cache, movie/show grids, and Slint callbacks.
 
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
 use slint::{ComponentHandle, Model, VecModel};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::runtime::Runtime;
 use tracing::warn;
 
@@ -12,10 +13,10 @@ use crate::fileparser;
 use crate::metadata::tmdb::{MovieDetails, TVSeasonDetails, TVSeriesDetails};
 use crate::player::PlaybackQueueItem;
 use crate::putio::types::DirectoryNode;
-use crate::storage::file_state::FileStateStore;
+use crate::storage::file_state::{FileStateEntry, FileStateStore};
 use crate::storage::matched_store::MatchedStore;
 use crate::storage::tmdb_store::TMDBStore;
-use crate::{AppWindow, MediaItem};
+use crate::{AppWindow, MediaHeroBadge, MediaHeroItem, MediaItem, MediaResumeItem};
 
 use super::metadata_ui::{build_unmatched_candidates_from_tree, fetch_metadata_candidates};
 use super::models::UiModels;
@@ -24,9 +25,24 @@ use super::toast::{self, ToastKind};
 use super::util::{format_runtime, make_initials};
 use super::{Services, VIEW_FILES, VIEW_TV_SHOW};
 
+pub(crate) struct MediaModelRefs<'a> {
+    pub(crate) movies: &'a Rc<VecModel<MediaItem>>,
+    pub(crate) shows: &'a Rc<VecModel<MediaItem>>,
+    pub(crate) resume: &'a Rc<VecModel<MediaResumeItem>>,
+    pub(crate) hero_badges: &'a Rc<VecModel<MediaHeroBadge>>,
+}
+
+pub(crate) struct MediaCacheRefs<'a> {
+    pub(crate) movies: &'a Rc<RefCell<Vec<MediaItem>>>,
+    pub(crate) shows: &'a Rc<RefCell<Vec<MediaItem>>>,
+    pub(crate) resume: &'a Rc<RefCell<Vec<MediaResumeItem>>>,
+    pub(crate) file_state: &'a Rc<RefCell<BTreeMap<String, FileStateEntry>>>,
+    pub(crate) tv_episode_ids: &'a Rc<RefCell<HashMap<String, Vec<String>>>>,
+}
+
 pub(crate) fn collect_tree_file_ids(
     node: &DirectoryNode,
-    ids: &mut std::collections::HashSet<String>,
+    ids: &mut HashSet<String>,
 ) {
     for f in &node.files {
         ids.insert(f.id.to_string());
@@ -137,10 +153,258 @@ pub(crate) async fn download_backdrop_hd(poster_path: String) {
     }
 }
 
+fn remaining_label(entry: &crate::storage::file_state::FileStateEntry) -> String {
+    if entry.duration_secs <= 0.0 || entry.position_secs >= entry.duration_secs {
+        return format!(
+            "{}% watched",
+            (entry.progress_ratio() * 100.0).round() as i32
+        );
+    }
+    let remaining = (entry.duration_secs - entry.position_secs).max(0.0).round() as i64;
+    let minutes = ((remaining + 59) / 60).max(1);
+    if minutes >= 60 {
+        let h = minutes / 60;
+        let m = minutes % 60;
+        if m == 0 {
+            format!("{h}h left")
+        } else {
+            format!("{h}h {m}m left")
+        }
+    } else {
+        format!("{minutes} min left")
+    }
+}
+
+fn genre_line(names: &[crate::metadata::tmdb::Genre]) -> String {
+    names
+        .iter()
+        .filter_map(|g| {
+            let name = g.name.trim();
+            (!name.is_empty()).then_some(name)
+        })
+        .take(4)
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+fn hero_badges_from_item(item: &MediaItem) -> Vec<MediaHeroBadge> {
+    item.genre_line
+        .split(" · ")
+        .filter(|s| !s.trim().is_empty())
+        .take(4)
+        .map(|s| MediaHeroBadge { text: s.into() })
+        .collect()
+}
+
+fn hero_from_item(item: &MediaItem) -> MediaHeroItem {
+    let resume_label = if item.progress > 0.0 && item.progress < 0.9 {
+        format!(
+            "Resume · {}% watched",
+            (item.progress * 100.0).round() as i32
+        )
+    } else {
+        "Play".to_string()
+    };
+    MediaHeroItem {
+        title: item.title.clone(),
+        rating: item.rating.clone(),
+        years: item.year_label.clone(),
+        stats_line: item.stats_label.clone(),
+        overview: item.overview.clone(),
+        resume_label: resume_label.as_str().into(),
+        poster: item.poster.clone(),
+        backdrop: item.backdrop.clone(),
+        progress: item.progress,
+        is_tv: item.is_tv,
+        initials: item.initials.clone(),
+        file_id: item.file_id.clone(),
+    }
+}
+
+fn collect_file_created_at(node: &DirectoryNode, map: &mut HashMap<String, String>) {
+    for file in &node.files {
+        map.insert(
+            file.id.to_string(),
+            file.created_at.clone().unwrap_or_default(),
+        );
+    }
+    for child in &node.children {
+        collect_file_created_at(child, map);
+    }
+}
+
+fn max_created_at(file_ids: &[String], created_at_map: &HashMap<String, String>) -> String {
+    file_ids
+        .iter()
+        .filter_map(|id| created_at_map.get(id))
+        .max()
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn movie_is_watched(file_id: &str, entries: &BTreeMap<String, FileStateEntry>) -> bool {
+    entries
+        .get(file_id)
+        .map(FileStateEntry::is_completed)
+        .unwrap_or(false)
+}
+
+fn series_is_watched(episode_file_ids: &[String], entries: &BTreeMap<String, FileStateEntry>) -> bool {
+    !episode_file_ids.is_empty()
+        && episode_file_ids
+            .iter()
+            .all(|id| entries.get(id).map(FileStateEntry::is_completed).unwrap_or(false))
+}
+
+fn media_item_is_watched(
+    item: &MediaItem,
+    entries: &BTreeMap<String, FileStateEntry>,
+    tv_episode_ids: &HashMap<String, Vec<String>>,
+) -> bool {
+    if item.is_tv {
+        tv_episode_ids
+            .get(item.file_id.as_str())
+            .map(|ids| series_is_watched(ids, entries))
+            .unwrap_or(false)
+    } else {
+        movie_is_watched(item.file_id.as_str(), entries)
+    }
+}
+
+fn sort_media_items(items: &mut [MediaItem], sort_index: i32) {
+    match sort_index {
+        1 => items.sort_by(|a, b| b.added_at.cmp(&a.added_at)),
+        _ => {
+            #[allow(clippy::unnecessary_sort_by)]
+            items.sort_by(|a, b| a.title.cmp(&b.title));
+        }
+    }
+}
+
+fn media_matches(
+    item: &MediaItem,
+    query: &str,
+    filter_index: i32,
+    entries: &BTreeMap<String, FileStateEntry>,
+    tv_episode_ids: &HashMap<String, Vec<String>>,
+) -> bool {
+    if filter_index == 1 && item.is_tv {
+        return false;
+    }
+    if filter_index == 2 && !item.is_tv {
+        return false;
+    }
+    if filter_index == 3 && media_item_is_watched(item, entries, tv_episode_ids) {
+        return false;
+    }
+    if query.is_empty() {
+        return true;
+    }
+    let haystack = format!(
+        "{} {} {} {}",
+        item.title, item.meta, item.overview, item.genre_line
+    )
+    .to_lowercase();
+    haystack.contains(query)
+}
+
+fn resume_matches(
+    item: &MediaResumeItem,
+    query: &str,
+    filter_index: i32,
+    entries: &BTreeMap<String, FileStateEntry>,
+    tv_episode_ids: &HashMap<String, Vec<String>>,
+) -> bool {
+    if filter_index == 1 && item.kind != "MOVIE" {
+        return false;
+    }
+    if filter_index == 2 && item.kind != "TV" {
+        return false;
+    }
+    if filter_index == 3 {
+        let watched = if item.kind == "TV" {
+            tv_episode_ids
+                .get(item.file_id.as_str())
+                .map(|ids| series_is_watched(ids, entries))
+                .unwrap_or(false)
+        } else {
+            movie_is_watched(item.file_id.as_str(), entries)
+        };
+        if watched {
+            return false;
+        }
+    }
+    if query.is_empty() {
+        return true;
+    }
+    let haystack = format!("{} {}", item.title, item.detail).to_lowercase();
+    haystack.contains(query)
+}
+
+fn apply_media_filter(app: &AppWindow, models: &MediaModelRefs<'_>, cache: &MediaCacheRefs<'_>) {
+    let query = app.get_media_query().trim().to_lowercase();
+    let filter_index = app.get_media_filter_index();
+    let sort_index = app.get_media_sort_index();
+    let entries = cache.file_state.borrow();
+    let tv_episode_ids = cache.tv_episode_ids.borrow();
+
+    let mut movies: Vec<MediaItem> = cache
+        .movies
+        .borrow()
+        .iter()
+        .filter(|item| {
+            media_matches(item, &query, filter_index, &entries, &tv_episode_ids)
+        })
+        .cloned()
+        .collect();
+    let mut shows: Vec<MediaItem> = cache
+        .shows
+        .borrow()
+        .iter()
+        .filter(|item| {
+            media_matches(item, &query, filter_index, &entries, &tv_episode_ids)
+        })
+        .cloned()
+        .collect();
+    let resume: Vec<MediaResumeItem> = cache
+        .resume
+        .borrow()
+        .iter()
+        .filter(|item| resume_matches(item, &query, filter_index, &entries, &tv_episode_ids))
+        .cloned()
+        .collect();
+
+    sort_media_items(&mut movies, sort_index);
+    sort_media_items(&mut shows, sort_index);
+
+    let hero_source = resume
+        .first()
+        .and_then(|r| {
+            movies
+                .iter()
+                .chain(shows.iter())
+                .find(|item| item.file_id == r.file_id)
+        })
+        .or_else(|| shows.first())
+        .or_else(|| movies.first());
+
+    if let Some(item) = hero_source {
+        app.set_media_hero(hero_from_item(item));
+        models.hero_badges.set_vec(hero_badges_from_item(item));
+    } else {
+        app.set_media_hero(MediaHeroItem::default());
+        models.hero_badges.set_vec(Vec::new());
+    }
+
+    models.movies.set_vec(movies);
+    models.shows.set_vec(shows);
+    models.resume.set_vec(resume);
+}
+
 pub(crate) fn refresh_media_ui(
     app: &AppWindow,
-    media_movies_model: &Rc<VecModel<MediaItem>>,
-    media_shows_model: &Rc<VecModel<MediaItem>>,
+    models: &MediaModelRefs<'_>,
+    cache: &MediaCacheRefs<'_>,
     tree: &Arc<RwLock<crate::putio::types::UnifiedDirectoryTree>>,
     matched_store: &Arc<MatchedStore>,
     tmdb_store: &Arc<TMDBStore>,
@@ -150,10 +414,12 @@ pub(crate) fn refresh_media_ui(
     let tmdb_cache = tmdb_store.get_cache_snapshot().unwrap_or_default();
     let file_state_entries = file_state.read().unwrap().entries().clone();
 
-    let mut existing_file_ids = std::collections::HashSet::<String>::new();
+    let mut existing_file_ids = HashSet::<String>::new();
+    let mut created_at_map = HashMap::<String, String>::new();
     {
         let tree_guard = tree.read().unwrap();
         collect_tree_file_ids(&tree_guard.root, &mut existing_file_ids);
+        collect_file_created_at(&tree_guard.root, &mut created_at_map);
     }
 
     let mut movie_details_map: HashMap<i32, MovieDetails> = HashMap::new();
@@ -173,6 +439,7 @@ pub(crate) fn refresh_media_ui(
     }
 
     let mut episode_to_series: HashMap<i32, i32> = HashMap::new();
+    let mut episode_display: HashMap<i32, (i32, i32, String)> = HashMap::new();
     let mut series_details_map: HashMap<i32, TVSeriesDetails> = HashMap::new();
     for (id_str, sub) in &tmdb_cache.tv {
         if let Ok(series_id) = id_str.parse::<i32>() {
@@ -194,6 +461,10 @@ pub(crate) fn refresh_media_ui(
                         for ep in &season.episodes {
                             if ep.id > 0 {
                                 episode_to_series.insert(ep.id, series_id);
+                                episode_display.insert(
+                                    ep.id,
+                                    (season.season_number, ep.episode_number, ep.name.clone()),
+                                );
                             }
                         }
                     }
@@ -225,8 +496,8 @@ pub(crate) fn refresh_media_ui(
             let rt = format_runtime(d.runtime);
             let meta = match (year.is_empty(), rt.is_empty()) {
                 (true, true) => String::new(),
-                (true, false) => rt,
-                (false, true) => year,
+                (true, false) => rt.clone(),
+                (false, true) => year.clone(),
                 (false, false) => format!("{year} · {rt}"),
             };
             let rating = if d.vote_average > 0.0 {
@@ -246,16 +517,32 @@ pub(crate) fn refresh_media_ui(
                 missing_posters.push(d.poster_path.clone());
                 Default::default()
             };
+            let backdrop = if d.backdrop_path.is_empty() {
+                Default::default()
+            } else if let Some(img) = load_cached_backdrop(&d.backdrop_path) {
+                img
+            } else {
+                missing_posters.push(d.backdrop_path.clone());
+                Default::default()
+            };
+            let genres = genre_line(&d.genres);
+            let added_at = created_at_map.get(&file_id).cloned().unwrap_or_default();
             MediaItem {
                 title: d.title.as_str().into(),
                 meta: meta.as_str().into(),
                 rating: rating.as_str().into(),
                 poster,
+                backdrop,
+                overview: d.overview.as_str().into(),
+                year_label: year.as_str().into(),
+                stats_label: rt.as_str().into(),
+                genre_line: genres.as_str().into(),
                 resolution: "".into(),
                 progress,
                 is_tv: false,
                 initials: make_initials(&d.title),
                 file_id: file_id.as_str().into(),
+                added_at: added_at.as_str().into(),
             }
         })
         .collect();
@@ -269,7 +556,7 @@ pub(crate) fn refresh_media_ui(
             TVSeriesDetails,
             std::collections::BTreeSet<i32>,
             usize,
-            String,
+            Vec<String>,
         ),
     > = std::collections::BTreeMap::new();
     for (file_id, &episode_id) in &matched.tv {
@@ -287,7 +574,7 @@ pub(crate) fn refresh_media_ui(
                 details.clone(),
                 std::collections::BTreeSet::new(),
                 0,
-                file_id.clone(),
+                Vec::new(),
             )
         });
         let season_number = tmdb_cache.tv.get(&series_id.to_string()).and_then(|sub| {
@@ -308,11 +595,14 @@ pub(crate) fn refresh_media_ui(
             entry.1.insert(sn);
         }
         entry.2 += 1;
+        entry.3.push(file_id.clone());
     }
 
+    let mut tv_episode_ids = HashMap::<String, Vec<String>>::new();
     let mut shows: Vec<MediaItem> = show_groups
         .into_iter()
-        .map(|(series_id, (d, seasons, ep_count, _file_id))| {
+        .map(|(series_id, (d, seasons, ep_count, file_ids))| {
+            tv_episode_ids.insert(format!("tv:{series_id}"), file_ids.clone());
             let year = d.first_air_date.get(..4).unwrap_or("").to_string();
             let season_count = if seasons.is_empty() {
                 d.number_of_seasons.max(1)
@@ -340,22 +630,131 @@ pub(crate) fn refresh_media_ui(
                 missing_posters.push(d.poster_path.clone());
                 Default::default()
             };
+            let backdrop = if d.backdrop_path.is_empty() {
+                Default::default()
+            } else if let Some(img) = load_cached_backdrop(&d.backdrop_path) {
+                img
+            } else {
+                missing_posters.push(d.backdrop_path.clone());
+                Default::default()
+            };
+            let progress_total: f32 = file_ids
+                .iter()
+                .map(|id| {
+                    file_state_entries
+                        .get(id)
+                        .map(|entry| entry.progress_ratio())
+                        .unwrap_or(0.0)
+                })
+                .sum();
+            let progress = if file_ids.is_empty() {
+                0.0
+            } else {
+                (progress_total / file_ids.len() as f32).clamp(0.0, 1.0)
+            };
+            let genres = genre_line(&d.genres);
+            let stats_label = format!(
+                "{season_count} season{} · {ep_count} episode{}",
+                if season_count == 1 { "" } else { "s" },
+                if ep_count == 1 { "" } else { "s" }
+            );
+            let show_file_id = format!("tv:{series_id}");
+            let added_at = max_created_at(&file_ids, &created_at_map);
             MediaItem {
                 title: d.name.as_str().into(),
                 meta: meta.as_str().into(),
                 rating: rating.as_str().into(),
                 poster,
+                backdrop,
+                overview: d.overview.as_str().into(),
+                year_label: year.as_str().into(),
+                stats_label: stats_label.as_str().into(),
+                genre_line: genres.as_str().into(),
                 resolution: "".into(),
-                progress: 0.0,
+                progress,
                 is_tv: true,
                 initials: make_initials(&d.name),
-                file_id: format!("tv:{series_id}").as_str().into(),
+                file_id: show_file_id.as_str().into(),
+                added_at: added_at.as_str().into(),
             }
         })
         .collect();
     // `sort_by_key` would need an owned key here; compare SharedString values directly.
     #[allow(clippy::unnecessary_sort_by)]
     shows.sort_by(|a, b| a.title.cmp(&b.title));
+
+    let mut resume_rows: Vec<(i64, MediaResumeItem)> = Vec::new();
+    for movie in &movies {
+        let Some(entry) = file_state_entries.get(movie.file_id.as_str()) else {
+            continue;
+        };
+        let progress = entry.progress_ratio();
+        if !(0.05..0.9).contains(&progress) {
+            continue;
+        }
+        resume_rows.push((
+            entry.updated_at,
+            MediaResumeItem {
+                title: movie.title.clone(),
+                kind: "MOVIE".into(),
+                detail: "Movie".into(),
+                left_label: remaining_label(entry).as_str().into(),
+                poster: movie.poster.clone(),
+                initials: movie.initials.clone(),
+                progress,
+                file_id: movie.file_id.clone(),
+            },
+        ));
+    }
+
+    for (file_id, &episode_id) in &matched.tv {
+        if !existing_file_ids.contains(file_id) {
+            continue;
+        }
+        let Some(entry) = file_state_entries.get(file_id) else {
+            continue;
+        };
+        let progress = entry.progress_ratio();
+        if !(0.05..0.9).contains(&progress) {
+            continue;
+        }
+        let Some(series_id) = episode_to_series.get(&episode_id) else {
+            continue;
+        };
+        let series_file_id = format!("tv:{series_id}");
+        let Some(show) = shows.iter().find(|item| item.file_id == series_file_id) else {
+            continue;
+        };
+        let detail = episode_display
+            .get(&episode_id)
+            .map(|(season, episode, name)| {
+                if name.trim().is_empty() {
+                    format!("S{season} · E{episode}")
+                } else {
+                    format!("S{season} · E{episode} - {name}")
+                }
+            })
+            .unwrap_or_else(|| "Episode".to_string());
+        resume_rows.push((
+            entry.updated_at,
+            MediaResumeItem {
+                title: show.title.clone(),
+                kind: "TV".into(),
+                detail: detail.as_str().into(),
+                left_label: remaining_label(entry).as_str().into(),
+                poster: show.poster.clone(),
+                initials: show.initials.clone(),
+                progress,
+                file_id: show.file_id.clone(),
+            },
+        ));
+    }
+    resume_rows.sort_by_key(|row| std::cmp::Reverse(row.0));
+    let resume_items: Vec<MediaResumeItem> = resume_rows
+        .into_iter()
+        .map(|(_, row)| row)
+        .take(10)
+        .collect();
 
     let lib = {
         let tree_guard = tree.read().unwrap();
@@ -411,8 +810,12 @@ pub(crate) fn refresh_media_ui(
         }
     };
 
-    media_movies_model.set_vec(movies);
-    media_shows_model.set_vec(shows);
+    *cache.movies.borrow_mut() = movies;
+    *cache.shows.borrow_mut() = shows;
+    *cache.resume.borrow_mut() = resume_items;
+    *cache.file_state.borrow_mut() = file_state_entries;
+    *cache.tv_episode_ids.borrow_mut() = tv_episode_ids;
+    apply_media_filter(app, models, cache);
     app.set_media_has_unmatched(unmatched_total > 0);
     app.set_media_unmatched_title(unmatched_title.as_str().into());
     app.set_media_unmatched_detail(unmatched_detail.as_str().into());
@@ -444,6 +847,68 @@ pub(crate) fn install(
     app.on_media_refresh({
         let refresh = media_refresh.clone();
         move || refresh()
+    });
+
+    app.on_media_filter_changed({
+        let weak = weak.clone();
+        let media_movies_model = models.media_movies.clone();
+        let media_shows_model = models.media_shows.clone();
+        let media_resume_model = models.media_resume.clone();
+        let media_hero_badges_model = models.media_hero_badges.clone();
+        let all_movies = state.media_all_movies.clone();
+        let all_shows = state.media_all_shows.clone();
+        let all_resume = state.media_all_resume.clone();
+        let media_file_state = state.media_file_state.clone();
+        let media_tv_episode_ids = state.media_tv_episode_ids.clone();
+        move || {
+            if let Some(app) = weak.upgrade() {
+                let media_models = MediaModelRefs {
+                    movies: &media_movies_model,
+                    shows: &media_shows_model,
+                    resume: &media_resume_model,
+                    hero_badges: &media_hero_badges_model,
+                };
+                let media_cache = MediaCacheRefs {
+                    movies: &all_movies,
+                    shows: &all_shows,
+                    resume: &all_resume,
+                    file_state: &media_file_state,
+                    tv_episode_ids: &media_tv_episode_ids,
+                };
+                apply_media_filter(&app, &media_models, &media_cache);
+            }
+        }
+    });
+
+    app.on_media_sort_changed({
+        let weak = weak.clone();
+        let media_movies_model = models.media_movies.clone();
+        let media_shows_model = models.media_shows.clone();
+        let media_resume_model = models.media_resume.clone();
+        let media_hero_badges_model = models.media_hero_badges.clone();
+        let all_movies = state.media_all_movies.clone();
+        let all_shows = state.media_all_shows.clone();
+        let all_resume = state.media_all_resume.clone();
+        let media_file_state = state.media_file_state.clone();
+        let media_tv_episode_ids = state.media_tv_episode_ids.clone();
+        move || {
+            if let Some(app) = weak.upgrade() {
+                let media_models = MediaModelRefs {
+                    movies: &media_movies_model,
+                    shows: &media_shows_model,
+                    resume: &media_resume_model,
+                    hero_badges: &media_hero_badges_model,
+                };
+                let media_cache = MediaCacheRefs {
+                    movies: &all_movies,
+                    shows: &all_shows,
+                    resume: &all_resume,
+                    file_state: &media_file_state,
+                    tv_episode_ids: &media_tv_episode_ids,
+                };
+                apply_media_filter(&app, &media_models, &media_cache);
+            }
+        }
     });
 
     app.on_media_item_clicked({
@@ -610,4 +1075,128 @@ pub(crate) fn install(
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::storage::file_state::FileStateEntry;
+
+    fn sample_movie(file_id: &str, progress: f32) -> MediaItem {
+        MediaItem {
+            title: "Test Movie".into(),
+            meta: "".into(),
+            rating: "".into(),
+            poster: Default::default(),
+            backdrop: Default::default(),
+            overview: "".into(),
+            year_label: "".into(),
+            stats_label: "".into(),
+            genre_line: "".into(),
+            resolution: "".into(),
+            progress,
+            is_tv: false,
+            initials: "TM".into(),
+            file_id: file_id.into(),
+            added_at: "2024-01-01T00:00:00Z".into(),
+        }
+    }
+
+    fn sample_show(file_id: &str) -> MediaItem {
+        MediaItem {
+            title: "Test Show".into(),
+            meta: "".into(),
+            rating: "".into(),
+            poster: Default::default(),
+            backdrop: Default::default(),
+            overview: "".into(),
+            year_label: "".into(),
+            stats_label: "".into(),
+            genre_line: "".into(),
+            resolution: "".into(),
+            progress: 0.5,
+            is_tv: true,
+            initials: "TS".into(),
+            file_id: file_id.into(),
+            added_at: "2024-06-01T00:00:00Z".into(),
+        }
+    }
+
+    #[test]
+    fn movie_is_watched_when_played_flag_set() {
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "42".to_string(),
+            FileStateEntry {
+                played: true,
+                ..Default::default()
+            },
+        );
+        assert!(movie_is_watched("42", &entries));
+        assert!(!movie_is_watched("99", &entries));
+    }
+
+    #[test]
+    fn series_is_watched_only_when_all_episodes_complete() {
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "1".to_string(),
+            FileStateEntry {
+                played: true,
+                ..Default::default()
+            },
+        );
+        entries.insert("2".to_string(), FileStateEntry::default());
+        let ids = vec!["1".to_string(), "2".to_string()];
+        assert!(!series_is_watched(&ids, &entries));
+        entries.insert(
+            "2".to_string(),
+            FileStateEntry {
+                played: true,
+                ..Default::default()
+            },
+        );
+        assert!(series_is_watched(&ids, &entries));
+    }
+
+    #[test]
+    fn media_matches_unwatched_excludes_completed_movie() {
+        let mut entries = BTreeMap::new();
+        entries.insert(
+            "42".to_string(),
+            FileStateEntry {
+                played: true,
+                ..Default::default()
+            },
+        );
+        let item = sample_movie("42", 1.0);
+        assert!(!media_matches(&item, "", 3, &entries, &HashMap::new()));
+        let unwatched = sample_movie("99", 0.0);
+        assert!(media_matches(&unwatched, "", 3, &entries, &HashMap::new()));
+    }
+
+    #[test]
+    fn media_matches_type_filters() {
+        let entries = BTreeMap::new();
+        let tv = sample_show("tv:1");
+        let movie = sample_movie("1", 0.0);
+        assert!(!media_matches(&tv, "", 1, &entries, &HashMap::new()));
+        assert!(media_matches(&movie, "", 1, &entries, &HashMap::new()));
+        assert!(!media_matches(&movie, "", 2, &entries, &HashMap::new()));
+        assert!(media_matches(&tv, "", 2, &entries, &HashMap::new()));
+    }
+
+    #[test]
+    fn sort_media_items_by_added_at_newest_first() {
+        let mut items = vec![
+            sample_movie("1", 0.0),
+            MediaItem {
+                added_at: "2025-01-01T00:00:00Z".into(),
+                ..sample_movie("2", 0.0)
+            },
+        ];
+        sort_media_items(&mut items, 1);
+        assert_eq!(items[0].file_id.as_str(), "2");
+        assert_eq!(items[1].file_id.as_str(), "1");
+    }
 }

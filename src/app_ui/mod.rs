@@ -102,6 +102,13 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
         let weak = weak.clone();
         let media_movies = ctx.models.media_movies.clone();
         let media_shows = ctx.models.media_shows.clone();
+        let media_resume = ctx.models.media_resume.clone();
+        let media_hero_badges = ctx.models.media_hero_badges.clone();
+        let all_movies = ctx.state.media_all_movies.clone();
+        let all_shows = ctx.state.media_all_shows.clone();
+        let all_resume = ctx.state.media_all_resume.clone();
+        let media_file_state = ctx.state.media_file_state.clone();
+        let media_tv_episode_ids = ctx.state.media_tv_episode_ids.clone();
         let tree = ctx.state.tree.clone();
         let matched_store = ctx.services.matched_store.clone();
         let tmdb_store = ctx.services.tmdb_store.clone();
@@ -111,10 +118,23 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
             let Some(app) = weak.upgrade() else {
                 return;
             };
+            let media_models = self::media::MediaModelRefs {
+                movies: &media_movies,
+                shows: &media_shows,
+                resume: &media_resume,
+                hero_badges: &media_hero_badges,
+            };
+            let media_cache = self::media::MediaCacheRefs {
+                movies: &all_movies,
+                shows: &all_shows,
+                resume: &all_resume,
+                file_state: &media_file_state,
+                tv_episode_ids: &media_tv_episode_ids,
+            };
             let missing = self::media::refresh_media_ui(
                 &app,
-                &media_movies,
-                &media_shows,
+                &media_models,
+                &media_cache,
                 &tree,
                 &matched_store,
                 &tmdb_store,
