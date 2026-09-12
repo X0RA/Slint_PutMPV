@@ -332,7 +332,7 @@ fn register_events(
     sleep_inhibitor: SharedSleepInhibitor,
 ) {
     match engine.create_event_client() {
-        Ok(mut event_client) => {
+        Ok(event_client) => {
             if let Err(e) = PlayerEngine::observe_properties(&event_client) {
                 warn!("could not observe embedded player properties: {e}");
             }

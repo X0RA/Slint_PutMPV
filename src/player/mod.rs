@@ -18,15 +18,25 @@ use libmpv2::{
 
 type SlintGetProcAddress<'a> = dyn Fn(&CStr) -> *const c_void + 'a;
 
-struct SlintGlProcAddress<'a> {
-    get_proc_address: &'a SlintGetProcAddress<'a>,
+/// Type-erased handle to Slint's GL loader.
+///
+/// libmpv2 requires the `OpenGLInitParams` context to be `'static` because mpv
+/// takes ownership of it, but Slint only lends us the loader for the duration of
+/// the `RenderingSetup` callback. We hold it as a raw pointer and rely on mpv
+/// resolving every GL function during `create_render_context`, which is the only
+/// point at which the pointer is still live.
+struct SlintGlProcAddress {
+    get_proc_address: *const SlintGetProcAddress<'static>,
 }
 
-fn get_proc_address(ctx: &SlintGlProcAddress<'_>, name: &str) -> *mut c_void {
+fn get_proc_address(ctx: &SlintGlProcAddress, name: &str) -> *mut c_void {
     let Ok(name) = CString::new(name) else {
         return std::ptr::null_mut();
     };
-    (ctx.get_proc_address)(&name).cast_mut()
+    // SAFETY: only called by mpv while `create_render_context` is on the stack,
+    // where the borrow from Slint is still valid. See the type's docs.
+    let loader = unsafe { &*ctx.get_proc_address };
+    loader(&name).cast_mut()
 }
 
 pub struct PlayerEngine {
@@ -166,32 +176,36 @@ pub struct PlayerRenderer {
     gl: Rc<glow::Context>,
     texture: gl::Texture,
     texture_published: bool,
-    render_context: RenderContext,
+    render_context: RenderContext<'static>,
 }
 
 impl PlayerRenderer {
     pub fn new(
-        mpv: &Mpv,
+        mpv: &'static Mpv,
         gl: glow::Context,
         get_proc_address_loader: &SlintGetProcAddress<'_>,
     ) -> Result<Self> {
         let gl = Rc::new(gl);
         let texture = unsafe { gl::Texture::new(&gl, 320, 200) };
-        let render_context = unsafe {
-            RenderContext::new(
-                &mut *mpv.ctx.as_ptr(),
-                vec![
-                    RenderParam::ApiType(RenderParamApiType::OpenGl),
-                    RenderParam::InitParams(OpenGLInitParams {
-                        get_proc_address,
-                        ctx: SlintGlProcAddress {
-                            get_proc_address: get_proc_address_loader,
-                        },
-                    }),
-                ],
+        // SAFETY: erases the loader's lifetime to satisfy libmpv2's `'static`
+        // bound. mpv only invokes it during the `create_render_context` call
+        // below, while the borrow is still live.
+        let loader: *const SlintGetProcAddress<'static> = unsafe {
+            std::mem::transmute::<*const SlintGetProcAddress<'_>, *const SlintGetProcAddress<'static>>(
+                get_proc_address_loader as *const _,
             )
-        }
-        .map_err(|e| anyhow!("{e}"))?;
+        };
+        let render_context = mpv
+            .create_render_context(vec![
+                RenderParam::ApiType(RenderParamApiType::OpenGl),
+                RenderParam::InitParams(OpenGLInitParams {
+                    get_proc_address,
+                    ctx: SlintGlProcAddress {
+                        get_proc_address: loader,
+                    },
+                }),
+            ])
+            .map_err(|e| anyhow!("{e}"))?;
 
         Ok(Self {
             gl,

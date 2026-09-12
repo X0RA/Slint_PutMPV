@@ -63,7 +63,7 @@ impl Texture {
             0,
             glow::RGBA,
             glow::UNSIGNED_BYTE,
-            None,
+            glow::PixelUnpackData::Slice(None),
         );
 
         // Restore pixel store state
