@@ -8,6 +8,7 @@ use std::time::Duration;
 
 use souvlaki::{
     MediaControlEvent, MediaControls, MediaMetadata, MediaPlayback, MediaPosition, PlatformConfig,
+    SeekDirection,
 };
 use tracing::warn;
 
@@ -21,6 +22,7 @@ pub enum MediaCommand {
     Next,
     Previous,
     Seek(f64),
+    SeekBy(f64),
 }
 
 type EventCallback = Arc<dyn Fn(MediaCommand) + Send + Sync + 'static>;
@@ -51,7 +53,13 @@ impl MediaControlsWrapper {
 
     /// Lazily register the app with the OS media handler and push initial
     /// metadata. Idempotent — safe to call on every `FileLoaded`.
-    pub fn ensure_active(&mut self, title: &str, duration_secs: Option<f64>) {
+    pub fn ensure_active(
+        &mut self,
+        title: &str,
+        duration_secs: Option<f64>,
+        paused: bool,
+        position_secs: f64,
+    ) {
         if self.inner.is_none() {
             // souvlaki 0.8.x on Windows calls .expect() on the HWND and panics
             // when None is passed — bail out rather than abort the process.
@@ -83,6 +91,21 @@ impl MediaControlsWrapper {
                     MediaControlEvent::SetPosition(MediaPosition(d)) => {
                         Some(MediaCommand::Seek(d.as_secs_f64()))
                     }
+                    MediaControlEvent::Seek(direction) => Some(MediaCommand::SeekBy(
+                        if direction == SeekDirection::Forward {
+                            10.0
+                        } else {
+                            -10.0
+                        },
+                    )),
+                    MediaControlEvent::SeekBy(direction, duration) => Some(MediaCommand::SeekBy(
+                        duration.as_secs_f64()
+                            * if direction == SeekDirection::Forward {
+                                1.0
+                            } else {
+                                -1.0
+                            },
+                    )),
                     _ => None,
                 };
                 if let Some(cmd) = cmd {
@@ -97,6 +120,12 @@ impl MediaControlsWrapper {
             self.position_secs = 0.0;
             self.last_pushed_position = 0.0;
         }
+        self.paused = paused;
+        self.position_secs = if position_secs.is_finite() {
+            position_secs.max(0.0)
+        } else {
+            0.0
+        };
         self.set_metadata(title, duration_secs);
         self.push_playback();
     }
@@ -125,7 +154,10 @@ impl MediaControlsWrapper {
     /// Track the latest known position and push it to the OS if a second
     /// has elapsed since the last push. Cheap when inactive.
     pub fn set_position(&mut self, secs: f64) {
-        self.position_secs = secs;
+        if !secs.is_finite() {
+            return;
+        }
+        self.position_secs = secs.max(0.0);
         if self.inner.is_some() && (secs - self.last_pushed_position).abs() >= 1.0 {
             self.push_playback();
         }
@@ -141,7 +173,7 @@ impl MediaControlsWrapper {
         let Some(controls) = self.inner.as_mut() else {
             return;
         };
-        let duration = duration_secs.map(|d| Duration::from_secs_f64(d.max(0.0)));
+        let duration = duration_secs.and_then(|d| Duration::try_from_secs_f64(d).ok());
         if let Err(e) = controls.set_metadata(MediaMetadata {
             title: Some(title),
             duration,
@@ -155,9 +187,9 @@ impl MediaControlsWrapper {
         let Some(controls) = self.inner.as_mut() else {
             return;
         };
-        let progress = Some(MediaPosition(Duration::from_secs_f64(
-            self.position_secs.max(0.0),
-        )));
+        let progress = Some(MediaPosition(
+            Duration::try_from_secs_f64(self.position_secs.max(0.0)).unwrap_or_default(),
+        ));
         let state = if self.paused {
             MediaPlayback::Paused { progress }
         } else {

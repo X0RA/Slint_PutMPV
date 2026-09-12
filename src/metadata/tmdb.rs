@@ -198,16 +198,16 @@ impl TMDBAPI {
 }
 
 fn clean_query_with_year(query: &str) -> (String, Option<String>) {
-    let year_re = Regex::new(r"(?i)(19[5-9]\d|20[0-4]\d)").unwrap();
-    let matches = year_re.find_iter(query).collect::<Vec<_>>();
-    let mut clean = query.to_string();
-    let year = matches.last().map(|m| {
-        let y = m.as_str().to_string();
-        clean.replace_range(m.range(), "");
-        y
-    });
-    let whitespace = Regex::new(r"\s+").unwrap();
-    (whitespace.replace_all(clean.trim(), " ").to_string(), year)
+    // Only a separate trailing year is a filter. Preserve titles such as
+    // "1917", "2001 A Space Odyssey".
+    let query = query.trim();
+    static YEAR_RE: once_cell::sync::Lazy<Regex> =
+        once_cell::sync::Lazy::new(|| Regex::new(r"\s+\(?((?:19|20)\d{2})\)?$").unwrap());
+    if let Some(caps) = YEAR_RE.captures(query) {
+        let prefix = query[..caps.get(0).unwrap().start()].trim();
+        return (prefix.to_string(), Some(caps[1].to_string()));
+    }
+    (query.to_string(), None)
 }
 
 fn null_string<'de, D>(deserializer: D) -> std::result::Result<String, D::Error>
@@ -550,6 +550,13 @@ struct TVSearchResponse {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn preserves_year_like_numbers_inside_titles() {
+        for title in ["1917", "2001 A Space Odyssey", "Show 12001 Adventure"] {
+            assert_eq!(clean_query_with_year(title), (title.to_string(), None));
+        }
+    }
 
     #[test]
     fn strips_trailing_year_from_query() {

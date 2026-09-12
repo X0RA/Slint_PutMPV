@@ -243,19 +243,24 @@ fn build_media_controls(app: &AppWindow, engine: Arc<PlayerEngine>) -> SharedMed
             };
             match cmd {
                 MediaCommand::Toggle => app.invoke_player_toggle_play(),
-                MediaCommand::Play => {
-                    if app.get_player_paused() {
-                        app.invoke_player_toggle_play();
-                    }
-                }
-                MediaCommand::Pause => {
-                    if !app.get_player_paused() {
-                        app.invoke_player_toggle_play();
+                MediaCommand::Play | MediaCommand::Pause => {
+                    let paused = matches!(cmd, MediaCommand::Pause);
+                    if let Err(e) = engine.set_pause(paused) {
+                        warn!("media-key pause change failed: {e}");
+                    } else {
+                        app.set_player_paused(paused);
                     }
                 }
                 MediaCommand::Stop => app.invoke_player_close(),
                 MediaCommand::Next => app.invoke_player_playlist_next(),
                 MediaCommand::Previous => app.invoke_player_playlist_previous(),
+                MediaCommand::SeekBy(offset) => {
+                    if let Ok(position) = engine.mpv().get_property::<f64>("time-pos") {
+                        if let Err(e) = engine.seek(position + offset) {
+                            warn!("media-key relative seek failed: {e}");
+                        }
+                    }
+                }
                 MediaCommand::Seek(secs) => {
                     if let Err(e) = engine.seek(secs) {
                         warn!("media-key seek failed: {e}");
@@ -377,8 +382,10 @@ fn register_events(
                                 });
                             } else {
                                 playback_state.lock().unwrap().active = false;
-                                if let Some(mc) = media_controls.as_ref() {
-                                    mc.lock().unwrap().release();
+                                if let Some(mc) = media_controls.clone() {
+                                    let _ = weak.upgrade_in_event_loop(move |_| {
+                                        mc.lock().unwrap().release()
+                                    });
                                 }
                                 sleep_inhibitor.lock().unwrap().release();
                             }
@@ -388,8 +395,9 @@ fn register_events(
                                 refresh_watch_state_views(&app);
                             });
                             playback_state.lock().unwrap().active = false;
-                            if let Some(mc) = media_controls.as_ref() {
-                                mc.lock().unwrap().release();
+                            if let Some(mc) = media_controls.clone() {
+                                let _ = weak
+                                    .upgrade_in_event_loop(move |_| mc.lock().unwrap().release());
                             }
                             sleep_inhibitor.lock().unwrap().release();
                         }
@@ -397,7 +405,8 @@ fn register_events(
                     Some(Ok(Event::FileLoaded)) => {
                         let duration = get_f64(&event_client, "duration").unwrap_or(0.0);
                         let resume = {
-                            let state = playback_state.lock().unwrap();
+                            let mut state = playback_state.lock().unwrap();
+                            state.active = state.current_index.is_some();
                             state
                                 .current_index
                                 .and_then(|idx| state.queue.get(idx))
@@ -420,6 +429,7 @@ fn register_events(
                             });
                         let paused_now =
                             event_client.get_property::<bool>("pause").unwrap_or(false);
+                        let position_now = get_f64(&event_client, "time-pos").unwrap_or(0.0);
                         if paused_now {
                             sleep_inhibitor.lock().unwrap().release();
                         } else {
@@ -431,7 +441,7 @@ fn register_events(
                                 let hwnd = extract_hwnd(&app);
                                 let mut guard = mc.lock().unwrap();
                                 guard.update_hwnd(hwnd);
-                                guard.ensure_active(&title, dur);
+                                guard.ensure_active(&title, dur, paused_now, position_now);
                             }
                             apply_tracks(&app, tracks);
                         });
@@ -444,8 +454,13 @@ fn register_events(
                     }
                     Some(Ok(Event::Seek)) => {
                         watch_sync.on_seek();
-                        if let Some(mc) = media_controls.as_ref() {
-                            mc.lock().unwrap().flush_position();
+                        if let Some(mc) = media_controls.clone() {
+                            let position = get_f64(&event_client, "time-pos").unwrap_or(0.0);
+                            let _ = weak.upgrade_in_event_loop(move |_| {
+                                let mut mc = mc.lock().unwrap();
+                                mc.set_position(position);
+                                mc.flush_position();
+                            });
                         }
                     }
                     Some(Ok(Event::PropertyChange { name, change, .. })) => {
@@ -882,7 +897,7 @@ fn reset_player_state(app: &AppWindow) {
 pub(crate) fn refresh_watch_state_views(app: &AppWindow) {
     app.invoke_request_refresh();
     app.invoke_media_refresh();
-    if app.get_tv_show_series_id() > 0 {
+    if app.get_tv_show_series_id() != 0 {
         app.invoke_tv_show_season_changed(app.get_tv_show_season_idx());
     }
     app.invoke_settings_refresh();
@@ -921,9 +936,7 @@ fn apply_property_change(
     match (name, change) {
         ("pause", PropertyData::Flag(paused)) => {
             watch_sync.on_pause(paused);
-            if let Some(mc) = media_controls {
-                mc.lock().unwrap().set_paused(paused);
-            }
+            let media_controls = media_controls.cloned();
             if playback_state.lock().unwrap().active {
                 if paused {
                     sleep_inhibitor.lock().unwrap().release();
@@ -931,23 +944,35 @@ fn apply_property_change(
                     sleep_inhibitor.lock().unwrap().acquire();
                 }
             }
-            let _ = weak.upgrade_in_event_loop(move |app| app.set_player_paused(paused));
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                if let Some(mc) = media_controls {
+                    mc.lock().unwrap().set_paused(paused);
+                }
+                app.set_player_paused(paused);
+            });
         }
         ("time-pos", PropertyData::Double(position)) => {
             watch_sync.on_position(position, 0.0);
-            if let Some(mc) = media_controls {
-                mc.lock().unwrap().set_position(position);
-            }
+            let media_controls = media_controls.cloned();
             let label = format_time(position);
             let _ = weak.upgrade_in_event_loop(move |app| {
+                if let Some(mc) = media_controls {
+                    mc.lock().unwrap().set_position(position);
+                }
                 app.set_player_position(position as f32);
                 app.set_player_position_label(label.into());
             });
         }
         ("duration", PropertyData::Double(duration)) => {
             watch_sync.on_duration(duration);
+            let media_controls = media_controls.cloned();
             let label = format_time(duration);
             let _ = weak.upgrade_in_event_loop(move |app| {
+                if let Some(mc) = media_controls {
+                    mc.lock()
+                        .unwrap()
+                        .set_metadata(app.get_player_title().as_str(), Some(duration));
+                }
                 app.set_player_duration(duration as f32);
                 app.set_player_duration_label(label.into());
             });

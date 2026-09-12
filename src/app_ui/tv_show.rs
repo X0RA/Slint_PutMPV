@@ -238,6 +238,7 @@ pub(crate) fn refresh_tv_show_ui(
     tree: &Arc<RwLock<UnifiedDirectoryTree>>,
     matched_store: &Arc<MatchedStore>,
     tmdb_store: &Arc<TMDBStore>,
+    tvmaze_store: &Arc<crate::storage::tvmaze_store::TVMazeStore>,
     file_state: &Arc<RwLock<FileStateStore>>,
     tv_seasons_model: &Rc<VecModel<TvSeasonTab>>,
     tv_episodes_model: &Rc<VecModel<TvEpisodeRow>>,
@@ -248,8 +249,13 @@ pub(crate) fn refresh_tv_show_ui(
     let file_state_entries = file_state.read().unwrap().entries().clone();
     use std::collections::HashSet;
 
-    let matched = matched_store.get_matched_snapshot().unwrap_or_default();
-    let tmdb_cache = tmdb_store.get_cache_snapshot().unwrap_or_default();
+    let mut matched = matched_store.get_matched_snapshot().unwrap_or_default();
+    let mut tmdb_cache = tmdb_store.get_cache_snapshot().unwrap_or_default();
+    super::media_library::merge_tvmaze(
+        &mut tmdb_cache,
+        &mut matched,
+        &tvmaze_store.get_cache_snapshot().unwrap_or_default(),
+    );
     let mut existing_file_ids = HashSet::<String>::new();
     {
         let tree_guard = tree.read().unwrap();
@@ -669,8 +675,15 @@ pub(crate) fn refresh_tv_show_ui(
     missing_fetch.dedup();
     if !missing_fetch.is_empty() {
         let paths = missing_fetch.clone();
+        let weak = app.as_weak();
         rt.spawn(async move {
-            download_posters(paths).await;
+            if download_posters(paths).await {
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    if app.get_tv_show_series_id() == series_id {
+                        app.invoke_tv_show_season_changed(app.get_tv_show_season_idx());
+                    }
+                });
+            }
         });
     }
 }
@@ -687,6 +700,7 @@ pub(crate) fn install(
     let tree = state.tree.clone();
     let matched_store = services.matched_store.clone();
     let tmdb_store = services.tmdb_store.clone();
+    let tvmaze_store = services.tvmaze_store.clone();
     let file_state = services.file_state.clone();
     let watch_sync = services.watch_sync.clone();
     let embedded_player = embedded_player.clone();
@@ -705,6 +719,7 @@ pub(crate) fn install(
         let tree = tree.clone();
         let matched_store = matched_store.clone();
         let tmdb_store = tmdb_store.clone();
+        let tvmaze_store = tvmaze_store.clone();
         let file_state = file_state.clone();
         let tv_show_seasons_model = models.tv_seasons.clone();
         let tv_show_episodes_model = models.tv_episodes.clone();
@@ -716,7 +731,7 @@ pub(crate) fn install(
                 return;
             };
             let sid = app.get_tv_show_series_id();
-            if sid <= 0 {
+            if sid == 0 {
                 return;
             }
             refresh_tv_show_ui(
@@ -726,6 +741,7 @@ pub(crate) fn install(
                 &tree,
                 &matched_store,
                 &tmdb_store,
+                &tvmaze_store,
                 &file_state,
                 &tv_show_seasons_model,
                 &tv_show_episodes_model,
@@ -805,6 +821,7 @@ pub(crate) fn install(
         let tree = tree.clone();
         let matched_store = matched_store.clone();
         let tmdb_store = tmdb_store.clone();
+        let tvmaze_store = tvmaze_store.clone();
         let tv_show_seasons_model = models.tv_seasons.clone();
         let tv_show_episodes_model = models.tv_episodes.clone();
         let tv_show_hero_badges_model = models.tv_hero_badges.clone();
@@ -826,7 +843,7 @@ pub(crate) fn install(
                 return;
             };
             let sid = app.get_tv_show_series_id();
-            if sid <= 0 {
+            if sid == 0 {
                 return;
             }
             refresh_tv_show_ui(
@@ -836,6 +853,7 @@ pub(crate) fn install(
                 &tree,
                 &matched_store,
                 &tmdb_store,
+                &tvmaze_store,
                 &file_state,
                 &tv_show_seasons_model,
                 &tv_show_episodes_model,

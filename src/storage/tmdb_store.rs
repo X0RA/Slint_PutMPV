@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,7 @@ pub struct TMDBCache {
 #[derive(Debug)]
 pub struct TMDBStore {
     path: PathBuf,
+    access: Mutex<()>,
 }
 
 impl TMDBStore {
@@ -31,7 +33,10 @@ impl TMDBStore {
         if read_json::<TMDBCache>(&path)?.is_none() {
             write_atomic(&path, &TMDBCache::default())?;
         }
-        Ok(Self { path })
+        Ok(Self {
+            path,
+            access: Mutex::new(()),
+        })
     }
 
     pub fn path(&self) -> PathBuf {
@@ -39,6 +44,7 @@ impl TMDBStore {
     }
 
     pub fn get_cached_data(&self, key: &str) -> Option<Value> {
+        let _access = self.access.lock().unwrap();
         let cache = self.read_cache().ok()?;
         let (media_type, id, cache_key) = split_tmdb_key(key).ok()?;
         match media_type {
@@ -49,6 +55,7 @@ impl TMDBStore {
     }
 
     pub fn set_cached_data(&self, key: &str, data: Value) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         let mut cache = self.read_cache()?;
         let (media_type, id, cache_key) = split_tmdb_key(key)?;
         let entry = CacheEntry { data };
@@ -73,15 +80,18 @@ impl TMDBStore {
     }
 
     pub fn get_cache_snapshot(&self) -> Result<TMDBCache> {
+        let _access = self.access.lock().unwrap();
         self.read_cache()
     }
 
     pub fn clear_cache(&self) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         self.save_cache(&TMDBCache::default())
     }
 
     #[allow(dead_code)]
     pub fn clear_movie_cache(&self, movie_id: i32) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         let mut cache = self.read_cache()?;
         cache.movies.remove(&movie_id.to_string());
         self.save_cache(&cache)
@@ -89,6 +99,7 @@ impl TMDBStore {
 
     #[allow(dead_code)]
     pub fn clear_tv_cache(&self, series_id: i32) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         let mut cache = self.read_cache()?;
         cache.tv.remove(&series_id.to_string());
         self.save_cache(&cache)
@@ -127,6 +138,7 @@ mod tests {
         let dir = tempfile_path("tmdb_store_split");
         let store = TMDBStore {
             path: dir.join("tmdb.json"),
+            access: Mutex::new(()),
         };
 
         store

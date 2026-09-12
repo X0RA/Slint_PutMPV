@@ -118,10 +118,11 @@ impl TVMazeAPI {
         let mut cumulative = 0;
         for season in regular {
             let episodes = self.get_season_episodes(season.id).await?;
-            let numbered = episodes
+            let mut numbered = episodes
                 .into_iter()
                 .filter(|ep| ep.number > 0)
                 .collect::<Vec<_>>();
+            numbered.sort_by_key(|ep| ep.number);
             if numbered.is_empty() {
                 continue;
             }
@@ -149,7 +150,7 @@ impl TVMazeAPI {
                 continue;
             };
             let relative_ep = item.episode - range.start_abs + 1;
-            if let Some(ep) = range.episodes.iter().find(|ep| ep.number == relative_ep) {
+            if let Some(ep) = range.episodes.get((relative_ep - 1) as usize) {
                 resolved.insert(item.file_id.clone(), ep.id);
                 used.insert(range.season_number);
             }
@@ -215,6 +216,14 @@ impl TVMazeAPI {
     }
 }
 
+fn null_default<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de> + Default,
+{
+    Ok(Option::<T>::deserialize(deserializer)?.unwrap_or_default())
+}
+
 fn numbered_episode_lookup(episodes: &[TVMazeEpisode]) -> HashMap<i32, i32> {
     episodes
         .iter()
@@ -241,39 +250,39 @@ pub struct TVMazeSearchResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct TVMazeShow {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub id: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub url: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub r#type: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub language: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub genres: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub status: String,
     #[serde(default)]
     pub runtime: Option<i32>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub premiered: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub ended: String,
     #[serde(default)]
     pub image: Option<TVMazeImage>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub summary: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub externals: TVMazeExternals,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct TVMazeImage {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub medium: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub original: String,
 }
 
@@ -289,19 +298,19 @@ pub struct TVMazeExternals {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct TVMazeSeason {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub id: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub url: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub number: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub name: String,
     #[serde(default, rename = "episodeOrder")]
     pub episode_order: Option<i32>,
-    #[serde(default, rename = "premiereDate")]
+    #[serde(default, rename = "premiereDate", deserialize_with = "null_default")]
     pub premiere_date: String,
-    #[serde(default, rename = "endDate")]
+    #[serde(default, rename = "endDate", deserialize_with = "null_default")]
     pub end_date: String,
     #[serde(default)]
     pub image: Option<TVMazeImage>,
@@ -309,27 +318,27 @@ pub struct TVMazeSeason {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct TVMazeEpisode {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub id: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub url: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub name: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub season: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub number: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub r#type: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub airdate: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub airtime: String,
     #[serde(default)]
     pub runtime: Option<i32>,
     #[serde(default)]
     pub image: Option<TVMazeImage>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "null_default")]
     pub summary: String,
 }
 
@@ -337,6 +346,18 @@ pub struct TVMazeEpisode {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn accepts_nullable_api_fields() {
+        let show: TVMazeShow = serde_json::from_value(json!({"id":1,"name":"Show","premiered":null,"ended":null,"summary":null,"language":null,"externals":null})).unwrap();
+        assert!(show.summary.is_empty());
+        let episode: TVMazeEpisode =
+            serde_json::from_value(json!({"id":2,"number":null,"summary":null})).unwrap();
+        assert_eq!(episode.number, 0);
+        let _: TVMazeSeason =
+            serde_json::from_value(json!({"premiereDate":null,"endDate":null,"name":null}))
+                .unwrap();
+    }
 
     #[test]
     fn numbered_lookup_skips_unnumbered_episodes() {
@@ -492,12 +513,45 @@ mod tests {
         assert_eq!(result.seasons, vec![1, 2]);
     }
 
+    #[tokio::test]
+    async fn absolute_resolver_handles_numbering_that_continues_across_seasons() {
+        let api = cached_test_api("tvmaze_continuous_numbers");
+        api.cache
+            .set_cached_data(
+                "show_1_seasons",
+                json!([
+                    {"id":10,"number":1}, {"id":20,"number":2}
+                ]),
+            )
+            .unwrap();
+        seed_episodes(&api, 10, 1, 2, 100, &[]);
+        api.cache
+            .set_cached_data(
+                "season_20_episodes",
+                json!([
+                    {"id":201,"number":4,"season":2}, {"id":200,"number":3,"season":2}
+                ]),
+            )
+            .unwrap();
+        let result = api
+            .resolve_absolute_episodes(
+                1,
+                &[EpisodeRefByFileID {
+                    file_id: "file".into(),
+                    episode: 3,
+                    ..Default::default()
+                }],
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.resolved["file"], 200);
+    }
+
     fn cached_test_api(name: &str) -> TVMazeAPI {
         let path = std::env::temp_dir().join(format!("putmpv_{name}_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         std::fs::create_dir_all(&path).unwrap();
-        std::env::set_var("XDG_CONFIG_HOME", &path);
-        TVMazeAPI::new(Arc::new(TVMazeStore::load().unwrap()))
+        TVMazeAPI::new(Arc::new(TVMazeStore::at_path(path.join("tvmaze.json"))))
     }
 
     fn seed_episodes(

@@ -8,7 +8,9 @@ use crate::putio::types::{DirectoryNode, PutIoFile};
 
 const MIN_VIDEO_SIZE_BYTES: u64 = 50 * 1024 * 1024;
 
-static EXT_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\.[a-z0-9]{2,5}$").unwrap());
+static EXT_RE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\.(?:mkv|mp4|m4v|avi|mov|webm|wmv|flv|mpg|mpeg|m2v|ts|m2ts|mts|vob|ogv|divx|asf|3gp|rmvb|ogm|rm|mp2|mxf|f4v)$").unwrap()
+});
 static SUPPLEMENT_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)[.\-_ ](trailer|sample)\.[a-z0-9]+$").unwrap());
 static SXX_EXX_RE: Lazy<Regex> = Lazy::new(|| {
@@ -16,7 +18,7 @@ static SXX_EXX_RE: Lazy<Regex> = Lazy::new(|| {
 });
 static X_EP_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\b(\d{1,2})x(\d{2,3})\b").unwrap());
 static DASH_EP_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)(?:^|[ ._\]])-\s*(\d{1,4})(?:\s*-|\s+)(.*)$").unwrap());
+    Lazy::new(|| Regex::new(r"(?i)(?:^|[ ._\]])-\s*(\d{1,4})(?:\s*-|\s+|$)(.*)$").unwrap());
 
 static SEASON_FOLDER_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)\b(?:season|series)[ ._\-]*(\d{1,2})\b").unwrap());
@@ -250,12 +252,10 @@ fn add_tv_episode(
         season,
         episodes: Vec::new(),
     });
-    for episode in episodes {
-        let file_id = if parsed.episodes.len() > 1 {
-            format!("{}_e{episode}", file.id)
-        } else {
-            file.id.to_string()
-        };
+    // Matches and watch progress are per physical file. A combined episode
+    // plays in full, represented by its first episode rather than fake IDs.
+    for episode in episodes.into_iter().take(1) {
+        let file_id = file.id.to_string();
         bucket.episodes.push(ParsedEpisode {
             file_id,
             relative_path: relative_path.to_string(),
@@ -299,7 +299,11 @@ fn parse_name_inner(name: &str, relative_path: Option<&str>, standardise: bool) 
     if parsed.encoder.is_empty() {
         if let Some((left, group)) = work.rsplit_once('-') {
             let group_clean = clean_title(group);
-            if !group_clean.is_empty() && group_clean.len() <= 32 {
+            // A hyphen in a title (Spider-Man, K-On) is not a release group.
+            let has_release_info = [&RESOLUTION_RE, &QUALITY_RE, &CODEC_RE, &AUDIO_RE]
+                .iter()
+                .any(|re| re.is_match(left));
+            if has_release_info && !group_clean.is_empty() && group_clean.len() <= 32 {
                 parsed.encoder = group_clean;
                 title_end = title_end.min(left.len());
             }
@@ -329,7 +333,19 @@ fn parse_name_inner(name: &str, relative_path: Option<&str>, standardise: bool) 
     parsed.codec = extract_prop(&CODEC_RE, standardise_codec);
     parsed.audio = extract_prop(&AUDIO_RE, standardise_audio);
 
-    if let Some(caps) = YEAR_RE.captures(&work) {
+    let year_boundary = SXX_EXX_RE
+        .find(&work)
+        .or_else(|| X_EP_RE.find(&work))
+        .map(|m| m.start())
+        .unwrap_or(title_end);
+    if let Some(caps) = YEAR_RE
+        .captures_iter(&work)
+        .filter(|caps| {
+            caps.get(0).unwrap().start() < year_boundary
+                && !clean_title(&work[..caps.get(0).unwrap().start()]).is_empty()
+        })
+        .last()
+    {
         parsed.year = caps.get(1).and_then(|m| m.as_str().parse().ok());
         let m = caps.get(0).unwrap();
         title_end = title_end.min(m.start());
@@ -338,7 +354,7 @@ fn parse_name_inner(name: &str, relative_path: Option<&str>, standardise: bool) 
     }
 
     static GO_DASH_EP_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(r"(?i)\s-\s(\d{1,4})(?:\s-\s|\s+)(.*)$").unwrap());
+        Lazy::new(|| Regex::new(r"(?i)\s-\s(\d{1,4})(?:\s-\s|\s+|$)(.*)$").unwrap());
 
     if let Some(caps) = SXX_EXX_RE.captures(&work) {
         let m = caps.get(0).unwrap();
@@ -370,12 +386,17 @@ fn parse_name_inner(name: &str, relative_path: Option<&str>, standardise: bool) 
         } else {
             title_end = title_end.min(episode_match.start().saturating_sub(1));
         }
-        parsed.episodes = vec![episode_match.as_str().parse().unwrap_or(0)];
+        let episode = episode_match.as_str().parse().unwrap_or(0);
         parsed.season = relative_path.and_then(infer_season_from_path);
-        parsed.episode_name = caps
-            .get(2)
-            .map(|m| clean_title(m.as_str()))
-            .unwrap_or_default();
+        if parsed.season.is_none() && (1900..2100).contains(&episode) {
+            parsed.year = Some(episode);
+        } else {
+            parsed.episodes = vec![episode];
+            parsed.episode_name = caps
+                .get(2)
+                .map(|m| clean_title(m.as_str()))
+                .unwrap_or_default();
+        }
     } else {
         if let Some(caps) = SEASON_FOLDER_RE.captures(&work) {
             let m = caps.get(0).unwrap();
@@ -527,6 +548,75 @@ fn is_trailer_or_sample(filename: &str) -> bool {
 mod tests {
     use super::*;
     use crate::putio::types::UnifiedDirectoryTree;
+
+    #[test]
+    fn trailing_dash_years_are_movies_without_season_context() {
+        for year in [1999, 2019, 2026, 2030, 2099] {
+            let parsed = parse_name(&format!("Some Film - {year}.mkv"), true);
+            assert!(parsed.episodes.is_empty(), "{year}");
+            assert_eq!(parsed.year, Some(year));
+            assert_eq!(parsed.title, "Some Film");
+        }
+        let parsed =
+            parse_name_with_context("Anime - 2030.mkv", "Season 02/Anime - 2030.mkv", true);
+        assert_eq!(parsed.episodes, vec![2030]);
+    }
+
+    #[test]
+    fn handles_additional_video_extensions() {
+        for extension in ["ogm", "rm", "mp2", "mxf", "f4v"] {
+            assert_eq!(
+                parse_name(&format!("Some Movie.{extension}"), true).title,
+                "Some Movie"
+            );
+        }
+        assert_eq!(parse_name("Spider-Man.mkv", true).title, "Spider Man");
+    }
+
+    #[test]
+    fn preserves_dotted_directory_names_and_bare_anime_episode_numbers() {
+        assert_eq!(parse_name("The.Last.Show", true).title, "The Last Show");
+        let parsed = parse_name("[Group] Anime - 03.mkv", true);
+        assert_eq!(parsed.title, "Anime");
+        assert_eq!(parsed.episodes, vec![3]);
+    }
+
+    #[test]
+    fn combined_episode_keeps_real_file_id() {
+        let mut library = ParsedLibrary::default();
+        let file = PutIoFile {
+            id: 123,
+            name: "Show.S01E01E02.mkv".into(),
+            ..Default::default()
+        };
+        process_file(&file, &file.name, &mut library);
+        let episodes = &library.shows["show"].seasons[&1].episodes;
+        assert_eq!(episodes.len(), 1);
+        assert_eq!(episodes[0].file_id, "123");
+        assert_eq!(episodes[0].episode, 1);
+    }
+
+    #[test]
+    fn numeric_movie_titles_are_not_only_a_year() {
+        assert_eq!(parse_name("1917.2019.1080p.mkv", true).title, "1917");
+        assert_eq!(parse_name("1917.2019.1080p.mkv", true).year, Some(2019));
+        assert_eq!(parse_name("1917.mkv", true).title, "1917");
+        assert_eq!(
+            parse_name("Blade.Runner.2049.2017.1080p.mkv", true).title,
+            "Blade Runner 2049"
+        );
+    }
+
+    #[test]
+    fn preserves_hyphenated_titles_without_release_groups() {
+        for (input, title) in [
+            ("Spider-Man.mkv", "Spider Man"),
+            ("K-On.S01E01.mkv", "K On"),
+            ("Show - 03 - Episode Title.mkv", "Show"),
+        ] {
+            assert_eq!(parse_name(input, true).title, title, "{input}");
+        }
+    }
 
     #[test]
     fn parses_common_tv_episode() {

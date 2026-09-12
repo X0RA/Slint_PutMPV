@@ -44,7 +44,7 @@ impl MetadataAPI {
         let uniq = seasons
             .iter()
             .copied()
-            .filter(|s| *s > 0)
+            .filter(|s| *s >= 0)
             .collect::<BTreeSet<_>>();
         let mut ok = 0;
         for season in uniq {
@@ -77,7 +77,7 @@ impl MetadataAPI {
         }
         let needed = items
             .iter()
-            .filter_map(|it| (it.season > 0).then_some(it.season))
+            .filter_map(|it| (it.season >= 0).then_some(it.season))
             .collect::<BTreeSet<_>>();
         let mut season_lookup = HashMap::<i32, HashMap<i32, i32>>::new();
         for season in needed {
@@ -96,7 +96,7 @@ impl MetadataAPI {
         }
         let mut result = HashMap::new();
         for item in items {
-            if item.file_id.is_empty() || item.season <= 0 || item.episode <= 0 {
+            if item.file_id.is_empty() || item.season < 0 || item.episode <= 0 {
                 continue;
             }
             if let Some(id) = season_lookup
@@ -271,6 +271,8 @@ fn lookup_absolute_or_relative_episode(
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct EpisodeRefByFileID {
+    #[serde(default)]
+    pub allow_absolute: bool,
     pub file_id: String,
     pub season: i32,
     pub episode: i32,

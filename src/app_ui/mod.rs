@@ -5,6 +5,7 @@ pub(crate) mod auth;
 pub(crate) mod files;
 pub(crate) mod magnets;
 pub(crate) mod media;
+mod media_library;
 pub(crate) mod metadata_ui;
 pub(crate) mod models;
 pub(crate) mod settings;
@@ -112,6 +113,7 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
         let tree = ctx.state.tree.clone();
         let matched_store = ctx.services.matched_store.clone();
         let tmdb_store = ctx.services.tmdb_store.clone();
+        let tvmaze_store = ctx.services.tvmaze_store.clone();
         let file_state = ctx.services.file_state.clone();
         let rt = ctx.services.rt.clone();
         move || {
@@ -138,15 +140,17 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
                 &tree,
                 &matched_store,
                 &tmdb_store,
+                &tvmaze_store,
                 &file_state,
             );
             if !missing.is_empty() {
                 let weak = weak.clone();
                 rt.spawn(async move {
-                    self::media::download_posters(missing).await;
-                    let _ = weak.upgrade_in_event_loop(|app| {
-                        app.invoke_media_refresh();
-                    });
+                    if self::media::download_posters(missing).await {
+                        let _ = weak.upgrade_in_event_loop(|app| {
+                            app.invoke_media_refresh();
+                        });
+                    }
                 });
             }
         }

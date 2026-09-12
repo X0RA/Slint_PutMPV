@@ -1,5 +1,7 @@
 mod app;
 mod gl;
+#[cfg(target_os = "linux")]
+mod linux_inhibitor;
 mod media_controls;
 mod sleep_inhibitor;
 

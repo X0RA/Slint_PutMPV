@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -17,15 +18,27 @@ pub struct TVMazeCache {
 #[derive(Debug)]
 pub struct TVMazeStore {
     path: PathBuf,
+    access: Mutex<()>,
 }
 
 impl TVMazeStore {
+    #[cfg(test)]
+    pub(crate) fn at_path(path: PathBuf) -> Self {
+        Self {
+            path,
+            access: Mutex::new(()),
+        }
+    }
+
     pub fn load() -> Result<Self> {
         let path = config_dir()?.join("tvmaze.json");
         if read_json::<TVMazeCache>(&path)?.is_none() {
             write_atomic(&path, &TVMazeCache::default())?;
         }
-        Ok(Self { path })
+        Ok(Self {
+            path,
+            access: Mutex::new(()),
+        })
     }
 
     pub fn path(&self) -> PathBuf {
@@ -33,27 +46,31 @@ impl TVMazeStore {
     }
 
     pub fn get_cached_data(&self, key: &str) -> Option<Value> {
+        let _access = self.access.lock().unwrap();
         let cache = self.read_cache().ok()?;
         cache.data.get(key).map(|e| e.data.clone())
     }
 
     pub fn set_cached_data(&self, key: &str, data: Value) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         let mut cache = self.read_cache()?;
         cache.data.insert(key.to_string(), CacheEntry { data });
         self.save_cache(&cache)
     }
 
-    #[allow(dead_code)]
     pub fn get_cache_snapshot(&self) -> Result<TVMazeCache> {
+        let _access = self.access.lock().unwrap();
         self.read_cache()
     }
 
     pub fn clear_cache(&self) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         self.save_cache(&TVMazeCache::default())
     }
 
     #[allow(dead_code)]
     pub fn clear_show_cache(&self, show_id: i32) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         let mut cache = self.read_cache()?;
         let prefix = format!("show_{show_id}_");
         cache.data.retain(|key, _| !key.starts_with(&prefix));
@@ -79,6 +96,7 @@ mod tests {
         let dir = tempfile_path("tvmaze_store_clear");
         let store = TVMazeStore {
             path: dir.join("tvmaze.json"),
+            access: Mutex::new(()),
         };
         store
             .set_cached_data("show_10_details", json!({"id": 10}))

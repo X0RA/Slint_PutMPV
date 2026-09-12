@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -23,6 +24,7 @@ pub struct MatchedData {
 #[derive(Debug)]
 pub struct MatchedStore {
     path: PathBuf,
+    access: Mutex<()>,
 }
 
 impl MatchedStore {
@@ -31,7 +33,10 @@ impl MatchedStore {
         if read_json::<MatchedData>(&path)?.is_none() {
             write_atomic(&path, &MatchedData::default())?;
         }
-        Ok(Self { path })
+        Ok(Self {
+            path,
+            access: Mutex::new(()),
+        })
     }
 
     pub fn path(&self) -> PathBuf {
@@ -39,6 +44,7 @@ impl MatchedStore {
     }
 
     pub fn insert_movie(&self, file_id: &str, movie_id: i32) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         let mut data = self.read_data()?;
         data.movies.insert(file_id.to_string(), movie_id);
         data.movie_scraped_at
@@ -52,6 +58,7 @@ impl MatchedStore {
         episode_id: i32,
         source: &str,
     ) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         let mut data = self.read_data()?;
         data.tv.insert(file_id.to_string(), episode_id);
         data.tv_source
@@ -62,6 +69,7 @@ impl MatchedStore {
     }
 
     pub fn delete_movie(&self, file_id: &str) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         let mut data = self.read_data()?;
         data.movies.remove(file_id);
         data.movie_scraped_at.remove(file_id);
@@ -69,6 +77,7 @@ impl MatchedStore {
     }
 
     pub fn delete_tv(&self, file_id: &str) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         let mut data = self.read_data()?;
         data.tv.remove(file_id);
         data.tv_source.remove(file_id);
@@ -77,10 +86,12 @@ impl MatchedStore {
     }
 
     pub fn get_matched_snapshot(&self) -> Result<MatchedData> {
+        let _access = self.access.lock().unwrap();
         self.read_data()
     }
 
     pub fn clear(&self) -> Result<()> {
+        let _access = self.access.lock().unwrap();
         self.save_data(&MatchedData::default())
     }
 
@@ -105,10 +116,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn concurrent_matches_are_not_lost() {
+        let dir = tempfile_path("matched_concurrent");
+        let store = std::sync::Arc::new(MatchedStore {
+            path: dir.join("matched.json"),
+            access: Mutex::new(()),
+        });
+        let threads: Vec<_> = (1..=16)
+            .map(|id| {
+                let store = store.clone();
+                std::thread::spawn(move || store.insert_movie(&id.to_string(), id).unwrap())
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+        assert_eq!(store.get_matched_snapshot().unwrap().movies.len(), 16);
+    }
+
+    #[test]
     fn insert_and_delete_matches() {
         let dir = tempfile_path("matched_store_insert");
         let store = MatchedStore {
             path: dir.join("matched.json"),
+            access: Mutex::new(()),
         };
 
         store.insert_movie("10", 100).unwrap();

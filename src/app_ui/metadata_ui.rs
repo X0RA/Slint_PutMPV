@@ -265,6 +265,7 @@ pub(crate) fn metadata_fetch_candidates(state: &MetadataUiState) -> Vec<Metadata
                 .entry(row.parent_id)
                 .or_default()
                 .push(EpisodeRefByFileID {
+                    allow_absolute: fileparser::parse_name(&row.filename, true).season.is_none(),
                     file_id: row.file_id.clone(),
                     season: row.season,
                     episode: row.episode,
@@ -333,6 +334,7 @@ pub(crate) fn build_unmatched_candidates_from_tree(
             let episodes = unmatched_episodes
                 .iter()
                 .map(|ep| EpisodeRefByFileID {
+                    allow_absolute: fileparser::parse_name(&ep.filename, true).season.is_none(),
                     file_id: ep.file_id.clone(),
                     season: ep.season,
                     episode: ep.episode,
@@ -388,7 +390,7 @@ pub(crate) async fn match_show_metadata(
 
     let mut seasons = episodes
         .iter()
-        .filter_map(|ep| (ep.season > 0).then_some(ep.season))
+        .filter_map(|ep| (ep.season >= 0).then_some(ep.season))
         .collect::<BTreeSet<_>>();
     let mut tmdb_resolved = HashMap::<String, i32>::new();
     let mut tmdb_series_id = None;
@@ -410,7 +412,10 @@ pub(crate) async fn match_show_metadata(
                         .push(format!("{title}: TMDB episode resolution failed: {e}")),
                 }
 
-                let unresolved = unresolved_episode_refs(episodes, &tmdb_resolved);
+                let unresolved: Vec<_> = unresolved_episode_refs(episodes, &tmdb_resolved)
+                    .into_iter()
+                    .filter(|ep| ep.allow_absolute)
+                    .collect();
                 if !unresolved.is_empty() {
                     match metadata_api
                         .resolve_absolute_episodes(result.id, &unresolved)
@@ -427,10 +432,18 @@ pub(crate) async fn match_show_metadata(
                 }
 
                 if !tmdb_resolved.is_empty() {
+                    if let Err(e) = tmdb_api.get_tv_series_details(result.id).await {
+                        outcome
+                            .errors
+                            .push(format!("{title}: TMDB show details failed: {e}"));
+                        tmdb_resolved.clear();
+                    }
+                }
+                if !tmdb_resolved.is_empty() {
                     let matches = episode_match_items(&tmdb_resolved, "tmdb");
-                    outcome.matched_episodes += matches.len();
-                    if let Err(e) = metadata_api.bulk_store_matches_by_file_id(&matches) {
-                        outcome.errors.push(format!("{title}: {e}"));
+                    match metadata_api.bulk_store_matches_by_file_id(&matches) {
+                        Ok(()) => outcome.matched_episodes += matches.len(),
+                        Err(e) => outcome.errors.push(format!("{title}: {e}")),
                     }
                 }
             }
@@ -459,8 +472,11 @@ pub(crate) async fn match_show_metadata(
                         }
                     };
 
-                    let still_unresolved =
-                        unresolved_episode_refs(&unresolved_after_tmdb, &tvmaze_resolved);
+                    let still_unresolved: Vec<_> =
+                        unresolved_episode_refs(&unresolved_after_tmdb, &tvmaze_resolved)
+                            .into_iter()
+                            .filter(|ep| ep.allow_absolute)
+                            .collect();
                     if !still_unresolved.is_empty() {
                         match metadata_api
                             .resolve_tvmaze_absolute_episodes(tvmaze_show_id, &still_unresolved)
@@ -478,9 +494,15 @@ pub(crate) async fn match_show_metadata(
 
                     if !tvmaze_resolved.is_empty() {
                         let matches = episode_match_items(&tvmaze_resolved, "tvmaze");
-                        outcome.matched_episodes += matches.len();
-                        if let Err(e) = metadata_api.bulk_store_matches_by_file_id(&matches) {
-                            outcome.errors.push(format!("{title}: {e}"));
+                        if let Err(e) = tvmaze_api.get_show_details(tvmaze_show_id).await {
+                            outcome
+                                .errors
+                                .push(format!("{title}: TVMaze show details failed: {e}"));
+                        } else {
+                            match metadata_api.bulk_store_matches_by_file_id(&matches) {
+                                Ok(()) => outcome.matched_episodes += matches.len(),
+                                Err(e) => outcome.errors.push(format!("{title}: {e}")),
+                            }
                         }
                     }
 
@@ -531,7 +553,12 @@ pub(crate) async fn fetch_metadata_candidates(
                 match tmdb_api.search_movie(&query, 1).await {
                     Ok(results) => {
                         if let Some(result) = results.first() {
-                            let _ = metadata_api.seed_movies(&[result.id]).await;
+                            if !matches!(metadata_api.seed_movies(&[result.id]).await, Ok(1)) {
+                                summary
+                                    .errors
+                                    .push(format!("{title}: could not fetch movie details"));
+                                continue;
+                            }
                             let item = MatchItemByFileID {
                                 file_id,
                                 kind: "movie".to_string(),
@@ -577,7 +604,13 @@ pub(crate) fn refresh_metadata_ui(
         let matched = matched_store.get_matched_snapshot().unwrap_or_default();
         build_metadata_rows(&tree, &matched)
     };
-    state.borrow_mut().rows = rebuilt;
+    {
+        let valid_ids: std::collections::BTreeSet<_> = rebuilt.iter().map(|row| row.id).collect();
+        let mut state = state.borrow_mut();
+        state.selected.retain(|id| valid_ids.contains(id));
+        state.expanded.retain(|id| valid_ids.contains(id));
+        state.rows = rebuilt;
+    }
     let query = app.get_metadata_query().to_string().to_lowercase();
     let filter = app.get_metadata_filter();
     let hide_matched = app.get_metadata_hide_matched();
@@ -729,6 +762,9 @@ pub(crate) fn install(
             let Some(app) = weak.upgrade() else {
                 return;
             };
+            if app.get_metadata_busy() {
+                return;
+            }
             if candidates.is_empty() {
                 app.set_metadata_status("Select movies or TV shows to fetch metadata.".into());
                 return;
@@ -852,6 +888,7 @@ pub(crate) fn install(
                 return;
             }
 
+            app.set_metadata_busy(true);
             app.set_metadata_status(
                 format!(
                     "Automatically fetching metadata for {} unmatched item{}...",
@@ -874,6 +911,7 @@ pub(crate) fn install(
                     summary.metadata_status()
                 );
                 let _ = weak.upgrade_in_event_loop(move |app| {
+                    app.set_metadata_busy(false);
                     app.set_metadata_status(message.into());
                     if summary.errors.is_empty() {
                         toast::show(
@@ -902,4 +940,43 @@ pub(crate) fn install(
             });
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::putio::types::{DirectoryNode, PutIoFile};
+
+    #[test]
+    fn explicit_seasons_are_not_candidates_for_absolute_remapping() {
+        let tree = UnifiedDirectoryTree {
+            root: DirectoryNode {
+                files: ["Show.S02E50.mkv", "Anime - 50.mkv"]
+                    .into_iter()
+                    .enumerate()
+                    .map(|(id, name)| PutIoFile {
+                        id: id as u64 + 1,
+                        name: name.into(),
+                        file_type: "VIDEO".into(),
+                        size: 100 * 1024 * 1024,
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let candidates = build_unmatched_candidates_from_tree(&tree, &MatchedData::default());
+        let episodes: HashMap<_, _> = candidates
+            .into_iter()
+            .filter_map(|candidate| match candidate {
+                MetadataFetchCandidate::Show { episodes, .. } => Some(episodes),
+                _ => None,
+            })
+            .flatten()
+            .map(|ep| (ep.file_id.clone(), ep))
+            .collect();
+        assert!(!episodes["1"].allow_absolute);
+        assert!(episodes["2"].allow_absolute);
+    }
 }

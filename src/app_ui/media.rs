@@ -49,20 +49,34 @@ pub(crate) fn collect_tree_file_ids(node: &DirectoryNode, ids: &mut HashSet<Stri
     }
 }
 
-pub(crate) fn poster_cache_path(poster_path: &str) -> Option<std::path::PathBuf> {
-    let filename = poster_path.trim_start_matches('/');
-    if filename.is_empty() {
+fn artwork_filename(path: &str) -> Option<String> {
+    if path.starts_with("https://") || path.starts_with("http://") {
+        use sha2::{Digest, Sha256};
+        return Some(format!("remote-{:x}.jpg", Sha256::digest(path.as_bytes())));
+    }
+    let name = path.trim_start_matches('/');
+    if name.is_empty() || name.contains(['/', '\\']) || name == ".." {
         return None;
     }
+    Some(name.to_string())
+}
+
+fn artwork_url(path: &str, size: &str) -> String {
+    if path.starts_with("https://") || path.starts_with("http://") {
+        path.to_string()
+    } else {
+        format!("https://image.tmdb.org/t/p/{size}{path}")
+    }
+}
+
+pub(crate) fn poster_cache_path(poster_path: &str) -> Option<std::path::PathBuf> {
+    let filename = artwork_filename(poster_path)?;
     Some(crate::storage::poster_cache_dir().ok()?.join(filename))
 }
 
 /// Cache path for w1280 images (stored in an `hd/` subdirectory).
 fn poster_cache_path_hd(poster_path: &str) -> Option<std::path::PathBuf> {
-    let filename = poster_path.trim_start_matches('/');
-    if filename.is_empty() {
-        return None;
-    }
+    let filename = artwork_filename(poster_path)?;
     Some(
         crate::storage::poster_cache_dir()
             .ok()?
@@ -86,7 +100,8 @@ pub(crate) fn load_cached_backdrop(poster_path: &str) -> Option<slint::Image> {
     load_cached_poster(poster_path)
 }
 
-pub(crate) async fn download_posters(poster_paths: Vec<String>) {
+pub(crate) async fn download_posters(poster_paths: Vec<String>) -> bool {
+    let mut downloaded = false;
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .user_agent("PutMPV/1.0")
@@ -99,8 +114,13 @@ pub(crate) async fn download_posters(poster_paths: Vec<String>) {
         if cache_path.exists() {
             continue;
         }
-        let url = format!("https://image.tmdb.org/t/p/w342{poster_path}");
-        match client.get(&url).send().await {
+        let url = artwork_url(poster_path, "w342");
+        match client
+            .get(&url)
+            .send()
+            .await
+            .and_then(reqwest::Response::error_for_status)
+        {
             Ok(resp) => match resp.bytes().await {
                 Ok(bytes) => {
                     if let Some(parent) = cache_path.parent() {
@@ -108,6 +128,8 @@ pub(crate) async fn download_posters(poster_paths: Vec<String>) {
                     }
                     if let Err(e) = std::fs::write(&cache_path, &bytes) {
                         warn!("Failed to write poster cache {}: {e}", cache_path.display());
+                    } else {
+                        downloaded = true;
                     }
                 }
                 Err(e) => warn!("Failed to read poster bytes for {poster_path}: {e}"),
@@ -115,6 +137,7 @@ pub(crate) async fn download_posters(poster_paths: Vec<String>) {
             Err(e) => warn!("Failed to fetch poster {poster_path}: {e}"),
         }
     }
+    downloaded
 }
 
 /// Download a backdrop at w1280 into the `hd/` cache subdirectory.
@@ -130,8 +153,13 @@ pub(crate) async fn download_backdrop_hd(poster_path: String) {
         .user_agent("PutMPV/1.0")
         .build()
         .unwrap_or_else(|_| reqwest::Client::new());
-    let url = format!("https://image.tmdb.org/t/p/w1280{poster_path}");
-    match client.get(&url).send().await {
+    let url = artwork_url(&poster_path, "w1280");
+    match client
+        .get(&url)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+    {
         Ok(resp) => match resp.bytes().await {
             Ok(bytes) => {
                 if let Some(parent) = cache_path.parent() {
@@ -400,6 +428,7 @@ fn apply_media_filter(app: &AppWindow, models: &MediaModelRefs<'_>, cache: &Medi
     models.resume.set_vec(resume);
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn refresh_media_ui(
     app: &AppWindow,
     models: &MediaModelRefs<'_>,
@@ -407,10 +436,16 @@ pub(crate) fn refresh_media_ui(
     tree: &Arc<RwLock<crate::putio::types::UnifiedDirectoryTree>>,
     matched_store: &Arc<MatchedStore>,
     tmdb_store: &Arc<TMDBStore>,
+    tvmaze_store: &Arc<crate::storage::tvmaze_store::TVMazeStore>,
     file_state: &Arc<RwLock<FileStateStore>>,
 ) -> Vec<String> {
-    let matched = matched_store.get_matched_snapshot().unwrap_or_default();
-    let tmdb_cache = tmdb_store.get_cache_snapshot().unwrap_or_default();
+    let mut matched = matched_store.get_matched_snapshot().unwrap_or_default();
+    let mut tmdb_cache = tmdb_store.get_cache_snapshot().unwrap_or_default();
+    super::media_library::merge_tvmaze(
+        &mut tmdb_cache,
+        &mut matched,
+        &tvmaze_store.get_cache_snapshot().unwrap_or_default(),
+    );
     let file_state_entries = file_state.read().unwrap().entries().clone();
 
     let mut existing_file_ids = HashSet::<String>::new();
@@ -458,7 +493,7 @@ pub(crate) fn refresh_media_ui(
                         serde_json::from_value::<TVSeasonDetails>(entry.data.clone())
                     {
                         for ep in &season.episodes {
-                            if ep.id > 0 {
+                            if ep.id != 0 {
                                 episode_to_series.insert(ep.id, series_id);
                                 episode_display.insert(
                                     ep.id,
@@ -773,7 +808,7 @@ pub(crate) fn refresh_media_ui(
             show.seasons
                 .values()
                 .flat_map(|s| s.episodes.iter())
-                .all(|ep| !matched.tv.contains_key(&ep.file_id))
+                .any(|ep| !matched.tv.contains_key(&ep.file_id))
         })
         .count();
     let unmatched_total = unmatched_movies + unmatched_shows;
@@ -837,6 +872,7 @@ pub(crate) fn install(
     let tree = state.tree.clone();
     let matched_store = services.matched_store.clone();
     let tmdb_store = services.tmdb_store.clone();
+    let tvmaze_store = services.tvmaze_store.clone();
     let metadata_api = services.metadata_api.clone();
     let tmdb_api = services.tmdb_api.clone();
     let tvmaze_api = services.tvmaze_api.clone();
@@ -915,6 +951,7 @@ pub(crate) fn install(
         let tree = tree.clone();
         let matched_store = matched_store.clone();
         let tmdb_store = tmdb_store.clone();
+        let tvmaze_store = tvmaze_store.clone();
         let file_state = services.file_state.clone();
         let tv_show_seasons_model = models.tv_seasons.clone();
         let tv_show_episodes_model = models.tv_episodes.clone();
@@ -941,6 +978,7 @@ pub(crate) fn install(
                         &tree,
                         &matched_store,
                         &tmdb_store,
+                        &tvmaze_store,
                         &file_state,
                         &tv_show_seasons_model,
                         &tv_show_episodes_model,
@@ -1013,9 +1051,10 @@ pub(crate) fn install(
             let Some(app) = weak.upgrade() else {
                 return;
             };
-            if candidates.is_empty() {
+            if app.get_metadata_busy() || candidates.is_empty() {
                 return;
             }
+            app.set_metadata_busy(true);
             app.set_media_show_error_flash(false);
             app.set_media_show_success_flash(false);
             let weak = weak.clone();
@@ -1030,6 +1069,8 @@ pub(crate) fn install(
                 let had_success = summary.had_success();
                 let had_errors = !summary.errors.is_empty();
                 let _ = weak.upgrade_in_event_loop(move |app| {
+                    app.set_metadata_busy(false);
+                    app.invoke_metadata_criteria_changed();
                     if had_success {
                         app.set_media_show_success_flash(true);
                         app.set_media_success_flash_text(success_text.as_str().into());
@@ -1119,6 +1160,25 @@ mod tests {
             file_id: file_id.into(),
             added_at: "2024-06-01T00:00:00Z".into(),
         }
+    }
+
+    #[test]
+    fn artwork_urls_support_both_http_schemes_without_using_urls_as_paths() {
+        for url in [
+            "http://example.com/poster.jpg",
+            "https://example.com/poster.jpg",
+        ] {
+            assert_eq!(artwork_url(url, "w342"), url);
+            let filename = artwork_filename(url).unwrap();
+            assert!(filename.starts_with("remote-"));
+            assert!(!filename.contains('/'));
+        }
+        assert_eq!(
+            artwork_url("/poster.jpg", "w342"),
+            "https://image.tmdb.org/t/p/w342/poster.jpg"
+        );
+        assert!(artwork_filename("").is_none());
+        assert!(artwork_filename("../poster.jpg").is_none());
     }
 
     #[test]
