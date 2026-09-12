@@ -259,12 +259,14 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
 
     let path_stack_logout = state.path_stack.clone();
     let current_folder_logout = state.current_folder.clone();
+    let trash_items_logout = state.trash_items.clone();
     app.on_logout({
         let weak = weak.clone();
         let cfg = cfg.clone();
         let tree = tree.clone();
         let path_stack = path_stack_logout.clone();
         let current_folder = current_folder_logout.clone();
+        let trash_items = trash_items_logout.clone();
         move || {
             if let Err(e) = cfg.clear_oauth_token() {
                 warn!("clear token: {e}");
@@ -272,7 +274,10 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
             *tree.write().unwrap() = UnifiedDirectoryTree::default();
             *current_folder.borrow_mut() = 0;
             *path_stack.borrow_mut() = vec![(0u64, "put.io".to_string())];
+            trash_items.write().unwrap().clear();
             if let Some(app) = weak.upgrade() {
+                app.set_files_trash_open(false);
+                app.set_files_trash_count(0);
                 app.set_view(VIEW_SPLASH);
                 app.invoke_request_refresh();
             }

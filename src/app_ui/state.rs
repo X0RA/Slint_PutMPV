@@ -7,7 +7,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 
 use crate::app_ui::metadata_ui::MetadataUiState;
-use crate::putio::types::UnifiedDirectoryTree;
+use crate::putio::types::{PutIoFile, UnifiedDirectoryTree};
 use crate::{MediaItem, MediaResumeItem};
 
 #[derive(Default)]
@@ -19,6 +19,8 @@ pub(crate) struct UiState {
     pub tree: Arc<RwLock<UnifiedDirectoryTree>>,
     pub sync_profiles: Arc<RwLock<Vec<crate::putio::sync::SyncProfile>>>,
     pub files_refreshing: Arc<AtomicBool>,
+    pub trash_items: Arc<RwLock<Vec<PutIoFile>>>,
+    pub trash_busy: Arc<AtomicBool>,
     pub auto_metadata_fetching: Arc<AtomicBool>,
     pub pending_local_clear: Rc<RefCell<Option<i32>>>,
     pub current_folder: Rc<RefCell<u64>>,
@@ -39,6 +41,8 @@ impl UiState {
             tree: Arc::new(RwLock::new(UnifiedDirectoryTree::default())),
             sync_profiles: Arc::new(RwLock::new(Vec::new())),
             files_refreshing: Arc::new(AtomicBool::new(false)),
+            trash_items: Arc::new(RwLock::new(Vec::new())),
+            trash_busy: Arc::new(AtomicBool::new(false)),
             auto_metadata_fetching: Arc::new(AtomicBool::new(false)),
             pending_local_clear: Rc::new(RefCell::new(None)),
             current_folder: Rc::new(RefCell::new(0)),

@@ -93,6 +93,7 @@ component MenuEntry inherits Rectangle {
 component KebabMenu inherits Rectangle {
     in property <bool> is_folder: false;
     in property <bool> is_watched: false;
+    in property <bool> trash_mode: false;
     in property <int> item_id: -1;
     callback action(name: string, id: int);
     callback close();
@@ -110,7 +111,13 @@ component KebabMenu inherits Rectangle {
         padding: 4px;
         spacing: 2px;
 
-        if (root.is_folder) : VerticalLayout {
+        if (root.trash_mode) : VerticalLayout {
+            spacing: 2px;
+            MenuEntry { icon_name: "refresh"; label: "Restore"; clicked => { root.action("restore", root.item_id); } }
+            MenuEntry { icon_name: "trash"; label: "Delete permanently"; danger: true; clicked => { root.action("delete", root.item_id); } }
+        }
+
+        if (!root.trash_mode && root.is_folder) : VerticalLayout {
             spacing: 2px;
             MenuEntry { icon_name: "folder"; label: "Open"; clicked => { root.action("open-folder", root.item_id); } }
             MenuEntry { icon_name: "refresh"; label: "Rename"; clicked => { root.action("rename", root.item_id); } }
@@ -118,7 +125,7 @@ component KebabMenu inherits Rectangle {
             MenuEntry { icon_name: "download"; label: "Zip and download"; disabled: true; clicked => { root.action("zip-download", root.item_id); } }
         }
 
-        if (!root.is_folder) : VerticalLayout {
+        if (!root.trash_mode && !root.is_folder) : VerticalLayout {
             spacing: 2px;
             MenuEntry { icon_name: "play"; label: "Play"; clicked => { root.action("play", root.item_id); } }
             MenuEntry { icon_name: "refresh"; label: "Rename"; clicked => { root.action("rename", root.item_id); } }
@@ -131,12 +138,12 @@ component KebabMenu inherits Rectangle {
             }
         }
 
-        Rectangle {
+        if (!root.trash_mode) : Rectangle {
             height: 1px;
             background: Theme.border;
         }
 
-        MenuEntry { icon_name: "trash"; label: "Delete"; danger: true; clicked => { root.action("delete", root.item_id); } }
+        if (!root.trash_mode) : MenuEntry { icon_name: "trash"; label: "Delete"; danger: true; clicked => { root.action("delete", root.item_id); } }
     }
 }
 
@@ -446,6 +453,11 @@ export component FilesPage inherits FocusScope {
     callback menu_action(action: string, id: int);
     callback context_menu_action(action: string);
     callback play_item(id: int);
+    in-out property <bool> trash_open;
+    in-out property <int> trash_count;
+    callback toggle_trash();
+    callback trash_action(action: string, id: int);
+    callback empty_trash();
 
     focus-on-click: true;
     focus-on-tab-navigation: false;
@@ -489,7 +501,7 @@ export component FilesPage inherits FocusScope {
     title-text := Text {
         x: page_padding;
         y: 24px;
-        text: "Your Files";
+        text: root.trash_open ? "Trash" : "Your Files";
         color: Theme.text;
         font-size: 26px;
         font-weight: 600;
@@ -531,28 +543,33 @@ export component FilesPage inherits FocusScope {
                 }
             }
 
-            for segment[index] in root.path_segments : HorizontalLayout {
+            if (!root.trash_open) : HorizontalLayout {
                 spacing: 4px;
                 height: parent.height;
 
-                Rectangle {
-                    width: 12px;
+                for segment[index] in root.path_segments : HorizontalLayout {
+                    spacing: 4px;
                     height: parent.height;
-                    Icon {
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - self.height) / 2;
-                        name: "chevron-right";
-                        icon_size: 11px;
-                        tint: Theme.text_mute;
-                    }
-                }
 
-                BreadcrumbButton {
-                    label: segment.name;
-                    active: index == root.path_segments.length - 1;
-                    clicked => {
-                        root.dismiss_search_focus();
-                        root.go_to_path(index);
+                    Rectangle {
+                        width: 12px;
+                        height: parent.height;
+                        Icon {
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - self.height) / 2;
+                            name: "chevron-right";
+                            icon_size: 11px;
+                            tint: Theme.text_mute;
+                        }
+                    }
+
+                    BreadcrumbButton {
+                        label: segment.name;
+                        active: index == root.path_segments.length - 1;
+                        clicked => {
+                            root.dismiss_search_focus();
+                            root.go_to_path(index);
+                        }
                     }
                 }
             }
@@ -594,6 +611,14 @@ export component FilesPage inherits FocusScope {
         width: parent.width - page_padding * 2;
         height: 40px;
         background: transparent;
+
+        // The toolbar is absolutely positioned, so the trash chips carry fixed widths
+        // and the search field is placed off `chips_right` instead of a guessed offset.
+        property <length> trash_chip_w: 80px;
+        property <length> empty_trash_chip_w: 122px;
+        property <bool> show_empty_trash: root.trash_open && root.trash_count > 0;
+        property <length> chips_right: trash-chip.x + trash-chip.width
+            + (self.show_empty_trash ? 10px + self.empty_trash_chip_w : 0px);
 
         mode-segment := Rectangle {
             x: 0px;
@@ -711,13 +736,43 @@ export component FilesPage inherits FocusScope {
             }
         }
 
+        trash-chip := ButtonChip {
+            x: descending-chip.x + descending-chip.width + 18px;
+            y: 0px;
+            width: toolbar.trash_chip_w;
+            height: 32px;
+            label: "Trash";
+            icon_name: "trash";
+            active: root.trash_open;
+            center_content: true;
+            clicked => {
+                root.dismiss_search_focus();
+                root.toggle_trash();
+            }
+        }
+
+        if (toolbar.show_empty_trash) : empty-trash-chip := ButtonChip {
+            x: trash-chip.x + trash-chip.width + 10px;
+            y: 0px;
+            width: toolbar.empty_trash_chip_w;
+            height: 32px;
+            label: "Empty trash";
+            icon_name: "trash";
+            danger: true;
+            center_content: true;
+            clicked => {
+                root.dismiss_search_focus();
+                root.empty_trash();
+            }
+        }
+
         files_search := SearchField {
-            x: descending-chip.x + descending-chip.width + 12px;
+            x: toolbar.chips_right + 14px;
             y: 0px;
             height: 34px;
-            width: min(max(120px, parent.width - self.x), 380px);
+            width: min(max(140px, parent.width - self.x), 380px);
             text <=> root.query;
-            placeholder: "Search files or folders";
+            placeholder: root.trash_open ? "Search trash" : "Search files or folders";
             shortcut: "CMD+K";
             edited => { root.query_changed(); }
         }
@@ -745,7 +800,7 @@ export component FilesPage inherits FocusScope {
                 height: parent.height;
                 clicked => { root.dismiss_search_focus(); }
                 pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
+                    if (!root.trash_open && event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
                         root.dismiss_search_focus();
                         root.menu_open = false;
                         root.context_menu_x = self.absolute-position.x + self.mouse-x - root.absolute-position.x;
@@ -764,7 +819,9 @@ export component FilesPage inherits FocusScope {
                 selected: root.detail_open && root.detail_item.id == item.id;
                 clicked => {
                     root.dismiss_search_focus();
-                    root.open_item(item.id, item.item_type);
+                    if (!root.trash_open) {
+                        root.open_item(item.id, item.item_type);
+                    }
                 }
                 menu_requested(id, item_type, anchor_abs_x, anchor_abs_y) => {
                     root.dismiss_search_focus();
@@ -789,7 +846,7 @@ export component FilesPage inherits FocusScope {
                 height: parent.height;
                 clicked => { root.dismiss_search_focus(); }
                 pointer-event(event) => {
-                    if (event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
+                    if (!root.trash_open && event.kind == PointerEventKind.down && event.button == PointerEventButton.right) {
                         root.dismiss_search_focus();
                         root.menu_open = false;
                         root.context_menu_x = self.absolute-position.x + self.mouse-x - root.absolute-position.x;
@@ -844,7 +901,9 @@ export component FilesPage inherits FocusScope {
                 row-touch := TouchArea {
                     clicked => {
                         root.dismiss_search_focus();
-                        root.open_item(item.id, item.item_type);
+                        if (!root.trash_open) {
+                            root.open_item(item.id, item.item_type);
+                        }
                     }
                 }
 
@@ -963,9 +1022,19 @@ export component FilesPage inherits FocusScope {
                 }
             }
         }
+
+        if (root.trash_open && root.items.length == 0) : Text {
+            y: 48px;
+            width: parent.width;
+            text: root.trash_count == 0 ? "Trash is empty" : "No matching items in trash";
+            color: Theme.text_mute;
+            font-size: 14px;
+            font-family: Theme.ui_font;
+            horizontal-alignment: center;
+        }
     }
 
-    if (root.detail_open && root.detail_docked) : docked-detail := Rectangle {
+    if (root.detail_open && !root.trash_open && root.detail_docked) : docked-detail := Rectangle {
         x: root.width - 340px;
         y: root.header_height;
         width: 340px;
@@ -990,7 +1059,7 @@ export component FilesPage inherits FocusScope {
         }
     }
 
-    if (root.detail_open && !root.detail_docked) : overlay-detail := Rectangle {
+    if (root.detail_open && !root.trash_open && !root.detail_docked) : overlay-detail := Rectangle {
         x: 0px;
         y: root.header_height;
         width: root.width;
@@ -1049,11 +1118,16 @@ export component FilesPage inherits FocusScope {
             y: root.menu_y - root.header_height;
             is_folder: root.menu_item_type == "folder";
             is_watched: root.menu_item_watched;
+            trash_mode: root.trash_open;
             item_id: root.menu_item_id;
             action(name, id) => {
                 root.dismiss_search_focus();
                 root.menu_open = false;
-                root.menu_action(name, id);
+                if (root.trash_open) {
+                    root.trash_action(name, id);
+                } else {
+                    root.menu_action(name, id);
+                }
             }
             close => {
                 root.dismiss_search_focus();

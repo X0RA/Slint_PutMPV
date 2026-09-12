@@ -529,6 +529,64 @@ fn location_text(stack: &[(u64, String)]) -> String {
         .join(" / ")
 }
 
+fn trash_display_entry(file: &PutIoFile) -> DisplayEntry {
+    DisplayEntry {
+        file: file.clone(),
+        aggregate_size: file.size,
+        folder_item_count: 0,
+    }
+}
+
+fn apply_trash_listing(
+    app: &AppWindow,
+    visible_model: &slint::VecModel<FileItem>,
+    path_model: &slint::VecModel<PathSegment>,
+    trash_items: &[PutIoFile],
+    file_state: &std::collections::BTreeMap<String, FileStateEntry>,
+) {
+    let query = app.get_files_query().to_lowercase();
+    let mut rows = trash_items
+        .iter()
+        .filter(|file| query.is_empty() || file.name.to_lowercase().contains(&query))
+        .map(|file| (trash_display_entry(file), "Trash".to_string()))
+        .collect::<Vec<_>>();
+    sort_display_rows(
+        &mut rows,
+        app.get_files_sort(),
+        app.get_files_sort_descending(),
+    );
+
+    let mut folder_count = 0i32;
+    let mut file_count = 0i32;
+    for (entry, _) in &rows {
+        if entry.file.file_type == "FOLDER" {
+            folder_count += 1;
+        } else {
+            file_count += 1;
+        }
+    }
+
+    visible_model.set_vec(
+        rows.iter()
+            .map(|(entry, location)| put_to_file_item(entry, location, file_state))
+            .collect::<Vec<_>>(),
+    );
+    path_model.set_vec(Vec::new());
+    app.set_folder_count(folder_count);
+    app.set_file_count(file_count);
+    app.set_has_parent(false);
+    app.set_files_trash_count(trash_items.len() as i32);
+    let total_size: u64 = trash_items.iter().map(|file| file.size).sum();
+    app.set_total_label(format!("TRASH · {}", format_size(total_size)).into());
+}
+
+fn find_trash_file(items: &[PutIoFile], id: i32) -> Option<PutIoFile> {
+    items
+        .iter()
+        .find(|file| truncate_id(file.id) == id)
+        .cloned()
+}
+
 pub(crate) fn install(
     app: &AppWindow,
     state: &UiState,
@@ -544,6 +602,8 @@ pub(crate) fn install(
     let current_folder = state.current_folder.clone();
     let path_stack = state.path_stack.clone();
     let files_refreshing = state.files_refreshing.clone();
+    let trash_items = state.trash_items.clone();
+    let trash_busy = state.trash_busy.clone();
     let config = services.config.clone();
     let client = services.client.clone();
     let files_store = services.files_store.clone();
@@ -558,10 +618,22 @@ pub(crate) fn install(
         let visible_model = visible_model.clone();
         let path_model = path_model.clone();
         let file_state = file_state.clone();
+        let trash_items = trash_items.clone();
         move || {
             let Some(app) = weak.upgrade() else {
                 return;
             };
+            if app.get_files_trash_open() {
+                let file_state_entries = file_state.read().unwrap().entries().clone();
+                apply_trash_listing(
+                    &app,
+                    &visible_model,
+                    &path_model,
+                    &trash_items.read().unwrap(),
+                    &file_state_entries,
+                );
+                return;
+            }
             let tree = tree.read().unwrap();
             let path_changed = {
                 let mut stack = path_stack.borrow_mut();
@@ -690,7 +762,7 @@ pub(crate) fn install(
         move || r()
     });
 
-    app.on_files_refresh({
+    let refresh_tree: Rc<dyn Fn()> = Rc::new({
         let weak = app.as_weak();
         let client = client.clone();
         let config = config.clone();
@@ -738,6 +810,275 @@ pub(crate) fn install(
         }
     });
 
+    let fetch_trash: Rc<dyn Fn()> = Rc::new({
+        let weak = app.as_weak();
+        let client = client.clone();
+        let config = config.clone();
+        let trash_items = trash_items.clone();
+        let trash_busy = trash_busy.clone();
+        let rt = rt.clone();
+        move || {
+            if trash_busy.swap(true, Ordering::Relaxed) {
+                return;
+            }
+            let token = config.oauth_token();
+            if token.is_empty() {
+                trash_busy.store(false, Ordering::Relaxed);
+                return;
+            }
+            let weak = weak.clone();
+            let client = client.clone();
+            let trash_items = trash_items.clone();
+            let trash_busy = trash_busy.clone();
+            rt.spawn(async move {
+                match putio::folders::list_trash(&client, &token).await {
+                    Ok(files) => {
+                        *trash_items.write().unwrap() = files;
+                        let _ = weak.upgrade_in_event_loop(|app| {
+                            app.invoke_request_refresh();
+                        });
+                    }
+                    Err(e) => {
+                        warn!("trash list failed: {e}");
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            toast::show(&app, ToastKind::Error, "Trash", e.to_string());
+                        });
+                    }
+                }
+                trash_busy.store(false, Ordering::Relaxed);
+            });
+        }
+    });
+
+    app.on_files_refresh({
+        let fetch_trash = fetch_trash.clone();
+        let refresh_tree = refresh_tree.clone();
+        let weak = app.as_weak();
+        move || {
+            if weak.upgrade().is_some_and(|app| app.get_files_trash_open()) {
+                fetch_trash();
+            } else {
+                refresh_tree();
+            }
+        }
+    });
+
+    app.on_files_trash_toggled({
+        let weak = app.as_weak();
+        let fetch_trash = fetch_trash.clone();
+        let r = request_refresh.clone();
+        move || {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            let opening = !app.get_files_trash_open();
+            app.set_files_trash_open(opening);
+            app.set_detail_open(false);
+            app.set_detail_item(empty_file_item());
+            r();
+            if opening {
+                fetch_trash();
+            }
+        }
+    });
+
+    app.on_files_trash_action({
+        let weak = app.as_weak();
+        let trash_items = trash_items.clone();
+        let client = client.clone();
+        let config = config.clone();
+        let files_store = files_store.clone();
+        let tree = tree.clone();
+        let files_refreshing = files_refreshing.clone();
+        let rt = rt.clone();
+        move |action, id| {
+            if weak.upgrade().is_none() {
+                return;
+            }
+            let Some(file) = find_trash_file(&trash_items.read().unwrap(), id) else {
+                return;
+            };
+            let file_id = file.id;
+            let file_name = file.name.clone();
+            let token = config.oauth_token();
+            if token.is_empty() {
+                return;
+            }
+
+            match action.as_str() {
+                "restore" => {
+                    let weak = weak.clone();
+                    let client = client.clone();
+                    let trash_items = trash_items.clone();
+                    let files_store = files_store.clone();
+                    let tree = tree.clone();
+                    let files_refreshing = files_refreshing.clone();
+                    rt.spawn(async move {
+                        match putio::folders::restore_trash_files(&client, &token, &[file_id]).await
+                        {
+                            Ok(()) => {
+                                trash_items
+                                    .write()
+                                    .unwrap()
+                                    .retain(|item| item.id != file_id);
+                                if !files_refreshing.swap(true, Ordering::Relaxed) {
+                                    match putio::files::build_tree(client, token).await {
+                                        Ok(new_tree) => {
+                                            if let Err(e) = files_store.write_tree(&new_tree) {
+                                                tracing::error!("write tree: {e}");
+                                            }
+                                            *tree.write().unwrap() = new_tree;
+                                        }
+                                        Err(e) => warn!("tree refresh after restore failed: {e}"),
+                                    }
+                                    files_refreshing.store(false, Ordering::Relaxed);
+                                }
+                                let _ = weak.upgrade_in_event_loop(move |app| {
+                                    app.invoke_request_refresh();
+                                    app.invoke_metadata_criteria_changed();
+                                    app.invoke_auto_metadata_fetch_after_refresh();
+                                    toast::show(
+                                        &app,
+                                        ToastKind::Success,
+                                        "Restored",
+                                        format!("Restored \"{file_name}\""),
+                                    );
+                                });
+                            }
+                            Err(e) => {
+                                warn!("trash restore failed: {e}");
+                                let _ = weak.upgrade_in_event_loop(move |app| {
+                                    toast::show(
+                                        &app,
+                                        ToastKind::Error,
+                                        "Restore failed",
+                                        e.to_string(),
+                                    );
+                                });
+                            }
+                        }
+                    });
+                }
+                "delete" => {
+                    let confirmed = rfd::AsyncMessageDialog::new()
+                        .set_title("Delete permanently")
+                        .set_description(format!(
+                            "Permanently delete \"{file_name}\"? This cannot be undone."
+                        ))
+                        .set_level(rfd::MessageLevel::Warning)
+                        .set_buttons(rfd::MessageButtons::OkCancel)
+                        .show();
+                    let weak = weak.clone();
+                    let client = client.clone();
+                    let trash_items = trash_items.clone();
+                    rt.spawn(async move {
+                        if !matches!(confirmed.await, rfd::MessageDialogResult::Ok) {
+                            return;
+                        }
+                        match putio::folders::delete_trash_files(&client, &token, &[file_id]).await
+                        {
+                            Ok(()) => {
+                                trash_items
+                                    .write()
+                                    .unwrap()
+                                    .retain(|item| item.id != file_id);
+                                let _ = weak.upgrade_in_event_loop(move |app| {
+                                    app.invoke_request_refresh();
+                                    toast::show(
+                                        &app,
+                                        ToastKind::Success,
+                                        "Deleted",
+                                        format!("Permanently deleted \"{file_name}\""),
+                                    );
+                                });
+                            }
+                            Err(e) => {
+                                warn!("trash delete failed: {e}");
+                                let _ = weak.upgrade_in_event_loop(move |app| {
+                                    toast::show(
+                                        &app,
+                                        ToastKind::Error,
+                                        "Delete failed",
+                                        e.to_string(),
+                                    );
+                                });
+                            }
+                        }
+                    });
+                }
+                _ => {}
+            }
+        }
+    });
+
+    app.on_files_trash_empty({
+        let weak = app.as_weak();
+        let trash_items = trash_items.clone();
+        let client = client.clone();
+        let config = config.clone();
+        let rt = rt.clone();
+        move || {
+            let ids = trash_items
+                .read()
+                .unwrap()
+                .iter()
+                .map(|file| file.id)
+                .collect::<Vec<_>>();
+            if ids.is_empty() {
+                return;
+            }
+            let token = config.oauth_token();
+            if token.is_empty() {
+                return;
+            }
+            let confirmed = rfd::AsyncMessageDialog::new()
+                .set_title("Empty trash")
+                .set_description("Permanently delete all items in trash? This cannot be undone.")
+                .set_level(rfd::MessageLevel::Warning)
+                .set_buttons(rfd::MessageButtons::OkCancel)
+                .show();
+            let weak = weak.clone();
+            let client = client.clone();
+            let trash_items = trash_items.clone();
+            rt.spawn(async move {
+                if !matches!(confirmed.await, rfd::MessageDialogResult::Ok) {
+                    return;
+                }
+                match putio::folders::delete_trash_files(&client, &token, &ids).await {
+                    Ok(()) => {
+                        // Only drop what was actually deleted; the list may have grown
+                        // while the confirmation dialog was open.
+                        let deleted: std::collections::HashSet<u64> = ids.into_iter().collect();
+                        trash_items
+                            .write()
+                            .unwrap()
+                            .retain(|item| !deleted.contains(&item.id));
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            app.invoke_request_refresh();
+                            toast::show(
+                                &app,
+                                ToastKind::Success,
+                                "Trash emptied",
+                                "Permanently deleted all trash items.",
+                            );
+                        });
+                    }
+                    Err(e) => {
+                        warn!("empty trash failed: {e}");
+                        let _ = weak.upgrade_in_event_loop(move |app| {
+                            toast::show(
+                                &app,
+                                ToastKind::Error,
+                                "Empty trash failed",
+                                e.to_string(),
+                            );
+                        });
+                    }
+                }
+            });
+        }
+    });
+
     app.on_files_open_item({
         let weak = app.as_weak();
         let tree = tree.clone();
@@ -749,6 +1090,9 @@ pub(crate) fn install(
             let Some(app) = weak.upgrade() else {
                 return;
             };
+            if app.get_files_trash_open() {
+                return;
+            }
             let tree_borrow = tree.read().unwrap();
             let query_active = !app.get_files_query().is_empty();
             let found = if query_active {
@@ -816,6 +1160,9 @@ pub(crate) fn install(
         let r = request_refresh.clone();
         move || {
             if let Some(app) = weak.upgrade() {
+                if app.get_files_trash_open() {
+                    app.set_files_trash_open(false);
+                }
                 path_stack.borrow_mut().truncate(1);
                 *current_folder.borrow_mut() = 0;
                 app.set_detail_open(false);
@@ -1078,6 +1425,9 @@ pub(crate) fn install(
         let rt = rt.clone();
         move |action| {
             info!("context menu action: {action}");
+            if weak.upgrade().is_some_and(|app| app.get_files_trash_open()) {
+                return;
+            }
 
             if action.as_str() == "new-folder" {
                 let parent_id = *current_folder.borrow();

@@ -39,6 +39,8 @@ export component AppWindow inherits Window {
     in-out property <int> files_mode: 0;
     in-out property <int> files_sort: 0;
     in-out property <bool> files_sort_descending: true;
+    in-out property <bool> files_trash_open: false;
+    in-out property <int> files_trash_count: 0;
     in-out property <[FileItem]> visible_items;
     in-out property <[PathSegment]> path_segments;
     in-out property <bool> has_parent: false;
@@ -188,6 +190,9 @@ export component AppWindow inherits Window {
     callback files_close_detail();
     callback files_menu_action(action: string, id: int);
     callback files_context_menu_action(action: string);
+    callback files_trash_toggled();
+    callback files_trash_action(action: string, id: int);
+    callback files_trash_empty();
     callback metadata_toggle_item(id: int);
     callback metadata_toggle_expand(id: int);
     callback metadata_select_unmatched();
@@ -390,6 +395,8 @@ export component AppWindow inherits Window {
         mode <=> root.files_mode;
         sort_index <=> root.files_sort;
         sort_descending <=> root.files_sort_descending;
+        trash_open <=> root.files_trash_open;
+        trash_count <=> root.files_trash_count;
         open_item(id, item_type) => { root.files_open_item(id, item_type); }
         go_up => { root.files_go_up(); }
         go_root => { root.files_go_root(); }
@@ -403,6 +410,9 @@ export component AppWindow inherits Window {
         menu_action(action, id) => { root.files_menu_action(action, id); }
         context_menu_action(action) => { root.files_context_menu_action(action); }
         play_item(id) => { root.files_menu_action("play", id); }
+        toggle_trash => { root.files_trash_toggled(); }
+        trash_action(action, id) => { root.files_trash_action(action, id); }
+        empty_trash => { root.files_trash_empty(); }
     }
 
     if (root.view == 4) : media := MediaPage {
