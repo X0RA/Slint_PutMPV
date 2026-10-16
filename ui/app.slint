@@ -87,6 +87,12 @@ export component AppWindow inherits Window {
     in-out property <float> player_volume: 80;
     in-out property <bool> player_muted: false;
     in-out property <[PlayerTrack]> player_subtitle_tracks;
+    in-out property <[PlayerTrack]> player_subtitle_search_results;
+    in-out property <bool> player_subtitle_search_busy: false;
+    in-out property <bool> player_subtitle_search_available: false;
+    in-out property <bool> player_subtitle_search_error: false;
+    in-out property <string> player_subtitle_search_status: "";
+    in-out property <string> player_subtitle_download_id: "";
     in-out property <string> player_selected_subtitle: "";
     in-out property <[PlayerTrack]> player_audio_tracks;
     in-out property <string> player_selected_audio: "";
@@ -228,6 +234,8 @@ export component AppWindow inherits Window {
     callback player_seek(seconds: float);
     callback player_set_volume(volume: float);
     callback player_toggle_mute();
+    callback player_search_subtitles();
+    callback player_select_subtitle_result(id: string);
     callback player_select_subtitle(track_id: string);
     callback player_toggle_captions();
     callback player_subtitle_render_mode_changed(mode: int);
@@ -578,6 +586,14 @@ export component AppWindow inherits Window {
         volume <=> root.player_volume;
         muted <=> root.player_muted;
         subtitle_tracks <=> root.player_subtitle_tracks;
+        subtitle_search_results: root.player_subtitle_search_results;
+        subtitle_search_busy: root.player_subtitle_search_busy;
+        subtitle_search_available: root.player_subtitle_search_available;
+        subtitle_search_error: root.player_subtitle_search_error;
+        subtitle_search_status: root.player_subtitle_search_status;
+        subtitle_download_id: root.player_subtitle_download_id;
+        search_subtitles => { root.player_search_subtitles(); }
+        select_subtitle_result(id) => { root.player_select_subtitle_result(id); }
         selected_subtitle <=> root.player_selected_subtitle;
         audio_tracks <=> root.player_audio_tracks;
         selected_audio <=> root.player_selected_audio;

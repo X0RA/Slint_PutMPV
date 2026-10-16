@@ -1,3 +1,5 @@
+import { ScrollView } from "std-widgets.slint";
+import { LoadingSpinner } from "../loading-spinner.slint";
 import { Theme } from "../../theme.slint";
 import { Icon } from "../icons.slint";
 import { PlayerTrack } from "../../types.slint";
@@ -12,11 +14,24 @@ export component PlayerTrackDropdown inherits Rectangle {
     in property <bool> show_render_mode: false;
     in-out property <int> render_mode: 0;
     in-out property <bool> open: false;
+    in property <bool> enable_search: false;
+    in property <[PlayerTrack]> search_results;
+    in property <bool> search_busy: false;
+    in property <bool> search_available: false;
+    in property <bool> search_error: false;
+    in property <string> search_status;
+    in property <string> download_id;
+    in property <length> menu_max_height: 420px;
+    callback search();
+    callback select_result(id: string);
     callback select(track_id: string);
     callback toggled(open: bool);
     callback render_mode_changed(mode: int);
 
-    private property <int> visible_count: max(1, min(root.tracks.length, 7));
+    private property <length> tracks_height: max(1, root.tracks.length) * 48px;
+    private property <length> status_height: root.search_status == "" ? 0px : 56px;
+    private property <length> results_height: root.search_results.length == 0 ? 0px : 32px + root.search_results.length * 68px;
+    private property <length> content_height: root.tracks_height + (root.enable_search ? 48px + root.status_height + root.results_height : 0px);
     private property <length> render_mode_height: root.show_render_mode ? 48px : 0px;
 
     width: 30px;
@@ -24,6 +39,8 @@ export component PlayerTrackDropdown inherits Rectangle {
     background: transparent;
 
     PlayerIconButton {
+        accessible-role: button;
+        accessible-label: root.header + " menu";
         icon_name: root.icon_name;
         tone: "subtle";
         large_icon: root.large_icon;
@@ -34,10 +51,10 @@ export component PlayerTrackDropdown inherits Rectangle {
     }
 
     if (root.open) : menu := Rectangle {
-        x: -190px;
+        x: root.width - self.width;
         y: -self.height - 8px;
-        width: 220px;
-        height: 50px + root.render_mode_height + root.visible_count * 44px + max(0, root.visible_count - 1) * 4px;
+        width: root.enable_search ? 360px : 220px;
+        height: min(root.menu_max_height, 50px + root.render_mode_height + root.content_height);
         border-radius: 8px;
         border-width: 1px;
         border-color: #ffffff1a;
@@ -133,7 +150,7 @@ export component PlayerTrackDropdown inherits Rectangle {
             }
         }
 
-        if (root.tracks.length == 0) : empty := Text {
+        if (root.tracks.length == 0) && !root.enable_search : empty := Text {
             x: 12px;
             y: 52px + root.render_mode_height;
             width: parent.width - 24px;
@@ -143,15 +160,20 @@ export component PlayerTrackDropdown inherits Rectangle {
             font-family: Theme.ui_font;
         }
 
-        VerticalLayout {
+        scroll := ScrollView {
             x: 6px;
             y: 44px + root.render_mode_height;
             width: parent.width - 12px;
-            height: parent.height - 50px - root.render_mode_height;
-            spacing: 4px;
-
+            height: parent.height - self.y - 6px;
+            viewport-width: self.visible-width;
+            viewport-height: root.content_height;
             for track[index] in root.tracks : Rectangle {
+                x: 0px;
+                y: index * 48px;
+                width: scroll.visible-width;
                 height: 44px;
+                accessible-role: button;
+                accessible-label: track.name;
                 border-radius: 4px;
                 background: track.id == root.selected_id ? #9d8aff26 : (row-touch.has-hover ? #ffffff0f : transparent);
 
@@ -194,6 +216,72 @@ export component PlayerTrackDropdown inherits Rectangle {
                         root.open = false;
                         root.select(track.id);
                     }
+                }
+            }
+
+            if root.enable_search : search-button := Rectangle {
+                x: 4px; y: root.tracks_height + 4px;
+                width: scroll.visible-width - 8px; height: 36px;
+                border-radius: 5px;
+                background: search-touch.has-hover ? #9d8aff40 : #9d8aff26;
+                opacity: root.search_available && !root.search_busy && root.download_id == "" ? 1 : 0.55;
+                accessible-role: button;
+                accessible-label: root.search_error ? "Retry subtitle search" : "Search subtitles";
+                if root.search_busy : LoadingSpinner {
+                    x: 12px; y: 9px; width: 18px; height: 18px;
+                    label: "Searching subtitles";
+                }
+                Text {
+                    width: parent.width; height: parent.height;
+                    text: root.search_busy ? "Searching…" : (root.search_error ? "Retry search" : "Search");
+                    horizontal-alignment: center; vertical-alignment: center;
+                    color: Theme.accent_hi; font-size: 13px; font-family: Theme.ui_font;
+                }
+                search-touch := TouchArea {
+                    enabled: root.search_available && !root.search_busy && root.download_id == "";
+                    clicked => { root.search(); }
+                }
+            }
+            if root.enable_search && root.search_status != "" : Text {
+                x: 10px; y: root.tracks_height + 48px;
+                width: scroll.visible-width - 20px; height: root.status_height;
+                text: root.search_status;
+                color: root.search_error ? #f0a0a0 : Theme.text_dim;
+                font-size: 12px; font-family: Theme.ui_font;
+                wrap: word-wrap; overflow: elide; vertical-alignment: center;
+            }
+            if root.enable_search && root.search_results.length > 0 : Text {
+                x: 10px; y: root.tracks_height + 48px + root.status_height;
+                width: scroll.visible-width - 20px; height: 32px;
+                text: "Search results"; color: Theme.text_mute;
+                font-size: 11px; font-family: Theme.ui_font; font-weight: 600;
+                vertical-alignment: center;
+            }
+            for result[index] in root.search_results : Rectangle {
+                x: 0px;
+                y: root.tracks_height + 48px + root.status_height + 32px + index * 68px;
+                width: scroll.visible-width; height: 64px;
+                border-radius: 4px;
+                background: result-touch.has-hover ? #ffffff0f : transparent;
+                accessible-role: button;
+                accessible-label: "Load subtitle " + result.name;
+                Text {
+                    x: 10px; y: 5px; width: parent.width - 42px; height: 34px;
+                    text: result.name; color: Theme.text; font-size: 12px; font-family: Theme.ui_font;
+                    wrap: word-wrap; overflow: elide;
+                }
+                Text {
+                    x: 10px; y: 42px; width: parent.width - 20px; height: 16px;
+                    text: root.download_id == result.id ? "Downloading…" : result.detail;
+                    color: Theme.text_mute; font-size: 11px; font-family: Theme.ui_font; overflow: elide;
+                }
+                if root.download_id == result.id : LoadingSpinner {
+                    x: parent.width - 28px; y: 14px; width: 18px; height: 18px;
+                    label: "Downloading subtitle";
+                }
+                result-touch := TouchArea {
+                    enabled: root.download_id == "";
+                    clicked => { root.select_result(result.id); }
                 }
             }
         }

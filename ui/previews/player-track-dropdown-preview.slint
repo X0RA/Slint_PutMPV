@@ -1,0 +1,63 @@
+import { PlayerTrack } from "../types.slint";
+import { Theme } from "../theme.slint";
+import { PlayerTrackDropdown } from "../components/player/player_track_dropdown.slint";
+
+export component PlayerTrackDropdownPreview inherits Window {
+    title: "Subtitle search preview";
+    preferred-width: 1160px;
+    preferred-height: 760px;
+    background: Theme.bg;
+    default-font-family: Theme.ui_font;
+    in-out property <int> state: 0;
+    in-out property <string> selected: "";
+    in-out property <string> download: "";
+    in-out property <int> mode: 0;
+    private property <[PlayerTrack]> mock_results: [
+            { id: "one", name: "Manhunt.Unabomber.S01E07.Lincoln.720p.AMZN.WEBRip.DDP2.0.x264-NTb.srt", detail: "English · put.io · OpenSubtitles" },
+            { id: "two", name: "Manhunt Unabomber S01E07 Lincoln.srt", detail: "English · BSPlayer · File match" },
+            { id: "three", name: "Manhunt.Unabomber.S01E07.1080p.WEB-DL.srt", detail: "English · put.io · OpenSubtitles" },
+            { id: "four", name: "Manhunt.Unabomber.S01E07.WEBRip.srt", detail: "English · put.io · OpenSubtitles" },
+            { id: "five", name: "Manhunt.Unabomber.S01E07.WEB.srt", detail: "English · put.io · OpenSubtitles" }
+        ];
+
+    Text { x: 24px; y: 20px; text: "Subtitles · mock states"; color: Theme.text; font-size: 22px; }
+    for label[index] in ["Empty", "Searching", "Results", "No matches", "Error", "Downloading"] : Rectangle {
+        x: 24px + index * 184px; y: 66px; width: 172px; height: 36px;
+        border-radius: 6px; background: root.state == index ? Theme.accent : Theme.surface;
+        accessible-role: button; accessible-label: label;
+        Text { text: label; width: parent.width; height: parent.height; horizontal-alignment: center; vertical-alignment: center; color: Theme.text; }
+        TouchArea { clicked => { root.state = index; root.download = index == 5 ? "one" : ""; } }
+    }
+    Text { x: 24px; y: 128px; width: 500px; text: "Search keeps the selected track unchanged. Select a result to load it. The menu scrolls when there are many results."; wrap: word-wrap; color: Theme.text_dim; }
+    PlayerTrackDropdown {
+        x: 350px; y: 660px;
+        header: "Subtitles"; icon_name: "subtitles"; large_icon: true;
+        open: true; show_render_mode: true; enable_search: true;
+        render_mode <=> root.mode;
+        tracks: [{ id: "", name: "Off", detail: "" }, { id: "1", name: "English", detail: "eng · subrip" }];
+        selected_id <=> root.selected;
+        search_available: true;
+        search_busy: root.state == 1;
+        search_error: root.state == 4;
+        search_status: root.state == 1 ? "Searching put.io…" : root.state == 3 ? "No matching subtitles found on put.io or BSPlayer." : root.state == 4 ? "No matching subtitles on put.io. BSPlayer is unavailable; please try again." : root.state == 5 ? "Downloading subtitle…" : "";
+        search_results: root.state == 2 || root.state == 5 ? root.mock_results : [];
+        download_id <=> root.download;
+        search => { root.state = 1; }
+        select_result(id) => { root.download = id; root.state = 5; }
+    }
+    PlayerTrackDropdown {
+        x: 730px; y: 660px;
+        header: "Subtitles"; icon_name: "subtitles";
+        open: true; show_render_mode: true; enable_search: true;
+        tracks: [{ id: "", name: "Off", detail: "" }];
+        search_available: true;
+        menu_max_height: 260px;
+        search_status: "No matching subtitles found on put.io or BSPlayer.";
+    }
+    PlayerTrackDropdown {
+        x: 1100px; y: 660px;
+        header: "Audio Track"; icon_name: "audio"; open: true;
+        tracks: [{ id: "1", name: "English", detail: "eng · aac · default" }, { id: "2", name: "Commentary", detail: "eng · aac" }];
+        selected_id: "1";
+    }
+}

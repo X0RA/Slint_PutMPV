@@ -8,6 +8,8 @@ const USER_AGENT: &str = "PutMPV/1.0";
 
 #[derive(Debug, Error)]
 pub enum ApiError {
+    #[error("response exceeds the size limit")]
+    TooLarge,
     #[error("unauthorized")]
     Unauthorized,
     #[error("http {0}: {1}")]
@@ -78,6 +80,40 @@ impl PutioClient {
             return Err(ApiError::Http(status, s));
         }
         Ok(body.to_vec())
+    }
+
+    pub async fn get_bytes_limited(
+        &self,
+        url: &str,
+        token: &str,
+        limit: usize,
+    ) -> Result<Vec<u8>, ApiError> {
+        let mut response = self
+            .http
+            .get(url)
+            .header("Authorization", format!("token {token}"))
+            .send()
+            .await?;
+        if response.status() == StatusCode::UNAUTHORIZED {
+            return Err(ApiError::Unauthorized);
+        }
+        if !response.status().is_success() {
+            return Err(ApiError::Http(
+                response.status(),
+                "Subtitle request failed".into(),
+            ));
+        }
+        if response.content_length().is_some_and(|n| n > limit as u64) {
+            return Err(ApiError::TooLarge);
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await? {
+            if bytes.len() + chunk.len() > limit {
+                return Err(ApiError::TooLarge);
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(bytes)
     }
 
     pub async fn put_json<B: Serialize, T: serde::de::DeserializeOwned>(

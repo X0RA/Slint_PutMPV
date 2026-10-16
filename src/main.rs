@@ -22,6 +22,7 @@ mod metadata;
 mod player;
 mod putio;
 mod storage;
+mod subtitles;
 mod sync;
 
 slint::include_modules!();

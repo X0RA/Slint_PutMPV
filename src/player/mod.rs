@@ -112,6 +112,15 @@ impl PlayerEngine {
             .map_err(|e| anyhow!("{e}"))
     }
 
+    pub fn add_subtitle(&self, path: &std::path::Path, title: &str, language: &str) -> Result<()> {
+        let path = path
+            .to_str()
+            .ok_or_else(|| anyhow!("Invalid subtitle path"))?;
+        self.mpv
+            .command("sub-add", &[path, "cached", title, language])
+            .map_err(|e| anyhow!("{e}"))
+    }
+
     pub fn set_aid(&self, track_id: &str) -> Result<()> {
         let value = if track_id.is_empty() { "no" } else { track_id };
         self.mpv

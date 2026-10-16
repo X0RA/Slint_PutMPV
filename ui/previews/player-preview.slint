@@ -1,0 +1,52 @@
+import { Theme } from "../theme.slint";
+import { PlayerPage } from "../pages/player.slint";
+import { PlayerTrack } from "../types.slint";
+
+export component PlayerPreview inherits Window {
+    title: "Player subtitle preview";
+    preferred-width: 900px;
+    preferred-height: 600px;
+    background: #101014;
+    default-font-family: Theme.ui_font;
+    in-out property <bool> searching: false;
+    in-out property <bool> searched: false;
+    in-out property <bool> loaded: false;
+    in-out property <string> selected: "";
+    in-out property <int> mode: 0;
+    private property <[PlayerTrack]> loaded_tracks: [
+        { id: "", name: "Off", detail: "" },
+        { id: "1", name: "Example.Show.S01E07.WEB-DL.srt", detail: "eng · subrip" }
+    ];
+    private property <[PlayerTrack]> off_tracks: [{ id: "", name: "Off", detail: "" }];
+    private property <[PlayerTrack]> results: [
+        { id: "one", name: "Example.Show.S01E07.WEB-DL.srt", detail: "English · put.io · OpenSubtitles" },
+        { id: "two", name: "Example.Show.S01E07.720p.HDTV.srt", detail: "English · BSPlayer · File match" }
+    ];
+    Text {
+        x: 20px; y: 10px; width: parent.width - 40px; height: 24px;
+        text: "Selected track: " + (root.selected == "" ? "Off" : root.selected) + " · Renderer: " + (root.mode == 0 ? "MPV" : "App");
+        color: Theme.text_dim;
+    }
+    Timer {
+        interval: 1s;
+        running: root.searching;
+        triggered => { root.searching = false; root.searched = true; }
+    }
+    PlayerPage {
+        y: 42px; width: parent.width; height: parent.height - 42px;
+        title: "Example Show · S01E07";
+        duration: 2400; duration_label: "40:00";
+        position: 120; position_label: "2:00";
+        paused: true;
+        subtitle_tracks: root.loaded ? root.loaded_tracks : root.off_tracks;
+        selected_subtitle <=> root.selected;
+        subtitle_render_mode <=> root.mode;
+        subtitle_text: root.selected == "" ? "" : "This is a downloaded subtitle.";
+        subtitle_search_available: true;
+        subtitle_search_busy: root.searching;
+        subtitle_search_results: root.searched ? root.results : [];
+        subtitle_search_status: root.searching ? "Searching put.io…" : root.loaded ? "Subtitle loaded." : "";
+        search_subtitles => { root.searching = true; root.searched = false; }
+        select_subtitle_result(id) => { root.loaded = true; root.selected = "1"; }
+    }
+}

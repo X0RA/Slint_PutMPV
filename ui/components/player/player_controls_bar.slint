@@ -16,6 +16,12 @@ export component PlayerControlsBar inherits Rectangle {
     in property <string> position_label: "0:00";
     in property <string> duration_label: "0:00";
     in property <[PlayerTrack]> subtitle_tracks;
+    in property <[PlayerTrack]> subtitle_search_results;
+    in property <bool> subtitle_search_busy: false;
+    in property <bool> subtitle_search_available: false;
+    in property <bool> subtitle_search_error: false;
+    in property <string> subtitle_search_status: "";
+    in property <string> subtitle_download_id: "";
     in-out property <string> selected_subtitle: "";
     in-out property <int> subtitle_render_mode: 0;
     in property <[PlayerTrack]> audio_tracks;
@@ -26,6 +32,8 @@ export component PlayerControlsBar inherits Rectangle {
     callback seek(seconds: float);
     callback set_volume(volume: float);
     callback toggle_mute();
+    callback search_subtitles();
+    callback select_subtitle_result(id: string);
     callback select_subtitle(track_id: string);
     callback toggle_captions();
     callback subtitle_render_mode_changed(mode: int);
@@ -36,6 +44,9 @@ export component PlayerControlsBar inherits Rectangle {
     callback toggle_playlist();
 
     in-out property <bool> playlist_open: false;
+
+    in property <length> menu_max_height: 420px;
+    out property <bool> menus_open: root.subtitle_open || root.audio_open;
 
     height: 120px;
     background: @linear-gradient(0deg, #000000e6 0%, #00000099 58%, #00000000 100%);
@@ -165,6 +176,16 @@ export component PlayerControlsBar inherits Rectangle {
             tracks: root.subtitle_tracks;
             selected_id <=> root.selected_subtitle;
             show_render_mode: true;
+            enable_search: true;
+            menu_max_height: root.menu_max_height;
+            search_results: root.subtitle_search_results;
+            search_busy: root.subtitle_search_busy;
+            search_available: root.subtitle_search_available;
+            search_error: root.subtitle_search_error;
+            search_status: root.subtitle_search_status;
+            download_id: root.subtitle_download_id;
+            search => { root.search_subtitles(); }
+            select_result(id) => { root.select_subtitle_result(id); }
             render_mode <=> root.subtitle_render_mode;
             open <=> root.subtitle_open;
             toggled(open) => {

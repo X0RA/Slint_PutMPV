@@ -4,6 +4,7 @@ pub mod files;
 pub mod folders;
 pub mod oauth;
 pub mod stream;
+pub mod subtitles;
 pub mod sync;
 pub mod transfers;
 pub mod types;

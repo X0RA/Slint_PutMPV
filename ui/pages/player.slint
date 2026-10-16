@@ -15,6 +15,12 @@ export component PlayerPage inherits FocusScope {
     in-out property <float> volume: 80;
     in-out property <bool> muted: false;
     in property <[PlayerTrack]> subtitle_tracks;
+    in property <[PlayerTrack]> subtitle_search_results;
+    in property <bool> subtitle_search_busy: false;
+    in property <bool> subtitle_search_available: false;
+    in property <bool> subtitle_search_error: false;
+    in property <string> subtitle_search_status: "";
+    in property <string> subtitle_download_id: "";
     in-out property <string> selected_subtitle: "";
     in property <[PlayerTrack]> audio_tracks;
     in-out property <string> selected_audio: "";
@@ -30,6 +36,8 @@ export component PlayerPage inherits FocusScope {
     callback seek(seconds: float);
     callback set_volume(volume: float);
     callback toggle_mute();
+    callback search_subtitles();
+    callback select_subtitle_result(id: string);
     callback select_subtitle(track_id: string);
     callback toggle_captions();
     callback subtitle_render_mode_changed(mode: int);
@@ -84,9 +92,9 @@ export component PlayerPage inherits FocusScope {
 
     hide-timer := Timer {
         interval: 3000ms;
-        running: root.controls_visible && !root.playlist_open;
+        running: root.controls_visible && !root.playlist_open && !controls.menus_open;
         triggered => {
-            root.controls_visible = false;
+            if !controls.menus_open { root.controls_visible = false; }
         }
     }
 
@@ -230,6 +238,15 @@ export component PlayerPage inherits FocusScope {
         volume <=> root.volume;
         muted <=> root.muted;
         subtitle_tracks: root.subtitle_tracks;
+        subtitle_search_results: root.subtitle_search_results;
+        subtitle_search_busy: root.subtitle_search_busy;
+        subtitle_search_available: root.subtitle_search_available;
+        subtitle_search_error: root.subtitle_search_error;
+        subtitle_search_status: root.subtitle_search_status;
+        subtitle_download_id: root.subtitle_download_id;
+        menu_max_height: min(420px, max(120px, root.height - 150px));
+        search_subtitles => { root.search_subtitles(); }
+        select_subtitle_result(id) => { root.select_subtitle_result(id); }
         selected_subtitle <=> root.selected_subtitle;
         audio_tracks: root.audio_tracks;
         selected_audio <=> root.selected_audio;

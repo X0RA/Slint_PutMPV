@@ -21,6 +21,9 @@ use super::media_controls::{MediaCommand, MediaControlsWrapper};
 use super::sleep_inhibitor::SleepInhibitor;
 use super::{PlayerEngine, PlayerRenderer};
 
+#[path = "subtitles.rs"]
+mod subtitles;
+
 type SharedMediaControls = Arc<Mutex<MediaControlsWrapper>>;
 type SharedSleepInhibitor = Arc<Mutex<SleepInhibitor>>;
 
@@ -43,6 +46,7 @@ fn extract_hwnd(_app: &AppWindow) -> Option<usize> {
 #[derive(Default)]
 struct PlayerPlaybackState {
     active: bool,
+    subtitles: subtitles::Session,
     tried_fallback: bool,
     fallback_url: Option<String>,
     last_subtitle_track: Option<SharedString>,
@@ -195,6 +199,7 @@ impl EmbeddedPlayer {
         let media_controls = self.media_controls.clone();
         let sleep_inhibitor = self.sleep_inhibitor.clone();
         app.on_player_close(move || {
+            playback_state.lock().unwrap().subtitles.reset();
             watch_sync.on_session_end();
             if let Some(engine) = engine.as_ref() {
                 if let Err(e) = engine.stop() {
@@ -381,7 +386,7 @@ fn register_events(
                                     }
                                 });
                             } else {
-                                playback_state.lock().unwrap().active = false;
+                                subtitles::ended(&playback_state, &weak);
                                 if let Some(mc) = media_controls.clone() {
                                     let _ = weak.upgrade_in_event_loop(move |_| {
                                         mc.lock().unwrap().release()
@@ -394,7 +399,7 @@ fn register_events(
                             let _ = weak.upgrade_in_event_loop(|app| {
                                 refresh_watch_state_views(&app);
                             });
-                            playback_state.lock().unwrap().active = false;
+                            subtitles::ended(&playback_state, &weak);
                             if let Some(mc) = media_controls.clone() {
                                 let _ = weak
                                     .upgrade_in_event_loop(move |_| mc.lock().unwrap().release());
@@ -404,13 +409,24 @@ fn register_events(
                     }
                     Some(Ok(Event::FileLoaded)) => {
                         let duration = get_f64(&event_client, "duration").unwrap_or(0.0);
-                        let resume = {
+                        let path = get_string(&event_client, "path");
+                        let (resume, subtitle_epoch) = {
                             let mut state = playback_state.lock().unwrap();
+                            // A previous file can finish opening after the queue selection changes.
+                            if path.is_none()
+                                || (path != state.subtitles.original_url
+                                    && path != state.fallback_url)
+                                || state.current_index.is_none()
+                            {
+                                continue;
+                            }
                             state.active = state.current_index.is_some();
-                            state
+                            state.subtitles.ready = state.active;
+                            let resume = state
                                 .current_index
                                 .and_then(|idx| state.queue.get(idx))
-                                .and_then(|item| watch_sync.start_session(item.file_id, duration))
+                                .and_then(|item| watch_sync.start_session(item.file_id, duration));
+                            (resume, state.subtitles.epoch)
                         };
                         if let Some(position) = resume {
                             if let Err(e) = engine.seek(position) {
@@ -436,13 +452,22 @@ fn register_events(
                             sleep_inhibitor.lock().unwrap().acquire();
                         }
                         let tracks = read_tracks(&event_client);
+                        let subtitle_state = playback_state.clone();
                         let _ = weak.upgrade_in_event_loop(move |app| {
+                            {
+                                let state = subtitle_state.lock().unwrap();
+                                if !state.subtitles.ready || state.subtitles.epoch != subtitle_epoch
+                                {
+                                    return;
+                                }
+                            }
                             if let Some((mc, title, dur)) = mc_payload {
                                 let hwnd = extract_hwnd(&app);
                                 let mut guard = mc.lock().unwrap();
                                 guard.update_hwnd(hwnd);
                                 guard.ensure_active(&title, dur, paused_now, position_now);
                             }
+                            app.set_player_subtitle_search_available(true);
                             apply_tracks(&app, tracks);
                         });
                     }
@@ -536,6 +561,14 @@ fn register_callbacks(
     watch_sync: Arc<WatchSyncService>,
     player_view: i32,
 ) {
+    subtitles::register(
+        app,
+        engine.clone(),
+        playback_state.clone(),
+        client.clone(),
+        config.clone(),
+        rt.clone(),
+    );
     let weak = app.as_weak();
     let engine_for_play = engine.clone();
     app.on_player_toggle_play(move || {
@@ -588,6 +621,7 @@ fn register_callbacks(
     let engine_for_subtitle = engine.clone();
     let subtitle_state = playback_state.clone();
     app.on_player_select_subtitle(move |track_id| {
+        subtitles::cancel_download(&subtitle_state, &weak);
         if !track_id.is_empty() {
             subtitle_state.lock().unwrap().last_subtitle_track = Some(track_id.clone());
         }
@@ -607,6 +641,7 @@ fn register_callbacks(
     let engine_for_captions = engine.clone();
     let captions_state = playback_state.clone();
     app.on_player_toggle_captions(move || {
+        subtitles::cancel_download(&captions_state, &weak);
         let Some(app) = weak.upgrade() else {
             return;
         };
@@ -802,6 +837,7 @@ fn start_queue_item(
     watch_sync.on_session_end();
     {
         let mut state = playback_state.lock().unwrap();
+        state.subtitles.reset();
         state.active = true;
         state.tried_fallback = false;
         state.fallback_url = Some(fallback_url.clone());
@@ -822,20 +858,21 @@ fn start_queue_item(
     let weak = app.as_weak();
     let playback_title = item.title.clone();
     let file_id = item.file_id;
+    let epoch = playback_state.lock().unwrap().subtitles.epoch;
     rt.spawn(async move {
-        let message = match putio::stream::resolve_play_url(&client, &token, file_id).await {
-            Ok(url) => match engine.load(&url) {
-                Ok(()) => playback_title,
-                Err(e) => format!("Could not start embedded playback: {e}"),
-            },
-            Err(e) => match engine.load(&fallback_url) {
-                Ok(()) => playback_title,
-                Err(load_err) => {
-                    format!("Could not resolve original stream: {e}; fallback failed: {load_err}")
-                }
-            },
-        };
+        let resolved = putio::stream::resolve_play_url(&client, &token, file_id).await;
         let _ = weak.upgrade_in_event_loop(move |app| {
+            let mut state = playback_state.lock().unwrap();
+            if state.subtitles.epoch != epoch {
+                return;
+            }
+            state.subtitles.original_url = resolved.as_ref().ok().cloned();
+            let url = resolved.as_deref().unwrap_or(&fallback_url);
+            let message = match engine.load(url) {
+                Ok(()) => playback_title,
+                Err(_) => "Could not start embedded playback.".to_string(),
+            };
+            drop(state);
             app.set_player_title(message.into());
             app.window().request_redraw();
         });
@@ -876,6 +913,7 @@ fn adjacent_queue_item(
 }
 
 fn reset_player_state(app: &AppWindow) {
+    subtitles::reset_ui(app);
     app.set_player_paused(false);
     app.set_player_position(0.0);
     app.set_player_buffered_fraction(0.0);
