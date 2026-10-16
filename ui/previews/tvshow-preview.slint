@@ -1,0 +1,17 @@
+import { TvShowPage } from "../pages/tvshow.slint";
+export component TvShowPreview inherits Window {
+    title: "TV show preview";
+    preferred-width: 1100px;
+    preferred-height: 760px;
+    TvShowPage {
+        width: 100%; height: 100%;
+        title: "The Example Series";
+        overview: "A group of friends finds a new mystery in every town they visit.";
+        rating_label: "8.5";
+        years_label: "2024–2026";
+        stats_line: "2 seasons · 16 episodes";
+        seasons: [{ label: "Season 1", season_number: 1 }];
+        season_block_title: "Season 1";
+        season_block_meta: "No matched episodes yet";
+    }
+}

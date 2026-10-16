@@ -98,6 +98,15 @@ impl TMDBAPI {
         .await
     }
 
+    pub async fn get_movie_credits(&self, movie_id: i32) -> Result<MovieCredits> {
+        self.cached_request(
+            &format!("movie_{movie_id}_credits_{LANGUAGE}"),
+            &format!("/movie/{movie_id}/credits"),
+            &[("language", LANGUAGE.to_string())],
+        )
+        .await
+    }
+
     pub async fn get_tv_series_details(&self, series_id: i32) -> Result<TVSeriesDetails> {
         let key = format!("tv_{series_id}_details_{LANGUAGE}");
         self.cached_request(
@@ -247,6 +256,38 @@ pub struct MovieDetails {
     pub genres: Vec<Genre>,
     #[serde(default)]
     pub vote_average: f64,
+    #[serde(default, deserialize_with = "null_string")]
+    pub tagline: String,
+    #[serde(default, deserialize_with = "null_string")]
+    pub status: String,
+    #[serde(default)]
+    pub budget: u64,
+    #[serde(default)]
+    pub revenue: u64,
+    #[serde(default)]
+    pub vote_count: i32,
+    #[serde(default)]
+    pub spoken_languages: Vec<SpokenLanguage>,
+    #[serde(default)]
+    pub production_companies: Vec<MovieNamedEntity>,
+    #[serde(default)]
+    pub production_countries: Vec<MovieNamedEntity>,
+    #[serde(default)]
+    pub belongs_to_collection: Option<MovieNamedEntity>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct MovieNamedEntity {
+    #[serde(default, deserialize_with = "null_string")]
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct MovieCredits {
+    #[serde(default)]
+    pub cast: Vec<EpisodeGuestStar>,
+    #[serde(default)]
+    pub crew: Vec<EpisodeCrewCredit>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]

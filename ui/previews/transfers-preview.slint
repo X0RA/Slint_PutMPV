@@ -1,0 +1,32 @@
+import { TransfersPage } from "../pages/transfers.slint";
+import { Theme } from "../theme.slint";
+import { ButtonChip } from "../components/primitives.slint";
+import { TransferItem } from "../types.slint";
+
+export component TransfersPreview inherits Window {
+    title: "Transfers preview";
+    preferred-width: 1100px;
+    preferred-height: 760px;
+    in-out property <string> action;
+    in-out property <bool> empty: false;
+    private property <[TransferItem]> samples: [
+        { id: "1", file_id: "42", parent_id: "0", title: "Completed movie.mkv", meta: "Completed", progress: 1, status_style: 2, file_available: true },
+        { id: "2", file_id: "43", parent_id: "0", title: "Completed season folder moved to another location", meta: "Seeding", progress: 1, status_style: 1, file_available: true },
+        { id: "3", title: "Still downloading.mkv", meta: "Downloading", progress: 0.45, file_available: false },
+        { id: "4", title: "Failed transfer", meta: "Could not connect", status_style: 3, file_available: false },
+    ];
+    VerticalLayout {
+        HorizontalLayout {
+            ButtonChip { label: "Toggle empty"; clicked => { root.empty = !root.empty; } }
+            Text { text: root.action; color: Theme.text; }
+        }
+        TransfersPage {
+            vertical-stretch: 1;
+            items: root.empty ? [] : root.samples;
+            count_label: root.empty ? "0 transfers" : "4 transfers";
+            go_to_file(id, parent) => { root.action = "Go to file " + id; }
+            reannounce(id) => { root.action = "Retry " + id; }
+            cancel_requested(id, name) => { root.action = "Cancel " + id; }
+        }
+    }
+}

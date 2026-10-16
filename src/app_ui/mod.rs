@@ -8,6 +8,7 @@ pub(crate) mod media;
 mod media_library;
 pub(crate) mod metadata_ui;
 pub(crate) mod models;
+mod movie;
 pub(crate) mod settings;
 pub(crate) mod state;
 pub(crate) mod toast;
@@ -42,6 +43,7 @@ pub(crate) const VIEW_CODE: i32 = 2;
 pub(crate) const VIEW_FILES: i32 = 3;
 pub(crate) const VIEW_MEDIA: i32 = 4;
 pub(crate) const VIEW_TV_SHOW: i32 = 8;
+pub(crate) const VIEW_MOVIE: i32 = 10;
 pub(crate) const VIEW_PLAYER: i32 = 7;
 pub(crate) const VIEW_SPLASH_AFTER_RESET: i32 = VIEW_SPLASH;
 
@@ -105,6 +107,7 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
         let media_shows = ctx.models.media_shows.clone();
         let media_resume = ctx.models.media_resume.clone();
         let media_hero_badges = ctx.models.media_hero_badges.clone();
+        let artwork = ctx.state.media_artwork.clone();
         let all_movies = ctx.state.media_all_movies.clone();
         let all_shows = ctx.state.media_all_shows.clone();
         let all_resume = ctx.state.media_all_resume.clone();
@@ -127,6 +130,7 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
                 hero_badges: &media_hero_badges,
             };
             let media_cache = self::media::MediaCacheRefs {
+                artwork: &artwork,
                 movies: &all_movies,
                 shows: &all_shows,
                 resume: &all_resume,
@@ -143,14 +147,48 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
                 &tvmaze_store,
                 &file_state,
             );
-            if !missing.is_empty() {
+            let queued: Vec<_> = {
+                let mut state = artwork.lock().unwrap();
+                missing
+                    .into_iter()
+                    .filter(|path| {
+                        if state.can_queue(path) {
+                            state.pending.insert(path.clone());
+                            true
+                        } else {
+                            false
+                        }
+                    })
+                    .collect()
+            };
+            if !queued.is_empty() {
                 let weak = weak.clone();
+                let artwork = artwork.clone();
                 rt.spawn(async move {
-                    if self::media::download_posters(missing).await {
-                        let _ = weak.upgrade_in_event_loop(|app| {
-                            app.invoke_media_refresh();
+                    // Bound concurrent requests and refresh each finished poster immediately.
+                    let sem = Arc::new(tokio::sync::Semaphore::new(4));
+                    let mut jobs = tokio::task::JoinSet::new();
+                    for path in queued {
+                        let sem = sem.clone();
+                        let artwork = artwork.clone();
+                        let weak = weak.clone();
+                        jobs.spawn(async move {
+                            let _permit = sem.acquire().await.unwrap();
+                            let downloaded =
+                                self::media::download_posters(vec![path.clone()]).await;
+                            {
+                                let mut state = artwork.lock().unwrap();
+                                state.pending.remove(&path);
+                                if !downloaded {
+                                    state.failed.insert(path, std::time::Instant::now());
+                                } else {
+                                    state.failed.remove(&path);
+                                }
+                            }
+                            let _ = weak.upgrade_in_event_loop(|app| app.invoke_media_refresh());
                         });
                     }
+                    while jobs.join_next().await.is_some() {}
                 });
             }
         }
@@ -197,6 +235,8 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
         &ctx.services.rt,
         &ctx.embedded_player,
     );
+
+    movie::install(app, &ctx.services);
 
     tv_show::install(
         app,

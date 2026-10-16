@@ -1,6 +1,7 @@
 import { ScrollView } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { ButtonChip } from "../components/primitives.slint";
+import { LoadingSpinner } from "../components/loading-spinner.slint";
 import { Icon } from "../components/icons.slint";
 import { TvSeasonTab, TvEpisodeRow, TvCreatorChip, TvHeroBadge, TvEpisodeCredit, TvDetailItem } from "../types.slint";
 
@@ -125,6 +126,10 @@ component EpisodeCreditCard inherits Rectangle {
 export component TvShowPage inherits Rectangle {
     background: Theme.bg;
 
+    in property <bool> movie_mode: false;
+    in property <bool> watched: false;
+    in property <bool> poster_loading: false;
+    in property <string> play_label: "Play";
     in property <string> title;
     in property <string> tagline;
     in property <string> rating_label;
@@ -170,6 +175,7 @@ export component TvShowPage inherits Rectangle {
         content := VerticalLayout {
             width: root.width;
             spacing: 0px;
+            alignment: start;
 
             // ── Hero ──────────────────────────────────────────────────────────
             Rectangle {
@@ -197,6 +203,11 @@ export component TvShowPage inherits Rectangle {
                         image-fit: cover;
                         opacity: 0.35;
                     }
+                }
+
+                if root.poster_loading && root.backdrop.width == 0 && root.hero_poster.width == 0 : LoadingSpinner {
+                    x: parent.width - self.width - gutter;
+                    y: 40px;
                 }
 
                 // Left-side darkness so text is legible against any backdrop
@@ -290,6 +301,7 @@ export component TvShowPage inherits Rectangle {
 
                             Text {
                                 text: root.rating_label;
+                                vertical-alignment: center;
                                 color: Theme.text;
                                 font-size: compact ? 13px : 14px;
                                 font-weight: 700;
@@ -298,6 +310,7 @@ export component TvShowPage inherits Rectangle {
 
                             if years_label != "" : Text {
                                 text: "  ·  " + root.years_label;
+                                vertical-alignment: center;
                                 color: Theme.text_dim;
                                 font-size: compact ? 13px : 14px;
                                 font-weight: 500;
@@ -306,10 +319,31 @@ export component TvShowPage inherits Rectangle {
 
                             if stats_line != "" : Text {
                                 text: "  ·  " + root.stats_line;
+                                vertical-alignment: center;
                                 color: Theme.text_dim;
                                 font-size: compact ? 13px : 14px;
                                 font-weight: 500;
                                 font-family: Theme.ui_font;
+                            }
+                            if root.movie_mode : watched-toggle := Rectangle {
+                                width: 28px;
+                                height: 28px;
+                                border-radius: 14px;
+                                border-width: 1px;
+                                border-color: root.watched ? Theme.accent_hi : Theme.border_hi;
+                                background: root.watched ? Theme.accent : (watched-touch.has-hover ? Theme.surface_higher : #ffffff0a);
+                                accessible-role: checkbox;
+                                accessible-label: root.watched ? "Mark unwatched" : "Mark watched";
+                                accessible-checked: root.watched;
+                                accessible-action-default => { root.episode_watch_toggle(root.first_file_id); }
+                                Icon {
+                                    x: 6px; y: 6px;
+                                    name: "check"; icon_size: 16px;
+                                    tint: root.watched ? Theme.text : Theme.text_mute;
+                                }
+                                watched-touch := TouchArea {
+                                    clicked => { root.episode_watch_toggle(root.first_file_id); }
+                                }
                             }
                         }
 
@@ -336,7 +370,7 @@ export component TvShowPage inherits Rectangle {
 
                         // Play button
                         if first_file_id != "" : Rectangle {
-                            width: 96px;
+                            width: root.movie_mode ? 180px : 96px;
                             height: 40px;
                             border-radius: 8px;
                             background: Theme.text;
@@ -355,7 +389,7 @@ export component TvShowPage inherits Rectangle {
                                 }
 
                                 Text {
-                                    text: "Play";
+                                    text: root.play_label;
                                     color: Theme.bg;
                                     font-size: 14px;
                                     font-weight: 700;
@@ -407,8 +441,10 @@ export component TvShowPage inherits Rectangle {
                 }
             }
 
+            @children
+
             // ── Seasons & Episodes ────────────────────────────────────────────
-            VerticalLayout {
+            if !root.movie_mode : VerticalLayout {
                 width: parent.width;
                 padding-left: gutter;
                 padding-right: gutter;

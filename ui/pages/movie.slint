@@ -1,0 +1,124 @@
+import { ScrollView } from "std-widgets.slint";
+import { TvShowPage } from "tvshow.slint";
+import { MediaItem, PosterArt } from "media.slint";
+import { TvDetailItem } from "../types.slint";
+import { Theme } from "../theme.slint";
+import { ButtonChip } from "../components/primitives.slint";
+import { LoadingSpinner } from "../components/loading-spinner.slint";
+
+export struct MoviePerson {
+    name: string,
+    role: string,
+    initials: string,
+    photo: image,
+    loading: bool,
+}
+
+export component MoviePage inherits Rectangle {
+    in property <MediaItem> item;
+    in property <string> tagline;
+    in property <[TvDetailItem]> facts;
+    in property <[MoviePerson]> cast;
+    in property <bool> credits_busy;
+    in property <string> credits_status;
+    in property <bool> credits_error;
+    callback retry_credits();
+    callback back();
+    callback play(string);
+    callback watch_toggle(string);
+    private property <length> gutter: root.width < 760px ? 20px : 48px;
+    private property <int> columns: root.width < 1000px ? 2 : 3;
+    private property <length> facts-width: root.width - root.gutter * 2 - 16px;
+
+    TvShowPage {
+        width: parent.width;
+        height: parent.height;
+        movie_mode: true;
+        title: root.item.title;
+        tagline: root.tagline;
+        rating_label: root.item.rating;
+        years_label: root.item.year_label;
+        stats_line: root.item.stats_label;
+        overview: root.item.overview == "" ? "No synopsis available for this movie." : root.item.overview;
+        has_hero_badges: root.item.genre_line != "";
+        hero_badges: [{ text: root.item.genre_line, style: 0 }];
+        hero_poster: root.item.poster;
+        backdrop: root.item.backdrop;
+        poster_loading: root.item.poster_loading;
+        first_file_id: root.item.file_id;
+        watched: root.item.progress >= 0.9;
+        play_label: root.item.progress > 0 && root.item.progress < 0.9 ? "Resume · " + round(root.item.progress * 100) + "%" : "Play movie";
+        back_clicked => { root.back(); }
+        play_episode(id) => { root.play(id); }
+        episode_watch_toggle(id) => { root.watch_toggle(id); }
+
+        VerticalLayout {
+            padding-left: root.gutter;
+            padding-right: root.gutter + 16px;
+            padding-bottom: 40px;
+            padding-top: 20px;
+            spacing: 22px;
+            alignment: start;
+
+            Text { text: "Cast"; color: Theme.text; font-size: 22px; font-weight: 700; }
+            if root.credits_busy : HorizontalLayout {
+                alignment: start;
+                spacing: 12px;
+                LoadingSpinner { width: 20px; height: 20px; label: "Loading cast"; }
+                Text { text: "Loading cast and crew…"; color: Theme.text_dim; vertical-alignment: center; }
+            }
+            if root.credits_status != "" : HorizontalLayout {
+                alignment: start;
+                spacing: 14px;
+                Text { text: root.credits_status; color: Theme.text_dim; vertical-alignment: center; wrap: word-wrap; }
+                if root.credits_error : ButtonChip { label: "Retry"; enabled: !root.credits_busy; clicked => { root.retry_credits(); } }
+            }
+            if root.cast.length > 0 : ScrollView {
+                height: 236px;
+                viewport-height: 220px;
+                viewport-width: max(self.visible-width, root.cast.length * 132px - 16px);
+                for person[index] in root.cast : Rectangle {
+                    x: index * 132px;
+                    width: 116px;
+                    height: 220px;
+                    background: transparent;
+                    cast-portrait := PosterArt {
+                        x: 0px; y: 0px;
+                        width: 116px; height: 154px;
+                        art: person.photo;
+                        loading: person.loading;
+                        initials: person.initials;
+                        glyph-size: 28px;
+                    }
+                    cast-name := Text {
+                        y: cast-portrait.y + cast-portrait.height + 10px; width: parent.width; height: 20px;
+                        text: person.name; color: Theme.text; font-size: 13px; font-weight: 600; overflow: elide;
+                        vertical-alignment: top;
+                    }
+                    Text {
+                        y: cast-name.y + cast-name.height + 4px; width: parent.width; height: 32px;
+                        text: person.role; color: Theme.text_dim; font-size: 11px; wrap: word-wrap; overflow: elide;
+                        vertical-alignment: top;
+                    }
+                }
+            }
+            if root.facts.length > 0 : Text { text: "About the movie"; color: Theme.text; font-size: 22px; font-weight: 700; }
+            if root.facts.length > 0 : Rectangle {
+                height: ceil(root.facts.length / root.columns) * 104px;
+                background: transparent;
+                for fact[index] in root.facts : Rectangle {
+                    x: mod(index, root.columns) * (root.facts-width + 16px) / root.columns;
+                    y: floor(index / root.columns) * 104px;
+                    width: (root.facts-width - (root.columns - 1) * 16px) / root.columns;
+                    height: 88px;
+                    background: Theme.surface;
+                    border-radius: 10px;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    Text { x: 14px; y: 12px; width: parent.width - 28px; text: fact.label; color: Theme.text_mute; font-size: 11px; }
+                    Text { x: 14px; y: 32px; width: parent.width - 28px; height: 44px; text: fact.value; color: Theme.text; font-size: 13px; wrap: word-wrap; overflow: elide; }
+                }
+            }
+        }
+    }
+}

@@ -2,9 +2,9 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 
-use slint::{ComponentHandle, Model, VecModel};
+use slint::{ComponentHandle, VecModel};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::runtime::Runtime;
 use tracing::warn;
@@ -25,6 +25,26 @@ use super::toast::{self, ToastKind};
 use super::util::{format_runtime, make_initials};
 use super::{Services, VIEW_FILES, VIEW_TV_SHOW};
 
+#[derive(Default)]
+pub(crate) struct ArtworkState {
+    pub pending: HashSet<String>,
+    pub failed: HashMap<String, std::time::Instant>,
+}
+
+impl ArtworkState {
+    pub fn can_queue(&self, path: &str) -> bool {
+        !self.pending.contains(path)
+            && self
+                .failed
+                .get(path)
+                .is_none_or(|at| at.elapsed() >= std::time::Duration::from_secs(60))
+    }
+
+    fn is_loading(&self, path: &str) -> bool {
+        !path.is_empty() && (self.pending.contains(path) || self.can_queue(path))
+    }
+}
+
 pub(crate) struct MediaModelRefs<'a> {
     pub(crate) movies: &'a Rc<VecModel<MediaItem>>,
     pub(crate) shows: &'a Rc<VecModel<MediaItem>>,
@@ -33,6 +53,7 @@ pub(crate) struct MediaModelRefs<'a> {
 }
 
 pub(crate) struct MediaCacheRefs<'a> {
+    pub(crate) artwork: &'a Arc<Mutex<ArtworkState>>,
     pub(crate) movies: &'a Rc<RefCell<Vec<MediaItem>>>,
     pub(crate) shows: &'a Rc<RefCell<Vec<MediaItem>>>,
     pub(crate) resume: &'a Rc<RefCell<Vec<MediaResumeItem>>>,
@@ -87,17 +108,39 @@ fn poster_cache_path_hd(poster_path: &str) -> Option<std::path::PathBuf> {
 
 pub(crate) fn load_cached_poster(poster_path: &str) -> Option<slint::Image> {
     let path = poster_cache_path(poster_path)?;
-    slint::Image::load_from_path(&path).ok()
+    path.is_file()
+        .then(|| slint::Image::load_from_path(&path).ok())
+        .flatten()
 }
 
 /// Load a backdrop at w1280 quality; falls back to w342 if not yet cached.
 pub(crate) fn load_cached_backdrop(poster_path: &str) -> Option<slint::Image> {
     if let Some(path) = poster_cache_path_hd(poster_path) {
-        if let Ok(img) = slint::Image::load_from_path(&path) {
-            return Some(img);
+        if path.is_file() {
+            if let Ok(img) = slint::Image::load_from_path(&path) {
+                return Some(img);
+            }
         }
     }
     load_cached_poster(poster_path)
+}
+
+// Publish complete files so a UI refresh cannot decode a half-written image.
+fn write_artwork(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    static NEXT_WRITE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let temp = path.with_extension(format!(
+        "{}.{}.part",
+        std::process::id(),
+        NEXT_WRITE.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    let result = std::fs::write(&temp, bytes).and_then(|()| std::fs::rename(&temp, path));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temp);
+    }
+    result
 }
 
 pub(crate) async fn download_posters(poster_paths: Vec<String>) -> bool {
@@ -123,10 +166,7 @@ pub(crate) async fn download_posters(poster_paths: Vec<String>) -> bool {
         {
             Ok(resp) => match resp.bytes().await {
                 Ok(bytes) => {
-                    if let Some(parent) = cache_path.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    if let Err(e) = std::fs::write(&cache_path, &bytes) {
+                    if let Err(e) = write_artwork(&cache_path, &bytes) {
                         warn!("Failed to write poster cache {}: {e}", cache_path.display());
                     } else {
                         downloaded = true;
@@ -162,10 +202,7 @@ pub(crate) async fn download_backdrop_hd(poster_path: String) {
     {
         Ok(resp) => match resp.bytes().await {
             Ok(bytes) => {
-                if let Some(parent) = cache_path.parent() {
-                    let _ = std::fs::create_dir_all(parent);
-                }
-                if let Err(e) = std::fs::write(&cache_path, &bytes) {
+                if let Err(e) = write_artwork(&cache_path, &bytes) {
                     warn!(
                         "Failed to write HD backdrop cache {}: {e}",
                         cache_path.display()
@@ -565,6 +602,8 @@ pub(crate) fn refresh_media_ui(
                 title: d.title.as_str().into(),
                 meta: meta.as_str().into(),
                 rating: rating.as_str().into(),
+                poster_loading: poster.size().width == 0
+                    && cache.artwork.lock().unwrap().is_loading(&d.poster_path),
                 poster,
                 backdrop,
                 overview: d.overview.as_str().into(),
@@ -698,6 +737,8 @@ pub(crate) fn refresh_media_ui(
                 title: d.name.as_str().into(),
                 meta: meta.as_str().into(),
                 rating: rating.as_str().into(),
+                poster_loading: poster.size().width == 0
+                    && cache.artwork.lock().unwrap().is_loading(&d.poster_path),
                 poster,
                 backdrop,
                 overview: d.overview.as_str().into(),
@@ -733,6 +774,7 @@ pub(crate) fn refresh_media_ui(
                 kind: "MOVIE".into(),
                 detail: "Movie".into(),
                 left_label: remaining_label(entry).as_str().into(),
+                poster_loading: movie.poster_loading,
                 poster: movie.poster.clone(),
                 initials: movie.initials.clone(),
                 progress,
@@ -776,6 +818,7 @@ pub(crate) fn refresh_media_ui(
                 kind: "TV".into(),
                 detail: detail.as_str().into(),
                 left_label: remaining_label(entry).as_str().into(),
+                poster_loading: show.poster_loading,
                 poster: show.poster.clone(),
                 initials: show.initials.clone(),
                 progress,
@@ -844,6 +887,10 @@ pub(crate) fn refresh_media_ui(
         }
     };
 
+    let selected = app.get_movie_item().file_id;
+    if let Some(movie) = movies.iter().find(|item| item.file_id == selected) {
+        app.set_movie_item(movie.clone());
+    }
     *cache.movies.borrow_mut() = movies;
     *cache.shows.borrow_mut() = shows;
     *cache.resume.borrow_mut() = resume_items;
@@ -890,6 +937,7 @@ pub(crate) fn install(
         let media_shows_model = models.media_shows.clone();
         let media_resume_model = models.media_resume.clone();
         let media_hero_badges_model = models.media_hero_badges.clone();
+        let artwork = state.media_artwork.clone();
         let all_movies = state.media_all_movies.clone();
         let all_shows = state.media_all_shows.clone();
         let all_resume = state.media_all_resume.clone();
@@ -904,6 +952,7 @@ pub(crate) fn install(
                     hero_badges: &media_hero_badges_model,
                 };
                 let media_cache = MediaCacheRefs {
+                    artwork: &artwork,
                     movies: &all_movies,
                     shows: &all_shows,
                     resume: &all_resume,
@@ -921,6 +970,7 @@ pub(crate) fn install(
         let media_shows_model = models.media_shows.clone();
         let media_resume_model = models.media_resume.clone();
         let media_hero_badges_model = models.media_hero_badges.clone();
+        let artwork = state.media_artwork.clone();
         let all_movies = state.media_all_movies.clone();
         let all_shows = state.media_all_shows.clone();
         let all_resume = state.media_all_resume.clone();
@@ -935,6 +985,7 @@ pub(crate) fn install(
                     hero_badges: &media_hero_badges_model,
                 };
                 let media_cache = MediaCacheRefs {
+                    artwork: &artwork,
                     movies: &all_movies,
                     shows: &all_shows,
                     resume: &all_resume,
@@ -957,8 +1008,7 @@ pub(crate) fn install(
         let tv_show_episodes_model = models.tv_episodes.clone();
         let tv_show_hero_badges_model = models.tv_hero_badges.clone();
         let tv_show_detail_items_model = models.tv_detail_items.clone();
-        let media_movies_model = models.media_movies.clone();
-        let embedded_player = embedded_player.clone();
+        let movies = state.media_all_movies.clone();
         let rt = rt.clone();
         move |file_id| {
             let Some(app) = weak.upgrade() else {
@@ -990,20 +1040,40 @@ pub(crate) fn install(
                     return;
                 }
             }
-            if let Ok(id) = file_id.parse::<u64>() {
-                let movie = (0..media_movies_model.row_count())
-                    .filter_map(|idx| media_movies_model.row_data(idx))
-                    .find(|item| item.file_id == file_id)
-                    .map(|item| PlaybackQueueItem {
-                        file_id: id,
-                        title: item.title.to_string(),
-                        meta: item.meta.to_string(),
-                    })
-                    .unwrap_or_else(|| PlaybackQueueItem {
-                        file_id: id,
-                        title: file_id.to_string(),
-                        meta: String::new(),
-                    });
+            if let Some(movie) = movies.borrow().iter().find(|item| item.file_id == file_id) {
+                app.set_movie_item(movie.clone());
+                app.set_view(super::VIEW_MOVIE);
+                app.invoke_movie_details_refresh();
+            }
+        }
+    });
+
+    app.on_media_play({
+        let weak = weak.clone();
+        let movies = state.media_all_movies.clone();
+        let embedded_player = embedded_player.clone();
+        move |file_id| {
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            if file_id.starts_with("tv:") {
+                // A series needs an episode choice; keep its existing navigation.
+                app.invoke_media_item_clicked(file_id);
+                return;
+            }
+            let Ok(id) = file_id.parse::<u64>() else {
+                return;
+            };
+            let movie = movies
+                .borrow()
+                .iter()
+                .find(|item| item.file_id == file_id)
+                .map(|item| PlaybackQueueItem {
+                    file_id: id,
+                    title: item.title.to_string(),
+                    meta: item.meta.to_string(),
+                });
+            if let Some(movie) = movie {
                 embedded_player.play_queue(&app, vec![movie], id);
             }
         }
@@ -1051,10 +1121,25 @@ pub(crate) fn install(
             let Some(app) = weak.upgrade() else {
                 return;
             };
-            if app.get_metadata_busy() || candidates.is_empty() {
+            if app.get_metadata_busy() {
+                return;
+            }
+            if candidates.is_empty() {
+                toast::show(
+                    &app,
+                    ToastKind::Info,
+                    "Nothing to scrape",
+                    "All available media already has metadata.",
+                );
                 return;
             }
             app.set_metadata_busy(true);
+            toast::show(
+                &app,
+                ToastKind::Info,
+                "Scraper started",
+                format!("Looking up metadata for {} items…", candidates.len()),
+            );
             app.set_media_show_error_flash(false);
             app.set_media_show_success_flash(false);
             let weak = weak.clone();
@@ -1079,6 +1164,14 @@ pub(crate) fn install(
                             ToastKind::Success,
                             "Metadata matches saved",
                             success_text.as_str(),
+                        );
+                    }
+                    if !had_success && !had_errors {
+                        toast::show(
+                            &app,
+                            ToastKind::Info,
+                            "Scraper finished",
+                            "No new metadata matches were found.",
                         );
                     }
                     if had_errors {
@@ -1127,6 +1220,7 @@ mod tests {
             title: "Test Movie".into(),
             meta: "".into(),
             rating: "".into(),
+            poster_loading: false,
             poster: Default::default(),
             backdrop: Default::default(),
             overview: "".into(),
@@ -1147,6 +1241,7 @@ mod tests {
             title: "Test Show".into(),
             meta: "".into(),
             rating: "".into(),
+            poster_loading: false,
             poster: Default::default(),
             backdrop: Default::default(),
             overview: "".into(),
@@ -1160,6 +1255,26 @@ mod tests {
             file_id: file_id.into(),
             added_at: "2024-06-01T00:00:00Z".into(),
         }
+    }
+
+    #[test]
+    fn artwork_loading_tracks_pending_requests_and_failed_retry_delay() {
+        let mut state = ArtworkState::default();
+        assert!(!state.is_loading(""));
+        assert!(state.is_loading("/poster.jpg"));
+        state.pending.insert("/poster.jpg".into());
+        assert!(state.is_loading("/poster.jpg"));
+        assert!(!state.can_queue("/poster.jpg"));
+        state.pending.clear();
+        state
+            .failed
+            .insert("/poster.jpg".into(), std::time::Instant::now());
+        assert!(!state.is_loading("/poster.jpg"));
+        state.failed.insert(
+            "/poster.jpg".into(),
+            std::time::Instant::now() - std::time::Duration::from_secs(61),
+        );
+        assert!(state.can_queue("/poster.jpg"));
     }
 
     #[test]

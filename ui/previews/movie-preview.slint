@@ -1,0 +1,59 @@
+import { TvDetailItem } from "../types.slint";
+import { MoviePage, MoviePerson } from "../pages/movie.slint";
+import { ButtonChip } from "../components/primitives.slint";
+import { Theme } from "../theme.slint";
+
+export component MoviePreview inherits Window {
+    title: "Movie details preview";
+    preferred-width: 1100px;
+    preferred-height: 760px;
+    in-out property <int> state: 0;
+    in-out property <string> action;
+    in-out property <bool> watched: false;
+    private property <[MoviePerson]> mock-cast: [
+        {name: "Alex Example", role: "The traveller", initials: "AE", photo: @image-url("../assets/appicon.png"), loading: root.state == 1},
+        {name: "An exceptionally long actor name", role: "A mysterious guide with a very long character name", initials: "LG", loading: root.state == 1},
+        {name: "Jamie Sample", role: "The cartographer", initials: "JS", loading: root.state == 1},
+    ];
+    private property <[TvDetailItem]> mock-facts: [
+        {label: "Director", value: "Jordan Example"},
+        {label: "Writers", value: "Jordan Example, Taylor Sample"},
+        {label: "Release date", value: "2026-10-16"},
+        {label: "Languages", value: "English, French"},
+        {label: "Studios", value: "Example Pictures, Another Very Long Production Company Name"},
+        {label: "Budget", value: "US $180,000,000"},
+    ];
+    VerticalLayout {
+        HorizontalLayout {
+            for label[index] in ["Full details", "Loading artwork", "Missing metadata", "Long title", "Credits error"] : ButtonChip {
+                label: label;
+                clicked => { root.state = index; }
+            }
+            Text { text: root.action; color: Theme.text; }
+        }
+        MoviePage {
+            vertical-stretch: 1;
+            tagline: root.state == 2 ? "" : "Every journey begins with a choice.";
+            credits_busy: root.state == 1;
+            credits_error: root.state == 4;
+            credits_status: root.state == 4 ? "Couldn't load cast and crew. Please try again." : root.state == 2 ? "No cast information available." : "";
+            cast: root.state == 2 || root.state == 4 ? [] : root.mock-cast;
+            facts: root.state == 2 ? [] : root.mock-facts;
+            retry_credits => { root.action = "Retry credits"; root.state = 1; }
+            item: {
+                title: root.state == 3 ? "A very long movie title that wraps across multiple lines in the hero" : "The Example Movie",
+                overview: root.state == 2 ? "" : "A traveller follows an old map across a forgotten landscape, discovering that the journey has changed the meaning of home.",
+                rating: root.state == 2 ? "" : "8.2",
+                year_label: "2026",
+                stats_label: "2h 10m",
+                genre_line: "Adventure · Drama",
+                poster_loading: root.state == 1,
+                progress: root.watched ? 1 : 0.42,
+                file_id: "42",
+            };
+            play(id) => { root.action = "Play " + id; }
+            back => { root.action = "Back to library"; }
+            watch_toggle(id) => { root.watched = !root.watched; root.action = "Toggle watched " + id; }
+        }
+    }
+}

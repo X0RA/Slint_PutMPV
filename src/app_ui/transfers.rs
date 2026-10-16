@@ -364,44 +364,84 @@ pub(crate) fn install(app: &AppWindow, services: &Services, state: &UiState, rt:
         let weak = app.as_weak();
         let tree = state.tree.clone();
         let path_stack = state.path_stack.clone();
+        let client = services.client.clone();
+        let config = services.config.clone();
+        let files_store = services.files_store.clone();
+        let rt = rt.clone();
+        let locating = Arc::new(AtomicBool::new(false));
         move |file_id, parent_id| {
-            let Ok(file_id) = file_id.as_str().parse::<u64>() else {
+            let Ok(id) = file_id.as_str().parse::<u64>() else {
                 return;
             };
-            let parent_id = parent_id.as_str().parse::<u64>().unwrap_or(0);
             let Some(app) = weak.upgrade() else {
                 return;
             };
-            let path = {
-                let tree = tree.read().unwrap();
-                find_file_folder_path(&tree.root, file_id)
-            };
-            if let Some(path) = path {
+            let destination = transfer_destination(&tree.read().unwrap().root, id);
+            if let Some((path, is_folder)) = destination {
                 *path_stack.borrow_mut() = path;
+                app.set_files_trash_open(false);
+                app.set_files_query("".into());
+                app.set_detail_open(false);
                 app.set_view(VIEW_FILES);
                 app.invoke_request_refresh();
-                app.invoke_files_open_item(truncate_id(file_id), "file".into());
+                if !is_folder {
+                    app.invoke_files_open_item(truncate_id(id), "file".into());
+                }
+                app.set_transfers_status("".into());
                 return;
             }
-
-            if parent_id > 0 {
-                let folder_path = {
-                    let tree = tree.read().unwrap();
-                    find_folder_path(&tree.root, parent_id)
-                };
-                if let Some(path) = folder_path {
-                    *path_stack.borrow_mut() = path;
-                    app.set_view(VIEW_FILES);
-                    app.invoke_request_refresh();
-                    app.set_transfers_status(
-                        "Opened the destination folder; refresh files if the transfer just completed."
-                            .into(),
-                    );
-                    return;
-                }
+            if locating.swap(true, Ordering::SeqCst) {
+                return;
             }
-
-            app.set_transfers_status("The completed file is not in the local file cache yet.".into());
+            app.set_transfers_status("Finding the completed download…".into());
+            toast::show(
+                &app,
+                ToastKind::Info,
+                "Finding download",
+                "Refreshing files from put.io…",
+            );
+            let weak = weak.clone();
+            let tree = tree.clone();
+            let client = client.clone();
+            let token = config.oauth_token();
+            let files_store = files_store.clone();
+            let locating = locating.clone();
+            rt.spawn(async move {
+                let result = putio::files::build_tree(client, token).await;
+                let error = match result {
+                    Ok(new_tree) => {
+                        let found = transfer_destination(&new_tree.root, id).is_some();
+                        if let Err(e) = files_store.write_tree(&new_tree) {
+                            tracing::warn!("Could not cache refreshed files: {e}");
+                        }
+                        *tree.write().unwrap() = new_tree;
+                        if found {
+                            None
+                        } else {
+                            Some(
+                                concat!(
+                                    "The download is not available in put.io files yet. ",
+                                    "It may have been moved or deleted; try again shortly."
+                                )
+                                .to_string(),
+                            )
+                        }
+                    }
+                    Err(e) => Some(format!("Could not refresh files: {e}")),
+                };
+                let _ = weak.upgrade_in_event_loop(move |app| {
+                    locating.store(false, Ordering::SeqCst);
+                    if let Some(message) = error {
+                        app.set_transfers_status(message.clone().into());
+                        toast::show(&app, ToastKind::Error, "Could not find download", message);
+                    } else {
+                        app.set_transfers_status("".into());
+                        if app.get_view() == 5 {
+                            app.invoke_transfers_go_to_file(file_id, parent_id);
+                        }
+                    }
+                });
+            });
         }
     });
 }
@@ -604,6 +644,19 @@ pub(crate) fn format_duration(seconds: u64) -> String {
     }
 }
 
+// Transfer file_id can refer to either a single file or a downloaded folder.
+fn transfer_destination(
+    node: &putio::types::DirectoryNode,
+    id: u64,
+) -> Option<(Vec<(u64, String)>, bool)> {
+    if id == 0 {
+        return None;
+    }
+    find_folder_path(node, id)
+        .map(|path| (path, true))
+        .or_else(|| find_file_folder_path(node, id).map(|path| (path, false)))
+}
+
 fn find_file_folder_path(
     node: &putio::types::DirectoryNode,
     file_id: u64,
@@ -667,6 +720,46 @@ fn find_folder_path(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transfer_destinations_include_folders_and_keep_full_file_ids() {
+        use putio::types::{DirectoryNode, PutIoFile};
+        let file_id = u64::from(u32::MAX) + 42;
+        let root = DirectoryNode {
+            children: vec![DirectoryNode {
+                file: Some(PutIoFile {
+                    id: 12,
+                    name: "Downloaded season".into(),
+                    file_type: "FOLDER".into(),
+                    ..Default::default()
+                }),
+                files: vec![PutIoFile {
+                    id: file_id,
+                    name: "Episode.mkv".into(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+            files: vec![PutIoFile {
+                id: 7,
+                name: "Movie.mkv".into(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let (path, folder) = transfer_destination(&root, 12).unwrap();
+        assert!(folder);
+        assert_eq!(path.last().unwrap().0, 12);
+        let (path, folder) = transfer_destination(&root, file_id).unwrap();
+        assert!(!folder);
+        assert_eq!(path.last().unwrap().0, 12);
+        assert_eq!(
+            transfer_destination(&root, 7).unwrap().0.last().unwrap().0,
+            0
+        );
+        assert!(transfer_destination(&root, 0).is_none());
+        assert!(transfer_destination(&root, 99).is_none());
+    }
 
     #[test]
     fn duration_formats_compactly() {

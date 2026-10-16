@@ -1,3 +1,4 @@
+import { ButtonChip } from "../components/primitives.slint";
 import { Theme } from "../theme.slint";
 import {
     MediaPage,
@@ -17,7 +18,7 @@ export component MediaPreview inherits Window {
 
     private property <image> no_art;
 
-    // 0 = none, 1 = unmatched banner, 2 = error flash, 3 = success flash
+    // 0 = none, 1 = unmatched, 2 = error, 3 = success, 4 = scraping
     in-out property <int> preview_banner: 1;
     // 0 = full library, 1 = hide resume row
     in-out property <int> preview_variant: 0;
@@ -45,6 +46,7 @@ export component MediaPreview inherits Window {
 
     private property <[MediaItem]> sample_movies: [
         {
+            poster_loading: true,
             title: "The Matrix",
             meta: "1999 · 2h 16m",
             rating: "8.7",
@@ -286,20 +288,38 @@ export component MediaPreview inherits Window {
         },
     ];
 
-    MediaPage {
-        width: 100%;
-        height: 100%;
+    in-out property <string> last_action;
+    VerticalLayout {
+      HorizontalLayout {
+        for label[index] in ["Idle", "Unmatched", "Error", "Success", "Scraping"] : ButtonChip {
+            label: label;
+            clicked => { root.preview_banner = index; }
+        }
+        Text { text: root.last_action; color: Theme.text; }
+      }
+    page := MediaPage {
+        horizontal-stretch: 1;
+        vertical-stretch: 1;
         movies: root.sample_movies;
         shows: root.sample_shows;
         hero: root.sample_hero;
         hero_badges: root.sample_badges;
         resume_items: root.preview_variant == 1 ? [] : root.sample_resume;
-        has_unmatched: root.preview_banner == 1;
+        busy: root.preview_banner == 4;
+        has_unmatched: root.preview_banner == 1 || root.preview_banner == 4;
         unmatched_title: "12 titles need metadata";
         unmatched_detail: "3 movies · 9 episodes";
         show_error_flash: root.preview_banner == 2;
         error_flash_text: "Scraper timed out after 30s.";
         show_success_flash: root.preview_banner == 3;
         success_flash_text: "Matches saved for 8 files.";
+        see_all(kind) => { self.collection_kind = kind; }
+        collection_back => { self.collection_kind = 0; }
+        scrape_unmatched => { root.preview_banner = 4; }
+        media_item_clicked(id) => { root.last_action = "Details " + id; }
+        media_play(id) => { root.last_action = "Play " + id; }
+        dismiss_error => { root.preview_banner = 0; }
+        dismiss_success => { root.preview_banner = 0; }
     }
+}
 }

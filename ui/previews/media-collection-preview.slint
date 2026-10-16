@@ -1,0 +1,35 @@
+import { MediaCollectionPage, MediaItem } from "../pages/media.slint";
+import { ButtonChip } from "../components/primitives.slint";
+import { Theme } from "../theme.slint";
+
+export component MediaCollectionPreview inherits Window {
+    title: "Media collection preview";
+    preferred-width: 1000px;
+    preferred-height: 760px;
+    in-out property <bool> empty: false;
+    in-out property <string> action;
+    private property <[MediaItem]> samples: [
+                { title: "Loading artwork", initials: "LA", poster_loading: true, file_id: "1" },
+                { title: "No artwork available", initials: "NA", file_id: "2" },
+                { title: "A very long movie title that should remain within its card", meta: "2026 · 2h 15m", initials: "LM", file_id: "3" },
+                { title: "Watched movie", initials: "WM", progress: 1, file_id: "4" },
+                { title: "Partly watched movie", initials: "PM", progress: 0.4, file_id: "5" },
+                { title: "Second row", poster: @image-url("../assets/appicon-titlebar.png"), file_id: "6" },
+                { title: "Another title", initials: "AT", file_id: "7" },
+                { title: "Last title", initials: "LT", file_id: "8" },
+            ];
+    VerticalLayout {
+        HorizontalLayout {
+            ButtonChip { label: "Toggle empty"; clicked => { root.empty = !root.empty; } }
+            Text { text: root.action; color: Theme.text; }
+        }
+        MediaCollectionPage {
+            vertical-stretch: 1;
+            title: "Movies";
+            items: root.empty ? [] : root.samples;
+            open(id) => { root.action = "Details " + id; }
+            play(id) => { root.action = "Play " + id; }
+            back => { root.action = "Back"; }
+        }
+    }
+}

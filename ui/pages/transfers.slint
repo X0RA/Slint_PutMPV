@@ -81,6 +81,9 @@ component TransferRow inherits Rectangle {
     height: 90px;
     background: touch.has-hover ? #ffffff05 : transparent;
 
+    // Keep the row hover target behind its action buttons.
+    touch := TouchArea {}
+
     // Status icon tile (color-tinted by state)
     Rectangle {
         x: 18px;
@@ -172,8 +175,6 @@ component TransferRow inherits Rectangle {
         horizontal-alignment: right;
         vertical-alignment: center;
     }
-
-    touch := TouchArea {}
 
     // Action group (bottom-right, vertically centered with progress bar)
     RowActionButton {

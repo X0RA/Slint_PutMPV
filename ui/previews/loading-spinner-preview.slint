@@ -1,0 +1,18 @@
+import { PosterArt } from "../pages/media.slint";
+import { LoadingSpinner } from "../components/loading-spinner.slint";
+import { Theme } from "../theme.slint";
+export component LoadingSpinnerPreview inherits Window {
+    title: "Poster loading states";
+    preferred-width: 700px; preferred-height: 380px;
+    background: Theme.bg;
+    HorizontalLayout {
+        padding: 24px; spacing: 24px;
+        VerticalLayout {
+            LoadingSpinner { width: 18px; height: 18px; }
+            LoadingSpinner { width: 30px; height: 30px; }
+        }
+        PosterArt { loading: true; }
+        PosterArt { initials: "NA"; }
+        PosterArt { art: @image-url("../assets/appicon-titlebar.png"); }
+    }
+}
