@@ -1,9 +1,12 @@
 import { Theme } from "../theme.slint";
 import { PlayerPage } from "../pages/player.slint";
 import { PlayerTrack } from "../types.slint";
+import { Switch } from "std-widgets.slint";
 
 export component PlayerPreview inherits Window {
-    title: "Player subtitle preview";
+    title: "Player preview";
+    in-out property <float> playback_position: 120;
+    in-out property <bool> show_skip_buttons: true;
     preferred-width: 900px;
     preferred-height: 600px;
     background: #101014;
@@ -23,9 +26,14 @@ export component PlayerPreview inherits Window {
         { id: "two", name: "Example.Show.S01E07.720p.HDTV.srt", detail: "English · BSPlayer · File match" }
     ];
     Text {
-        x: 20px; y: 10px; width: parent.width - 40px; height: 24px;
+        x: 20px; y: 10px; width: parent.width - 250px; height: 24px;
         text: "Selected track: " + (root.selected == "" ? "Off" : root.selected) + " · Renderer: " + (root.mode == 0 ? "MPV" : "App");
         color: Theme.text_dim;
+    }
+    Switch {
+        x: parent.width - self.width - 20px; y: 8px;
+        text: "Show skip buttons";
+        checked <=> root.show_skip_buttons;
     }
     Timer {
         interval: 1s;
@@ -35,8 +43,14 @@ export component PlayerPreview inherits Window {
     PlayerPage {
         y: 42px; width: parent.width; height: parent.height - 42px;
         title: "Example Show · S01E07";
+        show_skip_buttons: root.show_skip_buttons;
         duration: 2400; duration_label: "40:00";
-        position: 120; position_label: "2:00";
+        position: root.playback_position; position_label: "Preview";
+        skip_label: root.playback_position >= 120 && root.playback_position < 210 ? "Skip intro" : "";
+        skip_next_available: root.playback_position >= 2300;
+        skip_segment => { root.playback_position = 210; }
+        skip_next => { root.playback_position = 0; }
+        seek(seconds) => { root.playback_position = seconds; }
         paused: true;
         subtitle_tracks: root.loaded ? root.loaded_tracks : root.off_tracks;
         selected_subtitle <=> root.selected;

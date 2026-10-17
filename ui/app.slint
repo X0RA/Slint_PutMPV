@@ -63,6 +63,7 @@ export component AppWindow inherits Window {
     in-out property <bool> metadata_busy: false;
     in-out property <bool> auto_metadata_fetch_enabled: false;
     in-out property <int> settings_section: 0;
+    in-out property <bool> show_episode_skip_buttons: true;
     in-out property <string> tmdb_local_key;
     in-out property <string> tmdb_putio_key;
     in-out property <int> tmdb_source: 0;
@@ -76,6 +77,9 @@ export component AppWindow inherits Window {
     in-out property <string> sync_active_profile;
     in-out property <image> player_texture;
     in-out property <string> player_title;
+    in-out property <string> player_skip_label;
+    in-out property <bool> player_skip_next_available: false;
+    in-out property <string> player_skip_source;
     in-out property <float> player_texture_width: self.width / 1phx;
     in-out property <float> player_texture_height: (self.height - (root.view == 7 ? 0px : Theme.title_bar_height)) / 1phx;
     in-out property <bool> player_paused: true;
@@ -219,6 +223,7 @@ export component AppWindow inherits Window {
     callback auto_metadata_fetch_after_refresh();
     callback request_refresh();
     callback settings_refresh();
+    callback show_episode_skip_buttons_changed(bool);
     callback tmdb_source_changed(source: int);
     callback tmdb_save_local();
     callback tmdb_replace_putio();
@@ -232,6 +237,8 @@ export component AppWindow inherits Window {
     callback player_close();
     callback player_toggle_play();
     callback player_seek(seconds: float);
+    callback player_skip_segment();
+    callback player_skip_next();
     callback player_set_volume(volume: float);
     callback player_toggle_mute();
     callback player_search_subtitles();
@@ -577,6 +584,11 @@ export component AppWindow inherits Window {
         height: parent.height;
         texture <=> root.player_texture;
         title <=> root.player_title;
+        show_skip_buttons: root.show_episode_skip_buttons;
+        skip_label: root.player_skip_label;
+        skip_next_available: root.player_skip_next_available;
+        skip_segment => { root.player_skip_segment(); }
+        skip_next => { root.player_skip_next(); }
         paused <=> root.player_paused;
         position <=> root.player_position;
         duration <=> root.player_duration;
@@ -628,6 +640,8 @@ export component AppWindow inherits Window {
         height: parent.height - Theme.title_bar_height;
         app_version: root.app_version;
         section <=> root.settings_section;
+        show_episode_skip_buttons: root.show_episode_skip_buttons;
+        show_episode_skip_buttons_changed(enabled) => { root.show_episode_skip_buttons_changed(enabled); }
         tmdb_local_key <=> root.tmdb_local_key;
         tmdb_putio_key <=> root.tmdb_putio_key;
         tmdb_source <=> root.tmdb_source;

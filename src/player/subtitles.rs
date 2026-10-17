@@ -52,12 +52,14 @@ pub(super) fn ended(state: &Arc<Mutex<PlayerPlaybackState>>, weak: &slint::Weak<
         }
         state.active = false;
         state.subtitles.reset();
+        state.segments.reset();
         state.subtitles.epoch
     };
     let state = state.clone();
     let _ = weak.upgrade_in_event_loop(move |app| {
         if state.lock().unwrap().subtitles.epoch == epoch {
             reset_ui(&app);
+            super::segments::reset_ui(&app);
         }
     });
 }

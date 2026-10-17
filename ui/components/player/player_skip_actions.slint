@@ -1,0 +1,59 @@
+import { Theme } from "../../theme.slint";
+
+component SkipActionButton inherits FocusScope {
+    in property <string> label;
+    callback clicked();
+    width: 156px;
+    height: 42px;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+    focus-on-tab-navigation: true;
+    key-pressed(event) => {
+        if (event.text == "\n" || event.text == " ") {
+            root.clicked();
+            return accept;
+        }
+        reject
+    }
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: 6px;
+        border-width: root.has-focus ? 2px : 1px;
+        border-color: root.has-focus ? Theme.accent_hi : #ffffff70;
+        background: touch.pressed ? #45454ff2 : touch.has-hover ? #303038f2 : #17171ee6;
+        Text {
+            width: parent.width; height: parent.height;
+            text: root.label;
+            color: #ffffff;
+            font-family: Theme.ui_font;
+            font-size: 14px;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        touch := TouchArea {
+            clicked => { root.focus(); root.clicked(); }
+        }
+    }
+}
+
+export component PlayerSkipActions inherits HorizontalLayout {
+    in property <string> skip_label;
+    in property <bool> next_available: false;
+    callback skip();
+    callback next();
+    spacing: 12px;
+    height: 42px;
+    width: (root.skip_label != "" ? 156px : 0px) + (root.next_available ? 156px : 0px)
+        + (root.skip_label != "" && root.next_available ? 12px : 0px);
+    if root.skip_label != "" : skip-button := SkipActionButton {
+        label: root.skip_label;
+        clicked => { root.skip(); }
+    }
+    if root.next_available : next-button := SkipActionButton {
+        label: "Next episode";
+        clicked => { root.next(); }
+    }
+}

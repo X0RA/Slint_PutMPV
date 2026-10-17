@@ -8,7 +8,7 @@ use super::{config_dir, read_json, write_atomic};
 
 pub const DEFAULT_PUT_CLIENT_ID: u32 = 8275;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigFile {
     #[serde(default = "default_client_id")]
     pub put_client_id: u32,
@@ -32,6 +32,8 @@ pub struct ConfigFile {
     pub files_sort_descending: bool,
     #[serde(default)]
     pub auto_metadata_fetch: bool,
+    #[serde(default = "default_show_episode_skip_buttons")]
+    pub show_episode_skip_buttons: bool,
 }
 
 fn default_client_id() -> u32 {
@@ -40,6 +42,29 @@ fn default_client_id() -> u32 {
 
 fn default_files_sort_descending() -> bool {
     true
+}
+
+fn default_show_episode_skip_buttons() -> bool {
+    true
+}
+
+impl Default for ConfigFile {
+    fn default() -> Self {
+        Self {
+            put_client_id: DEFAULT_PUT_CLIENT_ID,
+            oauth_token: String::new(),
+            tmdb_api_key: String::new(),
+            tmdb_api_key_putio: String::new(),
+            tmdb_api_key_source: String::new(),
+            file_state_sync_profile_slug: String::new(),
+            file_state_sync_profile_name: String::new(),
+            files_mode: 0,
+            files_sort: 0,
+            files_sort_descending: true,
+            auto_metadata_fetch: false,
+            show_episode_skip_buttons: true,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -59,19 +84,7 @@ impl ConfigStore {
                 c
             }
             None => {
-                let c = ConfigFile {
-                    put_client_id: DEFAULT_PUT_CLIENT_ID,
-                    oauth_token: String::new(),
-                    tmdb_api_key: String::new(),
-                    tmdb_api_key_putio: String::new(),
-                    tmdb_api_key_source: String::new(),
-                    file_state_sync_profile_slug: String::new(),
-                    file_state_sync_profile_name: String::new(),
-                    files_mode: 0,
-                    files_sort: 0,
-                    files_sort_descending: true,
-                    auto_metadata_fetch: false,
-                };
+                let c = ConfigFile::default();
                 write_atomic(&path, &c)?;
                 c
             }
@@ -216,12 +229,20 @@ impl ConfigStore {
 
     pub fn reset_to_defaults(&self) -> Result<()> {
         let mut guard = self.inner.lock().unwrap();
-        *guard = ConfigFile {
-            put_client_id: DEFAULT_PUT_CLIENT_ID,
-            files_sort_descending: true,
-            auto_metadata_fetch: false,
-            ..ConfigFile::default()
-        };
+        *guard = ConfigFile::default();
         write_atomic(&self.path, &*guard)
+    }
+
+    pub fn show_episode_skip_buttons(&self) -> bool {
+        self.inner.lock().unwrap().show_episode_skip_buttons
+    }
+
+    pub fn set_show_episode_skip_buttons(&self, enabled: bool) -> Result<()> {
+        let mut guard = self.inner.lock().unwrap();
+        let mut updated = guard.clone();
+        updated.show_episode_skip_buttons = enabled;
+        write_atomic(&self.path, &updated)?;
+        *guard = updated;
+        Ok(())
     }
 }

@@ -475,6 +475,7 @@ fn queue_item_from_file(file: &PutIoFile) -> PlaybackQueueItem {
         file_id: file.id,
         title: file.name.clone(),
         meta: format_size(file.size),
+        episode: None,
     }
 }
 

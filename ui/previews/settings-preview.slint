@@ -1,0 +1,15 @@
+import { SettingsPage } from "../pages/settings.slint";
+import { Theme } from "../theme.slint";
+
+export component SettingsPreview inherits Window {
+    title: "Settings preview";
+    preferred-width: 1100px;
+    preferred-height: 760px;
+    background: Theme.bg;
+    in-out property <bool> show_skip_buttons: true;
+    SettingsPage {
+        app_version: "Preview";
+        show_episode_skip_buttons: root.show_skip_buttons;
+        show_episode_skip_buttons_changed(enabled) => { root.show_skip_buttons = enabled; }
+    }
+}

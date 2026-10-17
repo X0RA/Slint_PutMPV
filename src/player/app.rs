@@ -24,6 +24,9 @@ use super::{PlayerEngine, PlayerRenderer};
 #[path = "subtitles.rs"]
 mod subtitles;
 
+#[path = "segments.rs"]
+mod segments;
+
 type SharedMediaControls = Arc<Mutex<MediaControlsWrapper>>;
 type SharedSleepInhibitor = Arc<Mutex<SleepInhibitor>>;
 
@@ -47,6 +50,7 @@ fn extract_hwnd(_app: &AppWindow) -> Option<usize> {
 struct PlayerPlaybackState {
     active: bool,
     subtitles: subtitles::Session,
+    segments: segments::Session,
     tried_fallback: bool,
     fallback_url: Option<String>,
     last_subtitle_track: Option<SharedString>,
@@ -59,6 +63,7 @@ pub struct PlaybackQueueItem {
     pub file_id: u64,
     pub title: String,
     pub meta: String,
+    pub episode: Option<crate::segments::EpisodeContext>,
 }
 
 #[derive(Clone)]
@@ -76,12 +81,14 @@ pub struct EmbeddedPlayer {
 }
 
 impl EmbeddedPlayer {
+    #[allow(clippy::too_many_arguments)]
     pub fn install(
         app: &AppWindow,
         client: PutioClient,
         config: Arc<ConfigStore>,
         rt: Arc<Runtime>,
         watch_sync: Arc<WatchSyncService>,
+        segments_service: Arc<crate::segments::Service>,
         player_view: i32,
         files_view: i32,
     ) -> Self {
@@ -114,6 +121,7 @@ impl EmbeddedPlayer {
                 player_view,
                 media_controls.clone(),
                 sleep_inhibitor.clone(),
+                segments_service,
             );
         }
         if let Some(engine) = engine.clone() {
@@ -199,7 +207,11 @@ impl EmbeddedPlayer {
         let media_controls = self.media_controls.clone();
         let sleep_inhibitor = self.sleep_inhibitor.clone();
         app.on_player_close(move || {
-            playback_state.lock().unwrap().subtitles.reset();
+            {
+                let mut state = playback_state.lock().unwrap();
+                state.subtitles.reset();
+                state.segments.reset();
+            }
             watch_sync.on_session_end();
             if let Some(engine) = engine.as_ref() {
                 if let Err(e) = engine.stop() {
@@ -219,6 +231,7 @@ impl EmbeddedPlayer {
                 state.current_index = None;
             }
             if let Some(app) = weak.upgrade() {
+                segments::reset_ui(&app);
                 app.set_player_playlist_current_id("".into());
                 set_playlist_nav_state(&app, 0, None);
                 app.set_player_playlist_items(ModelRc::from(Rc::new(VecModel::from(Vec::<
@@ -340,6 +353,7 @@ fn register_events(
     player_view: i32,
     media_controls: Option<SharedMediaControls>,
     sleep_inhibitor: SharedSleepInhibitor,
+    segments_service: Arc<crate::segments::Service>,
 ) {
     match engine.create_event_client() {
         Ok(event_client) => {
@@ -428,6 +442,13 @@ fn register_events(
                                 .and_then(|item| watch_sync.start_session(item.file_id, duration));
                             (resume, state.subtitles.epoch)
                         };
+                        segments::load(
+                            &event_client,
+                            &weak,
+                            &playback_state,
+                            &rt,
+                            &segments_service,
+                        );
                         if let Some(position) = resume {
                             if let Err(e) = engine.seek(position) {
                                 warn!("could not auto-resume playback: {e}");
@@ -489,6 +510,15 @@ fn register_events(
                         }
                     }
                     Some(Ok(Event::PropertyChange { name, change, .. })) => {
+                        if name == "duration" {
+                            segments::load(
+                                &event_client,
+                                &weak,
+                                &playback_state,
+                                &rt,
+                                &segments_service,
+                            );
+                        }
                         if name == "track-list/count" {
                             let tracks = read_tracks(&event_client);
                             let _ = weak.upgrade_in_event_loop(move |app| {
@@ -515,11 +545,13 @@ fn register_events(
                                 None
                             } else {
                                 state.tried_fallback = true;
+                                state.segments.reset();
                                 state.fallback_url.clone()
                             }
                         };
 
                         if let Some(fallback_url) = fallback_url {
+                            let _ = weak.upgrade_in_event_loop(|app| segments::reset_ui(&app));
                             warn!(
                                 "embedded mpv original playback failed, trying fallback: {error_message}"
                             );
@@ -561,6 +593,12 @@ fn register_callbacks(
     watch_sync: Arc<WatchSyncService>,
     player_view: i32,
 ) {
+    segments::register(
+        app,
+        engine.clone(),
+        playback_state.clone(),
+        watch_sync.clone(),
+    );
     subtitles::register(
         app,
         engine.clone(),
@@ -838,6 +876,7 @@ fn start_queue_item(
     {
         let mut state = playback_state.lock().unwrap();
         state.subtitles.reset();
+        state.segments.reset();
         state.active = true;
         state.tried_fallback = false;
         state.fallback_url = Some(fallback_url.clone());
@@ -869,7 +908,14 @@ fn start_queue_item(
             state.subtitles.original_url = resolved.as_ref().ok().cloned();
             let url = resolved.as_deref().unwrap_or(&fallback_url);
             let message = match engine.load(url) {
-                Ok(()) => playback_title,
+                Ok(()) => {
+                    // A deliberate Play/Next action starts the selected episode even if
+                    // the previous episode was paused when its credits were skipped.
+                    if let Err(e) = engine.set_pause(false) {
+                        warn!("could not start selected episode: {e}");
+                    }
+                    playback_title
+                }
                 Err(_) => "Could not start embedded playback.".to_string(),
             };
             drop(state);
@@ -914,6 +960,7 @@ fn adjacent_queue_item(
 
 fn reset_player_state(app: &AppWindow) {
     subtitles::reset_ui(app);
+    segments::reset_ui(app);
     app.set_player_paused(false);
     app.set_player_position(0.0);
     app.set_player_buffered_fraction(0.0);
@@ -991,6 +1038,7 @@ fn apply_property_change(
         }
         ("time-pos", PropertyData::Double(position)) => {
             watch_sync.on_position(position, 0.0);
+            segments::position(weak, playback_state, position);
             let media_controls = media_controls.cloned();
             let label = format_time(position);
             let _ = weak.upgrade_in_event_loop(move |app| {

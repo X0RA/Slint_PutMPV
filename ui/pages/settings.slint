@@ -1,4 +1,4 @@
-import { ScrollView } from "std-widgets.slint";
+import { ScrollView, Switch } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { SidebarSectionButton, ButtonChip, TextFieldBox, RadioRow, Dropdown } from "../components/primitives.slint";
 import { MetadataSettingsPanel } from "../components/settings/metadata.slint";
@@ -125,6 +125,8 @@ component DataRow inherits Rectangle {
 export component SettingsPage inherits Rectangle {
     in property <string> app_version;
     in-out property <int> section: 0;
+    in property <bool> show_episode_skip_buttons: true;
+    callback show_episode_skip_buttons_changed(bool);
 
     in-out property <string> tmdb_local_key;
     in-out property <string> tmdb_putio_key;
@@ -217,7 +219,7 @@ export component SettingsPage inherits Rectangle {
             }
             Rectangle { height: 1px; background: Theme.border; }
             Rectangle { height: 12px; }
-            SidebarSectionButton { label: "Configuration"; subtitle: "TMDB metadata"; icon_name: "settings"; active: root.section == 0; clicked => { root.section = 0; root.settings_refresh(); } }
+            SidebarSectionButton { label: "Configuration"; subtitle: "Playback & TMDB metadata"; icon_name: "settings"; active: root.section == 0; clicked => { root.section = 0; root.settings_refresh(); } }
             Rectangle { height: 2px; }
             SidebarSectionButton { label: "Watch Sync"; subtitle: "Status & shared profiles"; icon_name: "refresh"; active: root.section == 1; clicked => { root.section = 1; root.settings_refresh(); root.sync_refresh_profiles(); } }
             Rectangle { height: 2px; }
@@ -271,7 +273,31 @@ export component SettingsPage inherits Rectangle {
             alignment: start;
 
             if (root.section == 0) : config-page := SectionContainer {
-                SettingsHead { title: "Configuration"; description: "TMDB metadata can use a local key or a shared key stored on put.io."; }
+                SettingsHead { title: "Configuration"; description: "Manage playback preferences and TMDB metadata keys."; }
+                Rectangle { height: 8px; }
+                Rectangle {
+                    height: playback-card.preferred-height;
+                    border-radius: 10px;
+                    border-width: 1px;
+                    border-color: Theme.border;
+                    background: Theme.surface;
+                    clip: true;
+                    playback-card := VerticalLayout {
+                        width: parent.width;
+                        spacing: 0px;
+                        CardHeader { title: "Playback"; }
+                        SettingsRow {
+                            label: "Show episode skip buttons";
+                            hint: "Show Skip intro, Skip recap and Next episode for TV episodes played from Media. Each action requires a click.";
+                            show_divider: false;
+                            skip-toggle := Switch {
+                                accessible-label: "Show episode skip buttons";
+                                checked: root.show_episode_skip_buttons;
+                                toggled => { root.show_episode_skip_buttons_changed(self.checked); }
+                            }
+                        }
+                    }
+                }
                 Rectangle { height: 8px; }
                 Rectangle {
                     height: tmdb-card.preferred-height;

@@ -1072,6 +1072,7 @@ pub(crate) fn install(
                     file_id: id,
                     title: item.title.to_string(),
                     meta: item.meta.to_string(),
+                    episode: None,
                 });
             if let Some(movie) = movie {
                 embedded_player.play_queue(&app, vec![movie], id);

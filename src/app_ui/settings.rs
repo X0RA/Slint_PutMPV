@@ -57,6 +57,7 @@ pub(crate) fn install(
             app.set_tmdb_putio_key(putio_key.into());
             app.set_tmdb_source(tmdb_source);
             app.set_auto_metadata_fetch_enabled(config.auto_metadata_fetch());
+            app.set_show_episode_skip_buttons(config.show_episode_skip_buttons());
 
             let profiles = sync_profiles.read().unwrap();
             let labels = profiles
@@ -133,6 +134,25 @@ pub(crate) fn install(
     });
 
     app.invoke_settings_refresh();
+
+    app.on_show_episode_skip_buttons_changed({
+        let weak = weak.clone();
+        let cfg = config.clone();
+        move |enabled| {
+            let result = cfg.set_show_episode_skip_buttons(enabled);
+            if let Some(app) = weak.upgrade() {
+                if let Err(e) = result {
+                    super::toast::show(
+                        &app,
+                        super::toast::ToastKind::Error,
+                        "Could not save playback setting",
+                        e.to_string(),
+                    );
+                }
+                app.set_show_episode_skip_buttons(cfg.show_episode_skip_buttons());
+            }
+        }
+    });
 
     app.on_tmdb_source_changed({
         let weak = weak.clone();

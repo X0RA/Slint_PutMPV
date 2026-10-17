@@ -8,7 +8,6 @@ use crate::metadata::tmdb::{Episode, TVSeasonDetails, TVSeriesDetails};
 use slint::{ComponentHandle, Model, VecModel};
 use tokio::runtime::Runtime;
 
-use crate::player::PlaybackQueueItem;
 use crate::putio::types::UnifiedDirectoryTree;
 use crate::storage::file_state::FileStateStore;
 use crate::storage::matched_store::MatchedStore;
@@ -754,48 +753,43 @@ pub(crate) fn install(
 
     app.on_tv_show_play_episode({
         let weak = weak.clone();
-        let tv_show_episodes_model = models.tv_episodes.clone();
-        let tv_show_seasons_model = models.tv_seasons.clone();
+        let tree = tree.clone();
+        let matched_store = matched_store.clone();
+        let tmdb_store = tmdb_store.clone();
+        let tvmaze_store = tvmaze_store.clone();
+        let rows = models.tv_episodes.clone();
         let embedded_player = embedded_player.clone();
         move |file_id| {
-            let s = file_id.to_string();
-            if s.is_empty() {
+            let Some(app) = weak.upgrade() else {
                 return;
-            }
-            if let Ok(id) = s.parse::<u64>() {
-                if let Some(app) = weak.upgrade() {
-                    let season_number = tv_show_seasons_model
-                        .row_data(app.get_tv_show_season_idx().max(0) as usize)
-                        .map(|season| season.season_number)
-                        .unwrap_or(0);
-                    let rows = (0..tv_show_episodes_model.row_count())
-                        .filter_map(|idx| tv_show_episodes_model.row_data(idx))
-                        .collect::<Vec<_>>();
-                    let start = rows
-                        .iter()
-                        .position(|row| row.file_id == file_id)
-                        .unwrap_or(0);
-                    let queue = rows
-                        .into_iter()
-                        .skip(start)
-                        .filter_map(|row| {
-                            row.file_id.as_str().parse::<u64>().ok().map(|file_id| {
-                                let mut meta = format!("S{season_number:02} E{:02}", row.ep_num);
-                                if !row.duration_label.is_empty() {
-                                    meta.push_str(" · ");
-                                    meta.push_str(row.duration_label.as_str());
-                                }
-                                PlaybackQueueItem {
-                                    file_id,
-                                    title: row.title.to_string(),
-                                    meta,
-                                }
-                            })
-                        })
-                        .collect::<Vec<_>>();
-                    embedded_player.play_queue(&app, queue, id);
-                }
-            }
+            };
+            let Ok(id) = file_id.as_str().parse::<u64>() else {
+                return;
+            };
+            let queue = (|| {
+                super::episode_playback::build_queue(
+                    &tree.read().unwrap(),
+                    matched_store.get_matched_snapshot().ok()?,
+                    tmdb_store.get_cache_snapshot().ok()?,
+                    &tvmaze_store.get_cache_snapshot().ok()?,
+                    app.get_tv_show_series_id(),
+                    id,
+                )
+            })()
+            .unwrap_or_else(|| {
+                let title = (0..rows.row_count())
+                    .filter_map(|i| rows.row_data(i))
+                    .find(|row| row.file_id == file_id)
+                    .map(|row| row.title.to_string())
+                    .unwrap_or_else(|| "Episode".into());
+                vec![crate::player::PlaybackQueueItem {
+                    file_id: id,
+                    title,
+                    meta: String::new(),
+                    episode: None,
+                }]
+            });
+            embedded_player.play_queue(&app, queue, id);
         }
     });
 

@@ -1,0 +1,36 @@
+import { Theme } from "../theme.slint";
+import { PlayerSkipActions } from "../components/player/player_skip_actions.slint";
+import { Button } from "std-widgets.slint";
+
+export component PlayerSkipActionsPreview inherits Window {
+    title: "Episode skip actions preview";
+    preferred-width: 680px;
+    preferred-height: 520px;
+    background: Theme.bg;
+    default-font-family: Theme.ui_font;
+    in-out property <string> result: "No action yet";
+    in-out property <string> active_label: "Skip intro";
+    VerticalLayout {
+        padding: 32px;
+        spacing: 20px;
+        Text { text: "Intro · click or use Tab and Enter"; color: Theme.text_dim; }
+        PlayerSkipActions {
+            skip_label: root.active_label;
+            skip => { root.result = "Seek to intro end"; root.active_label = ""; }
+        }
+        Text { text: "Recap"; color: Theme.text_dim; }
+        PlayerSkipActions {
+            skip_label: "Skip recap";
+            skip => { root.result = "Seek to recap end"; }
+        }
+        Text { text: "Credits with a next episode"; color: Theme.text_dim; }
+        PlayerSkipActions {
+            next_available: true;
+            next => { root.result = "Play next episode"; }
+        }
+        Text { text: "Loading, unavailable, error or final episode · no button"; color: Theme.text_dim; }
+        PlayerSkipActions { }
+        Text { text: root.result; color: Theme.text; }
+        Button { text: "Reset preview"; clicked => { root.active_label = "Skip intro"; root.result = "No action yet"; } }
+    }
+}

@@ -1,3 +1,4 @@
+import { PlayerSkipActions } from "../components/player/player_skip_actions.slint";
 import { PlayerPlaylistItem, PlayerTrack } from "../types.slint";
 import { PlayerTopBar } from "../components/player/player_top_bar.slint";
 import { PlayerControlsBar } from "../components/player/player_controls_bar.slint";
@@ -6,6 +7,11 @@ import { PlayerPlaylistPanel } from "../components/player/player_playlist_panel.
 export component PlayerPage inherits FocusScope {
     in property <image> texture;
     in property <string> title;
+    in property <bool> show_skip_buttons: true;
+    in property <string> skip_label;
+    in property <bool> skip_next_available: false;
+    callback skip_segment();
+    callback skip_next();
     in-out property <bool> paused: true;
     in-out property <float> position: 0;
     in property <float> duration: 0;
@@ -194,7 +200,8 @@ export component PlayerPage inherits FocusScope {
         }
     }
 
-    if (root.subtitle_render_mode == 1 && root.subtitle_text != "") : subtitle-box := Rectangle {
+    subtitle-box := Rectangle {
+        visible: root.subtitle_render_mode == 1 && root.subtitle_text != "";
         x: max(24px, (parent.width - self.width) / 2);
         y: parent.height - controls.height - self.height - 24px;
         width: min(subtitle-content.preferred-width + 32px, parent.width - 48px);
@@ -213,6 +220,18 @@ export component PlayerPage inherits FocusScope {
             horizontal-alignment: center;
             wrap: word-wrap;
         }
+    }
+
+    skip-actions := PlayerSkipActions {
+        visible: root.show_skip_buttons && !root.playlist_open && !controls.menus_open;
+        x: max(16px, parent.width - self.width - 32px);
+        y: max(16px, subtitle-box.visible
+            ? subtitle-box.y - self.height - 16px
+            : parent.height - controls.height - self.height - 24px);
+        skip_label: root.skip_label;
+        next_available: root.skip_next_available;
+        skip => { root.focus(); root.skip_segment(); }
+        next => { root.focus(); root.skip_next(); }
     }
 
     top-bar := PlayerTopBar {

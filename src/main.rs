@@ -21,6 +21,7 @@ mod fileparser;
 mod metadata;
 mod player;
 mod putio;
+mod segments;
 mod storage;
 mod subtitles;
 mod sync;
@@ -72,6 +73,7 @@ fn main() -> Result<()> {
         config.clone(),
         rt.clone(),
         watch_sync.clone(),
+        Arc::new(segments::Service::new(tmdb_api.clone())),
         app_ui::VIEW_PLAYER,
         app_ui::VIEW_FILES,
     );

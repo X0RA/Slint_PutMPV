@@ -2,6 +2,7 @@
 //! generated Slint types.
 
 pub(crate) mod auth;
+mod episode_playback;
 pub(crate) mod files;
 pub(crate) mod magnets;
 pub(crate) mod media;

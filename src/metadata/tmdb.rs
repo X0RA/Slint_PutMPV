@@ -117,6 +117,19 @@ impl TMDBAPI {
         .await
     }
 
+    /// ID enrichment for an already scraped show, without searching or matching files.
+    pub async fn get_tv_external_ids(
+        &self,
+        series_id: i32,
+    ) -> Result<crate::segments::ExternalIds> {
+        self.cached_request(
+            &format!("tv_{series_id}_external_ids"),
+            &format!("/tv/{series_id}/external_ids"),
+            &[],
+        )
+        .await
+    }
+
     pub async fn get_tv_season_details(
         &self,
         series_id: i32,
