@@ -5,7 +5,8 @@ import { PlayerSettingsDefaults } from "../components/player/player-settings-pan
 export global MockPlayerSettings {
     in-out property <PlayerSettingsValues> values: PlayerSettingsDefaults.values;
     public function number(key: string, value: float) {
-        if key == "brightness" { root.values.brightness = value; }
+        if key == "anime4k-mode" { root.values.anime4k_mode = round(value); root.clear-shader-warning(); }
+        else if key == "brightness" { root.values.brightness = value; }
         else if key == "contrast" { root.values.contrast = value; }
         else if key == "saturation" { root.values.saturation = value; }
         else if key == "gamma" { root.values.gamma = value; }
@@ -43,8 +44,14 @@ export global MockPlayerSettings {
         let opacity = root.values.sub_opacity / 100;
         root.values.sub_background = root.values.sub_background_hex == "#FFFFFF" ? Colors.rgba(255,255,255,opacity) : root.values.sub_background_hex == "#2B2D33" ? Colors.rgba(43,45,51,opacity) : Colors.rgba(0,0,0,opacity);
     }
+    public function clear-shader-warning() {
+        root.values.anime4k_warning = false;
+        root.values.anime4k_status = root.values.anime4k_enabled ? "Enabled" : "";
+    }
     public function flag(key: string, value: bool) {
-        if key == "preserve-pitch" { root.values.preserve_pitch = value; }
+        if key == "anime4k-enabled" { root.values.anime4k_enabled = value; root.clear-shader-warning(); }
+        else if key == "anime4k-hq" { root.values.anime4k_hq = value; root.clear-shader-warning(); }
+        else if key == "preserve-pitch" { root.values.preserve_pitch = value; }
         else if key == "eq-enabled" { root.values.eq_enabled = value; }
         else if key == "sub-background-enabled" { root.values.sub_background_enabled = value; }
         else if key == "sub-override" { root.values.sub_override = value; }
@@ -56,6 +63,7 @@ export global MockPlayerSettings {
     }
     public function reset(section: int) {
         if section == 0 {
+            root.values.anime4k_enabled = false; root.values.anime4k_mode = 0; root.values.anime4k_hq = false; root.values.anime4k_status = ""; root.values.anime4k_warning = false;
             root.values.brightness = 0; root.values.contrast = 0; root.values.saturation = 0;
             root.values.gamma = 0; root.values.hue = 0; root.values.speed = 1; root.values.preserve_pitch = true;
         } else if section == 1 {

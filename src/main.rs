@@ -58,6 +58,7 @@ fn main() -> Result<()> {
         rt.clone(),
     );
 
+    player::select_graphics_backend()?;
     let app = AppWindow::new()?;
     app.set_app_version(env!("PUTMPV_DISPLAY_VERSION").into());
     app.set_files_mode(config.files_mode());

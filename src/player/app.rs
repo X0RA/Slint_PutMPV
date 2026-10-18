@@ -301,6 +301,10 @@ fn build_media_controls(app: &AppWindow, engine: Arc<PlayerEngine>) -> SharedMed
     Arc::new(Mutex::new(wrapper))
 }
 
+#[cfg(test)]
+#[path = "anime4k_smoke.rs"]
+mod anime4k_smoke;
+
 fn register_renderer(app: &AppWindow, engine: Arc<PlayerEngine>, player_view: i32) {
     let weak = app.as_weak();
     let mut renderer: Option<PlayerRenderer> = None;
@@ -316,13 +320,21 @@ fn register_renderer(app: &AppWindow, engine: Arc<PlayerEngine>, player_view: i3
                 let gl = unsafe {
                     glow::Context::from_loader_function_cstr(|name| get_proc_address(name))
                 };
-                match PlayerRenderer::new(engine.mpv(), gl, get_proc_address) {
+                let was_blocked = engine.anime4k_blocked();
+                match PlayerRenderer::new(&engine, gl, get_proc_address) {
                     Ok(mut player_renderer) => {
-                        let weak = weak.clone();
+                        let redraw_weak = weak.clone();
                         player_renderer.set_update_callback(move || {
-                            let _ = weak.upgrade_in_event_loop(|app| app.window().request_redraw());
+                            let _ = redraw_weak
+                                .upgrade_in_event_loop(|app| app.window().request_redraw());
                         });
                         renderer = Some(player_renderer);
+                        if was_blocked || engine.anime4k_blocked() {
+                            // Reconcile any remembered shader selection as soon
+                            // as the actual graphics capabilities are known.
+                            let _ = weak
+                                .upgrade_in_event_loop(|app| app.invoke_player_settings_restore());
+                        }
                     }
                     Err(e) => warn!("could not create embedded mpv renderer: {e}"),
                 }
@@ -374,6 +386,19 @@ fn register_events(
             let weak = app.as_weak();
             std::thread::spawn(move || loop {
                 match event_client.wait_event(1.0) {
+                    Some(Ok(Event::LogMessage {
+                        prefix,
+                        level,
+                        text,
+                        ..
+                    })) => {
+                        if super::anime4k::shader_error(prefix, level, text) {
+                            let message = text.to_owned();
+                            let _ = weak.upgrade_in_event_loop(move |app| {
+                                app.invoke_player_shader_error(message.into());
+                            });
+                        }
+                    }
                     Some(Ok(Event::EndFile(reason))) => {
                         if reason == mpv_end_file_reason::Eof {
                             watch_sync.on_eof();

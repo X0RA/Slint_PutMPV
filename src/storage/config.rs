@@ -78,6 +78,14 @@ pub struct ConfigStore {
 }
 
 impl ConfigStore {
+    #[cfg(test)]
+    pub(crate) fn for_test(path: PathBuf) -> Self {
+        Self {
+            path,
+            inner: Mutex::new(ConfigFile::default()),
+        }
+    }
+
     pub fn player_settings(&self) -> SavedSettings {
         self.inner.lock().unwrap().player_settings.clone()
     }

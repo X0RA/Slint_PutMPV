@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel};
 
 use super::{
+    anime4k::{self, Quality, Shaders},
     settings::{self, Session, Settings, PRESETS},
     PlayerEngine,
 };
@@ -25,6 +26,12 @@ pub(crate) struct Controller {
     save_timer: Timer,
     dirty: Cell<bool>,
     eq_installed: Cell<bool>,
+    anime4k: Shaders,
+    diagnostics_timer: Timer,
+    anime4k_status: RefCell<String>,
+    anime4k_warning: Cell<bool>,
+    anime4k_failure: RefCell<Option<String>>,
+    dropped_frames: Cell<Option<i64>>,
 }
 
 impl Controller {
@@ -35,6 +42,7 @@ impl Controller {
     ) -> Rc<Self> {
         let session = Session::from_saved(config.player_settings());
         let this = Rc::new(Self {
+            anime4k: Shaders::new(config.path().parent().expect("config has a directory")),
             app: app.as_weak(),
             engine,
             config,
@@ -44,6 +52,11 @@ impl Controller {
             save_timer: Timer::default(),
             dirty: Cell::new(false),
             eq_installed: Cell::new(false),
+            diagnostics_timer: Timer::default(),
+            anime4k_status: RefCell::new(String::new()),
+            anime4k_warning: Cell::new(false),
+            anime4k_failure: RefCell::new(None),
+            dropped_frames: Cell::new(None),
         });
         this.publish();
         this.restore();
@@ -77,6 +90,11 @@ impl Controller {
                 return;
             }
             c.session.borrow_mut().reset(section as usize);
+            if section == 0 {
+                c.anime4k_failure.borrow_mut().take();
+                c.anime4k_status.borrow_mut().clear();
+                c.anime4k_warning.set(false);
+            }
             c.publish();
             c.finish_edit();
         });
@@ -84,6 +102,15 @@ impl Controller {
         app.on_player_settings_flush(move || c.flush().is_ok());
         let c = this.clone();
         app.on_player_settings_restore(move || c.restore());
+        let c = this.clone();
+        app.on_player_shader_error(move |message| c.shader_failed(&message));
+        let weak = Rc::downgrade(&this);
+        this.diagnostics_timer
+            .start(TimerMode::Repeated, Duration::from_secs(2), move || {
+                if let Some(c) = weak.upgrade() {
+                    c.update_diagnostics();
+                }
+            });
         this
     }
 
@@ -113,6 +140,11 @@ impl Controller {
             slint::Color::from_argb_u8((opacity / 100. * 255.).round() as u8, r, g, b)
         };
         app.set_player_settings_values(PlayerSettingsValues {
+            anime4k_enabled: v.anime4k.enabled,
+            anime4k_mode: v.anime4k.mode as i32,
+            anime4k_hq: v.anime4k.quality == Quality::Hq,
+            anime4k_status: self.anime4k_status.borrow().as_str().into(),
+            anime4k_warning: self.anime4k_warning.get(),
             brightness: v.brightness as f32,
             contrast: v.contrast as f32,
             saturation: v.saturation as f32,
@@ -199,6 +231,7 @@ impl Controller {
             return self.report(result);
         }
         *self.applied.borrow_mut() = next;
+        self.publish();
         self.dirty
             .set(self.session.borrow().saved() != self.config.player_settings());
         self.report(Ok(()))
@@ -226,7 +259,8 @@ impl Controller {
             return Ok(());
         }
         // A save timer may fire while a newer slider edit is still queued.
-        // Persist only values that mpv has accepted, never pending edits.
+        // Persist accepted preferences, never pending edits. The Anime4K
+        // preference is retained even when the current context cannot run it.
         let mut snapshot = self.session.borrow().clone();
         snapshot.values = self.applied.borrow().clone();
         let result = self.config.set_player_settings(snapshot.saved()).context(
@@ -256,6 +290,62 @@ impl Controller {
         let next = self.session.borrow().values.clone();
         if self.report(self.apply(&next, None)) {
             *self.applied.borrow_mut() = next;
+        }
+        self.publish();
+    }
+
+    fn shader_failed(&self, message: &str) {
+        if self.anime4k_failure.borrow().is_some()
+            || !self.applied.borrow().video.anime4k.enabled
+            || self.engine.as_ref().is_some_and(|e| e.anime4k_blocked())
+        {
+            return;
+        }
+        tracing::warn!("Video shader error: {}", message.trim());
+        // mpv compilation messages do not reliably identify the responsible
+        // shader. Never disable Anime4K or rewrite saved preferences on a guess.
+        self.anime4k.invalidate();
+        let message = "A video shader failed. Check custom shaders or try another Anime4K preset.";
+        *self.anime4k_failure.borrow_mut() = Some(message.into());
+        *self.anime4k_status.borrow_mut() = message.into();
+        self.anime4k_warning.set(true);
+        self.publish();
+    }
+
+    fn update_diagnostics(&self) {
+        if self.anime4k_failure.borrow().is_some()
+            || !self.applied.borrow().video.anime4k.enabled
+            || self.engine.as_ref().is_some_and(|e| e.anime4k_blocked())
+        {
+            return;
+        }
+        let Some(engine) = &self.engine else {
+            return;
+        };
+        let mpv = engine.mpv();
+        let (message, warning) = if mpv.get_property::<i64>("video-params/w").unwrap_or(0) == 0 {
+            self.dropped_frames.set(None);
+            ("Ready for video playback".into(), false)
+        } else {
+            let drops = mpv.get_property::<i64>("frame-drop-count").ok();
+            let previous = self.dropped_frames.replace(drops);
+            let dropping = !mpv.get_property::<bool>("pause").unwrap_or(true)
+                && drops
+                    .zip(previous)
+                    .is_some_and(|(now, old)| now.saturating_sub(old) >= 3);
+            if dropping {
+                (
+                    "Playback is dropping frames. Try Fast or turn Anime4K off.".into(),
+                    true,
+                )
+            } else {
+                ("Enabled".into(), false)
+            }
+        };
+        if *self.anime4k_status.borrow() != message || self.anime4k_warning.get() != warning {
+            *self.anime4k_status.borrow_mut() = message;
+            self.anime4k_warning.set(warning);
+            self.publish();
         }
     }
 
@@ -358,6 +448,167 @@ impl Controller {
                 self.eq_installed.set(false);
             }
         }
+        // Last, so failures in unrelated settings cannot leave a newly selected
+        // shader chain partially accepted. Reconcile again on every file load.
+        if old.is_none_or(|o| o.video.anime4k != next.video.anime4k) {
+            // Keep requested/persisted settings separate from the effective
+            // shader chain. A hardware restriction must not turn a remembered
+            // preference off when an unrelated setting is saved.
+            let mut effective = next.video.anime4k.clone();
+            let unavailable = effective.enabled && engine.anime4k_blocked();
+            effective.enabled &= !unavailable;
+            self.anime4k.apply(mpv, &effective)?;
+            self.dropped_frames.set(None);
+            // FileLoaded and rollback also call apply(None): neither should
+            // erase a failure. Only an accepted Anime4K edit (or Reset) clears it.
+            if old.is_some_and(|o| o.video.anime4k != next.video.anime4k) {
+                self.anime4k_failure.borrow_mut().take();
+            }
+            let failure = if unavailable {
+                Some(anime4k::GLES_WARNING.into())
+            } else {
+                self.anime4k_failure.borrow().clone()
+            };
+            self.anime4k_warning.set(failure.is_some());
+            *self.anime4k_status.borrow_mut() = failure.unwrap_or_else(|| {
+                if next.video.anime4k.enabled {
+                    "Waiting for video rendering…".into()
+                } else {
+                    String::new()
+                }
+            });
+        }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires a desktop for the Slint settings controller"]
+    fn shader_warning_survives_restore_without_changing_selection() {
+        crate::player::select_graphics_backend().unwrap();
+        let app = AppWindow::new().unwrap();
+        let base =
+            std::env::temp_dir().join(format!("putmpv-shader-warning-{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let config = Arc::new(ConfigStore::for_test(base.join("config.json")));
+        let engine = Arc::new(PlayerEngine::new().unwrap());
+        let custom = vec!["/custom/broken.glsl".to_owned()];
+        super::super::mpv_nodes::set_strings(engine.mpv(), "glsl-shaders", &custom).unwrap();
+        let controller = Controller::install(&app, Some(engine.clone()), config.clone());
+        app.invoke_player_setting_flag("anime4k-enabled".into(), true);
+        controller.flush().unwrap();
+        app.invoke_player_settings_lock(0);
+        let saved = config.player_settings();
+        let chain = super::super::mpv_nodes::strings(engine.mpv(), "glsl-shaders").unwrap();
+        controller.shader_failed("Shader compilation failed in custom shader");
+        let warning = app.get_player_settings_values().anime4k_status;
+        // Holding this borrow also proves repeated source-log lines never try
+        // to rewrite the failure state (which would panic on a mutable borrow).
+        {
+            let _failure = controller.anime4k_failure.borrow();
+            for _ in 0..40 {
+                controller.shader_failed("vec4 hook() { HOOKED_tex(HOOKED_pos); }");
+            }
+        }
+
+        assert!(app.get_player_settings_values().anime4k_enabled);
+        controller.restore();
+        controller.update_diagnostics();
+        assert_eq!(app.get_player_settings_values().anime4k_status, warning);
+        assert!(app.get_player_settings_values().anime4k_warning);
+        assert_eq!(config.player_settings(), saved);
+        assert_eq!(
+            super::super::mpv_nodes::strings(engine.mpv(), "glsl-shaders").unwrap(),
+            chain
+        );
+        app.invoke_player_setting_number("brightness".into(), 10.);
+        controller.flush().unwrap();
+        assert_eq!(app.get_player_settings_values().anime4k_status, warning);
+        app.invoke_player_setting_number("anime4k-mode".into(), 1.);
+        controller.flush().unwrap();
+        assert!(!app.get_player_settings_values().anime4k_warning);
+        controller.shader_failed("GLSL compilation failed");
+        // Remembered settings survive an incompatible context and unrelated
+        // video saves, then become effective again when desktop GL is available.
+        engine
+            .anime4k_blocked
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        controller.restore();
+        assert!(app.get_player_settings_values().anime4k_enabled);
+        assert_eq!(
+            app.get_player_settings_values().anime4k_status,
+            anime4k::GLES_WARNING
+        );
+        assert_eq!(
+            super::super::mpv_nodes::strings(engine.mpv(), "glsl-shaders").unwrap(),
+            custom
+        );
+        app.invoke_player_setting_number("contrast".into(), 12.);
+        controller.flush().unwrap();
+        assert!(
+            config
+                .player_settings()
+                .video
+                .as_ref()
+                .unwrap()
+                .anime4k
+                .enabled
+        );
+        assert_eq!(
+            config.player_settings().video.as_ref().unwrap().contrast,
+            12.
+        );
+        // An explicit Off while blocked is still a real preference change.
+        app.invoke_player_setting_flag("anime4k-enabled".into(), false);
+        controller.flush().unwrap();
+        assert!(
+            !config
+                .player_settings()
+                .video
+                .as_ref()
+                .unwrap()
+                .anime4k
+                .enabled
+        );
+        app.invoke_player_setting_flag("anime4k-enabled".into(), true);
+        controller.flush().unwrap();
+        assert!(
+            config
+                .player_settings()
+                .video
+                .as_ref()
+                .unwrap()
+                .anime4k
+                .enabled
+        );
+        assert_eq!(
+            super::super::mpv_nodes::strings(engine.mpv(), "glsl-shaders").unwrap(),
+            custom
+        );
+        engine
+            .anime4k_blocked
+            .store(false, std::sync::atomic::Ordering::Relaxed);
+        controller.restore();
+        assert!(app.get_player_settings_values().anime4k_enabled);
+        assert!(!app.get_player_settings_values().anime4k_warning);
+        assert!(
+            super::super::mpv_nodes::strings(engine.mpv(), "glsl-shaders")
+                .unwrap()
+                .len()
+                > custom.len()
+        );
+        app.invoke_player_settings_reset(0);
+        controller.flush().unwrap();
+        assert!(!app.get_player_settings_values().anime4k_warning);
+        assert!(!app.get_player_settings_values().anime4k_enabled);
+        assert_eq!(
+            super::super::mpv_nodes::strings(engine.mpv(), "glsl-shaders").unwrap(),
+            custom
+        );
+        std::fs::remove_dir_all(base).unwrap();
     }
 }

@@ -1,8 +1,11 @@
+mod anime4k;
+mod anime4k_assets;
 mod app;
 mod gl;
 #[cfg(target_os = "linux")]
 mod linux_inhibitor;
 mod media_controls;
+mod mpv_nodes;
 pub(crate) mod settings;
 mod settings_ui;
 mod sleep_inhibitor;
@@ -10,8 +13,10 @@ mod sleep_inhibitor;
 pub(crate) use app::refresh_watch_state_views;
 pub use app::{EmbeddedPlayer, PlaybackQueueItem};
 
+use glow::HasContext;
 use std::ffi::{c_void, CStr, CString};
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{anyhow, Result};
 use libmpv2::{
@@ -21,6 +26,15 @@ use libmpv2::{
 };
 
 type SlintGetProcAddress<'a> = dyn Fn(&CStr) -> *const c_void + 'a;
+
+/// Slint and libmpv share this context, so select its API before any window is
+/// created. Slint otherwise prefers GLES, whose mediump texture reads trigger
+/// severe colour errors in Anime4K's CNN passes on NVIDIA drivers (mpv #18566).
+/// Desktop GL keeps the existing FemtoVG/libmpv renderer and unmodified shaders.
+pub(crate) fn select_graphics_backend() -> Result<()> {
+    slint::BackendSelector::new().require_opengl().select()?;
+    Ok(())
+}
 
 /// Type-erased handle to Slint's GL loader.
 ///
@@ -45,6 +59,7 @@ fn get_proc_address(ctx: &SlintGlProcAddress, name: &str) -> *mut c_void {
 
 pub struct PlayerEngine {
     mpv: &'static Mpv,
+    anime4k_blocked: AtomicBool,
 }
 
 impl PlayerEngine {
@@ -58,7 +73,12 @@ impl PlayerEngine {
 
         Ok(Self {
             mpv: Box::leak(Box::new(mpv)),
+            anime4k_blocked: AtomicBool::new(false),
         })
+    }
+
+    pub fn anime4k_blocked(&self) -> bool {
+        self.anime4k_blocked.load(Ordering::Relaxed)
     }
 
     pub fn mpv(&self) -> &'static Mpv {
@@ -139,6 +159,7 @@ impl PlayerEngine {
     }
 
     pub fn observe_properties(event_client: &Mpv) -> Result<()> {
+        mpv_nodes::request_errors(event_client)?;
         event_client
             .enable_event(mpv_event_id::FileLoaded)
             .map_err(|e| anyhow!("{e}"))?;
@@ -194,10 +215,21 @@ pub struct PlayerRenderer {
 
 impl PlayerRenderer {
     pub fn new(
-        mpv: &'static Mpv,
+        engine: &PlayerEngine,
         gl: glow::Context,
         get_proc_address_loader: &SlintGetProcAddress<'_>,
     ) -> Result<Self> {
+        // Slint/glutin already retry with default context attributes when the
+        // desktop request fails. Inspect what was actually created, not merely
+        // what was requested. GLES remains usable on non-NVIDIA systems.
+        let version = unsafe { gl.get_parameter_string(glow::VERSION) };
+        let vendor = unsafe { gl.get_parameter_string(glow::VENDOR) };
+        let blocked = anime4k::incompatible_context(&version, &vendor);
+        engine.anime4k_blocked.store(blocked, Ordering::Relaxed);
+        if version.starts_with("OpenGL ES") {
+            tracing::warn!(%version, %vendor, "Using an OpenGL ES context; Anime4K available: {}", !blocked);
+        }
+        let mpv = engine.mpv();
         let gl = Rc::new(gl);
         let texture = unsafe { gl::Texture::new(&gl, 320, 200) };
         // SAFETY: erases the loader's lifetime to satisfy libmpv2's `'static`

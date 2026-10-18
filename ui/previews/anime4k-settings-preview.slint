@@ -1,0 +1,41 @@
+import { Anime4kSettings } from "../components/player/anime4k-settings.slint";
+import { PlaybackSettingsStyle, SettingsButton } from "../components/player/player-settings-controls.slint";
+
+export component Anime4kSettingsPreview inherits Window {
+    title: "Anime4K settings preview";
+    preferred-width: 380px;
+    preferred-height: 440px;
+    min-width: 300px;
+    background: PlaybackSettingsStyle.panel;
+    // 0 off, 1 waiting, 2 enabled, 3 dropped frames, 4 shader failure, 5 incompatible graphics.
+    in-out property <int> scenario: 0;
+    in-out property <bool> enabled: root.scenario != 0;
+    in-out property <int> mode: 0;
+    in-out property <bool> hq: false;
+    changed scenario => { root.enabled = root.scenario != 0; }
+    VerticalLayout {
+        padding: 20px; spacing: 12px; alignment: start;
+        HorizontalLayout {
+            height: 32px; spacing: 6px;
+            for name[index] in ["Off", "Waiting", "Enabled"] : SettingsButton {
+                text: name; horizontal-stretch: 1; selected: root.scenario == index;
+                label: "Preview " + name; clicked => { root.scenario = index; }
+            }
+        }
+        HorizontalLayout {
+            height: 32px; spacing: 6px;
+            for name[index] in ["Drops", "Error", "Unavailable"] : SettingsButton {
+                text: name; horizontal-stretch: 1; selected: root.scenario == index + 3;
+                label: "Preview " + name; clicked => { root.scenario = index + 3; }
+            }
+        }
+        Anime4kSettings {
+            enabled: root.enabled; mode: root.mode; hq: root.hq;
+            status: root.scenario == 1 ? "Waiting for video rendering…" : root.scenario == 2 ? "Enabled" : root.scenario == 3 ? "Playback is dropping frames. Try Fast or turn Anime4K off." : root.scenario == 4 ? "A video shader failed. Check custom shaders or try another Anime4K preset." : root.scenario == 5 ? "Anime4K is unavailable with this NVIDIA graphics context. Restart with desktop OpenGL to use it." : "";
+            warning: root.scenario >= 3;
+            toggled(value) => { root.enabled = value; }
+            mode_changed(value) => { root.mode = value; }
+            quality_changed(value) => { root.hq = value; }
+        }
+    }
+}

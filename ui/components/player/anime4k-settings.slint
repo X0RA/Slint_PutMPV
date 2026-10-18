@@ -1,0 +1,49 @@
+import { PlaybackSettingsStyle, SettingsToggleRow, SettingsButton } from "./player-settings-controls.slint";
+
+export component Anime4kSettings inherits VerticalLayout {
+    in property <bool> enabled;
+    in property <int> mode;
+    in property <bool> hq;
+    in property <string> status;
+    in property <bool> warning;
+    callback toggled(bool);
+    callback mode_changed(int);
+    callback quality_changed(bool);
+    spacing: 12px;
+    alignment: start;
+    vertical-stretch: 0;
+
+    anime4k-toggle := SettingsToggleRow {
+        label: "Anime4K";
+        hint: "Enhance detail and upscale animation";
+        checked: root.enabled;
+        toggled(value) => { root.toggled(value); }
+    }
+    if root.enabled : VerticalLayout {
+        spacing: 10px;
+        HorizontalLayout {
+            height: 30px; spacing: 6px;
+            Text { text: "Quality"; font-family: PlaybackSettingsStyle.font; font-size: 13px; color: PlaybackSettingsStyle.label; vertical-alignment: center; horizontal-stretch: 1; }
+            anime4k-fast := SettingsButton { text: "Fast"; kind: "pill"; selected: !root.hq; label: "Anime4K Fast quality"; clicked => { root.quality_changed(false); } }
+            anime4k-hq := SettingsButton { text: "HQ"; kind: "pill"; selected: root.hq; label: "Anime4K high quality"; clicked => { root.quality_changed(true); } }
+        }
+        Text { text: "Preset"; font-family: PlaybackSettingsStyle.font; font-size: 13px; color: PlaybackSettingsStyle.label; }
+        HorizontalLayout {
+            height: 30px; spacing: 5px;
+            for name[index] in ["A", "B", "C", "A+A", "B+B", "C+A"] : SettingsButton {
+                preferred-width: 0px; horizontal-stretch: 1; text: name; kind: "chip";
+                selected: root.mode == index; label: "Anime4K preset " + name;
+                clicked => { root.mode_changed(index); }
+            }
+        }
+        Text {
+            text: root.mode == 0 ? "A restores soft or blurry lines." : root.mode == 1 ? "B uses a softer restoration." : root.mode == 2 ? "C reduces noise while upscaling." : "Extra restoration for larger upscales. Uses more GPU power.";
+            color: PlaybackSettingsStyle.dim; font-family: PlaybackSettingsStyle.font; font-size: 12px; wrap: word-wrap;
+        }
+    }
+    if root.status != "" : Text {
+        text: root.status; color: root.warning ? #fbbf24 : PlaybackSettingsStyle.dim;
+        font-family: PlaybackSettingsStyle.font; font-size: 12px; wrap: word-wrap;
+        accessible-role: text; accessible-label: root.status;
+    }
+}

@@ -1,9 +1,11 @@
 import { ScrollView } from "std-widgets.slint";
+import { Anime4kSettings } from "./anime4k-settings.slint";
 import { PlayerSettingsValues } from "../../types.slint";
 import { PlaybackSettingsStyle, SettingsButton, SettingsSwitch, SettingsToggleRow, SettingsField, SettingsSlider, SettingsPictureRow, SettingsSectionHeading, SettingsDivider, SettingsSubtitlePreview } from "./player-settings-controls.slint";
 
 export global PlayerSettingsDefaults {
     out property <PlayerSettingsValues> values: {
+        anime4k_enabled: false, anime4k_mode: 0, anime4k_hq: false, anime4k_status: "", anime4k_warning: false,
         brightness: 0, contrast: 0, saturation: 0, gamma: 0, hue: 0, speed: 1, preserve_pitch: true,
         audio_delay: 0, eq_enabled: false, eq_preset: 0, bands: [0,0,0,0,0,0,0,0,0,0],
         sub_scale: 1, sub_font: "sans-serif", sub_color_hex: "#FFFFFF", sub_color: #ffffff,
@@ -177,6 +179,17 @@ export component PlayerSettingsPanel inherits Rectangle {
             }
             if root.section == 0 : VerticalLayout {
                 spacing: 0px; alignment: start;
+                VerticalLayout {
+                    padding-top: 18px; padding-left: 20px; padding-right: 20px; padding-bottom: 18px;
+                    anime4k := Anime4kSettings {
+                        enabled: root.values.anime4k_enabled; mode: root.values.anime4k_mode; hq: root.values.anime4k_hq;
+                        status: root.values.anime4k_status; warning: root.values.anime4k_warning;
+                        toggled(value) => { root.flag_changed("anime4k-enabled", value); }
+                        mode_changed(value) => { root.number_changed("anime4k-mode", value); }
+                        quality_changed(value) => { root.flag_changed("anime4k-hq", value); }
+                    }
+                }
+                Rectangle { height: 1px; SettingsDivider { x: 20px; width: parent.width - 40px; } }
                 VerticalLayout {
                     padding-top: 18px; padding-left: 20px; padding-right: 20px; padding-bottom: 6px; spacing: 0px; alignment: start;
                     HorizontalLayout {

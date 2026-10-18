@@ -4481,6 +4481,7 @@ dependencies = [
  "i-slint-backend-winit",
  "keepawake",
  "libmpv2",
+ "libmpv2-sys",
  "magneto",
  "once_cell",
  "open",

@@ -14,7 +14,8 @@ export component PlayerSettingsPreview inherits Window {
     in-out property <int> section: 0;
     in-out property <bool> panel_open: true;
     // 0 design defaults, 1 all remembered, 2 custom EQ, 3 bitmap subtitles,
-    // 4 long font, 5 save error, 6 app-rendered subtitles.
+    // 4 long font, 5 save error, 6 app-rendered subtitles, 7 Anime4K enabled,
+    // 8 video shader failure, 9 Anime4K waiting, 10 dropped-frame warning.
     function apply-scenario() {
         MockPlayerSettings.values = PlayerSettingsDefaults.values;
         MockPlayerSettings.values.video_locked = root.scenario == 0 || root.scenario == 1;
@@ -25,6 +26,9 @@ export component PlayerSettingsPreview inherits Window {
         MockPlayerSettings.values.sub_background_enabled = true;
         MockPlayerSettings.values.sub_font = root.scenario == 4 ? "A very long subtitle font family name for layout testing" : "sans-serif";
         if root.scenario == 2 { MockPlayerSettings.preset(1); MockPlayerSettings.number("eq-5", 3); }
+        MockPlayerSettings.values.anime4k_enabled = root.scenario == 7 || root.scenario == 8 || root.scenario == 9 || root.scenario == 10;
+        MockPlayerSettings.values.anime4k_warning = root.scenario == 8 || root.scenario == 10;
+        MockPlayerSettings.values.anime4k_status = root.scenario == 7 ? "Enabled" : root.scenario == 8 ? "A video shader failed. Check custom shaders or try another Anime4K preset." : root.scenario == 9 ? "Waiting for video rendering…" : root.scenario == 10 ? "Playback is dropping frames. Try Fast or turn Anime4K off." : "";
     }
     init => { root.apply-scenario(); }
     changed scenario => { root.apply-scenario(); }

@@ -246,6 +246,7 @@ export component AppWindow inherits Window {
     callback player_settings_reset(int);
     callback player_settings_flush() -> bool;
     callback player_settings_restore();
+    callback player_shader_error(string);
     callback player_close();
     callback player_toggle_play();
     callback player_seek(seconds: float);

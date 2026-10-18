@@ -1,0 +1,90 @@
+{
+  "repository": "https://github.com/bloc97/Anime4K",
+  "revision": "7684e9586f8dcc738af08a1cdceb024cc184f426",
+  "files": [
+    {
+      "file": "Anime4K_Clamp_Highlights.glsl",
+      "source": "glsl/Restore/Anime4K_Clamp_Highlights.glsl",
+      "git_blob": "71dcf7344a7757c82867949164c650095a7b9735",
+      "sha256": "a2a9bf7fbc1d75d09660ca2e701e4d7fb0cf5457b94da47e1825032fa2b3671a"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_M.glsl",
+      "source": "glsl/Restore/Anime4K_Restore_CNN_M.glsl",
+      "git_blob": "7f5ea9d87da38b7db82a5e115c5fd0980ed72f5e",
+      "sha256": "67ea3ed26539e8de3b7d307688535d2ff17e8d147e11dda0247da7770dbecf41"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_S.glsl",
+      "source": "glsl/Restore/Anime4K_Restore_CNN_S.glsl",
+      "git_blob": "209bfbb6bd31331b09a7090e91f65be6f8b68dcf",
+      "sha256": "97c24dc370ab300c108bfaa09db7f175aeff343674842c299cf3940a3d330427"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_Soft_M.glsl",
+      "source": "glsl/Restore/Anime4K_Restore_CNN_Soft_M.glsl",
+      "git_blob": "2da72cb2bac3a62a53b7ccea51d0189e93eebaed",
+      "sha256": "a78a2c76898e08e09e442a9628c64208c26e8e15789649b8755223f009794c02"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_Soft_S.glsl",
+      "source": "glsl/Restore/Anime4K_Restore_CNN_Soft_S.glsl",
+      "git_blob": "8da70b580debd7f6a6f3abdf553821755cb33fcd",
+      "sha256": "9f6867f2ef42786729522d86fe24147cb4ea145418e3974df70496acf52dc392"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_Soft_VL.glsl",
+      "source": "glsl/Restore/Anime4K_Restore_CNN_Soft_VL.glsl",
+      "git_blob": "74d4f4ca55e1901e5a8216af487be3ffd459f60a",
+      "sha256": "094334b0e20c1a201fe4941c7c68de72451e5aee9efb5524d7fb82b12dca64b9"
+    },
+    {
+      "file": "Anime4K_Restore_CNN_VL.glsl",
+      "source": "glsl/Restore/Anime4K_Restore_CNN_VL.glsl",
+      "git_blob": "0810c8d5691f5ea4bfb6dcf85c02fdb703e2dbb6",
+      "sha256": "35036722733305cd4d4e57660b883bbe2569ba2914033c254327107d7b77e35e"
+    },
+    {
+      "file": "Anime4K_AutoDownscalePre_x2.glsl",
+      "source": "glsl/Upscale/Anime4K_AutoDownscalePre_x2.glsl",
+      "git_blob": "3e381373dc531160a0c876bc1a5675738fdb0cce",
+      "sha256": "8c58291740146bd766a4d73f132775a797fe80f7d07919b5d767e27a5dc85656"
+    },
+    {
+      "file": "Anime4K_AutoDownscalePre_x4.glsl",
+      "source": "glsl/Upscale/Anime4K_AutoDownscalePre_x4.glsl",
+      "git_blob": "1c4d421b2e4c42902b23ea62c18f8bdaaee280c7",
+      "sha256": "5af62d8cd844916dc1126613e13bad3beab195787f93a71200b47c6ec78f2e41"
+    },
+    {
+      "file": "Anime4K_Upscale_CNN_x2_M.glsl",
+      "source": "glsl/Upscale/Anime4K_Upscale_CNN_x2_M.glsl",
+      "git_blob": "156c6bdd3b80a6c784ddf6655493bb35337cc0ec",
+      "sha256": "716e02098a68f0d648761f2b96b4dd139e1cb09b174bb369fca3aa34328fff7e"
+    },
+    {
+      "file": "Anime4K_Upscale_CNN_x2_S.glsl",
+      "source": "glsl/Upscale/Anime4K_Upscale_CNN_x2_S.glsl",
+      "git_blob": "e6ad7c218452014eaf70170cb5160e9ff427ffbe",
+      "sha256": "4c53ec2e287908f7ee7bcb266b0170421626d663576468b7d7dafc62962649a4"
+    },
+    {
+      "file": "Anime4K_Upscale_CNN_x2_VL.glsl",
+      "source": "glsl/Upscale/Anime4K_Upscale_CNN_x2_VL.glsl",
+      "git_blob": "c562e6e02d54b6313313ff5aa971dda9c4148676",
+      "sha256": "5638fe31c37c151a3443fea3451a3ef91af073f4dbb9615f6c0d1e29db11493d"
+    },
+    {
+      "file": "Anime4K_Upscale_Denoise_CNN_x2_M.glsl",
+      "source": "glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_M.glsl",
+      "git_blob": "5076f5dd968ef854b48478f4547a411c811c37dc",
+      "sha256": "8c72b042e2301fe66a45c3089720459148e2504cd72af16f9c0d5017ff14181e"
+    },
+    {
+      "file": "Anime4K_Upscale_Denoise_CNN_x2_VL.glsl",
+      "source": "glsl/Upscale+Denoise/Anime4K_Upscale_Denoise_CNN_x2_VL.glsl",
+      "git_blob": "ac122b9a14b36b42c233dee0f063183b234d5b39",
+      "sha256": "359c48fe5a317fbc6b706ce368401eef496e84ed98abac7a43efebca2b65d79b"
+    }
+  ]
+}

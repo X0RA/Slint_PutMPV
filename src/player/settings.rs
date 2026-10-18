@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct VideoSettings {
+    pub anime4k: super::anime4k::Settings,
     pub brightness: f64,
     pub contrast: f64,
     pub saturation: f64,
@@ -17,6 +18,7 @@ pub struct VideoSettings {
 impl Default for VideoSettings {
     fn default() -> Self {
         Self {
+            anime4k: super::anime4k::Settings::default(),
             brightness: 0.,
             contrast: 0.,
             saturation: 0.,
@@ -171,6 +173,15 @@ impl Settings {
         if !value.is_finite() {
             bail!("Enter a finite number.");
         }
+        if key == "anime4k-mode" {
+            let mode = super::anime4k::Mode::ALL
+                .get(value as usize)
+                .filter(|_| value >= 0. && value.fract() == 0.)
+                .copied()
+                .ok_or_else(|| anyhow::anyhow!("Choose an Anime4K preset."))?;
+            self.video.anime4k.mode = mode;
+            return Ok(());
+        }
         let (slot, min, max) = match key {
             "brightness" => (&mut self.video.brightness, -100., 100.),
             "contrast" => (&mut self.video.contrast, -100., 100.),
@@ -230,6 +241,14 @@ impl Settings {
 
     pub fn flag(&mut self, key: &str, value: bool) -> Result<()> {
         match key {
+            "anime4k-enabled" => self.video.anime4k.enabled = value,
+            "anime4k-hq" => {
+                self.video.anime4k.quality = if value {
+                    super::anime4k::Quality::Hq
+                } else {
+                    super::anime4k::Quality::Fast
+                }
+            }
             "preserve-pitch" => self.video.preserve_pitch = value,
             "eq-enabled" => self.audio.eq_enabled = value,
             "sub-background-enabled" => self.subtitles.background_enabled = value,
@@ -294,6 +313,38 @@ pub fn eq_filter(audio: &AudioSettings) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn anime4k_defaults_persistence_and_reset_follow_video_settings() {
+        use crate::player::anime4k::{Mode, Quality};
+        let old: SavedSettings = serde_json::from_str(r#"{"video":{"speed":1.5}}"#).unwrap();
+        assert!(!Session::from_saved(old).values.video.anime4k.enabled);
+        let mut session = Session::default();
+        session.values.flag("anime4k-enabled", true).unwrap();
+        session.values.flag("anime4k-hq", true).unwrap();
+        session.values.number("anime4k-mode", 5.).unwrap();
+        assert!(session.saved().is_empty());
+        session.locked[0] = true;
+        let saved = serde_json::to_string(&session.saved()).unwrap();
+        let restarted = Session::from_saved(serde_json::from_str(&saved).unwrap());
+        assert!(restarted.values.video.anime4k.enabled);
+        assert_eq!(restarted.values.video.anime4k.mode, Mode::CA);
+        assert_eq!(restarted.values.video.anime4k.quality, Quality::Hq);
+        for invalid in [-1., 0.5, 6., f64::NAN] {
+            assert!(session.values.number("anime4k-mode", invalid).is_err());
+        }
+        session.reset(0);
+        assert!(!session.values.video.anime4k.enabled);
+        assert_eq!(session.values.video.anime4k.mode, Mode::A);
+        assert_eq!(session.values.video.anime4k.quality, Quality::Fast);
+        let unknown: SavedSettings =
+            serde_json::from_str(r#"{"video":{"anime4k":{"mode":"future","quality":"future"}}}"#)
+                .unwrap();
+        assert_eq!(
+            Session::from_saved(unknown).values.video.anime4k,
+            super::super::anime4k::Settings::default()
+        );
+    }
 
     #[test]
     fn only_locked_sections_survive_restart() {
