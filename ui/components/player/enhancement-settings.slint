@@ -1,0 +1,46 @@
+import { PlayerSettingsValues } from "../../types.slint";
+import { Anime4kSettings } from "./anime4k-settings.slint";
+import { PlaybackSettingsStyle, SettingsToggleRow, SettingsButton, SettingsSectionHeading, SettingsDivider } from "./player-settings-controls.slint";
+
+export component EnhancementSettings inherits VerticalLayout {
+    in property <PlayerSettingsValues> values;
+    callback number_changed(string, float);
+    callback flag_changed(string, bool);
+    spacing: 20px;
+    alignment: start;
+    vertical-stretch: 0;
+    SettingsSectionHeading { text: "ENLARGING THE PICTURE"; }
+    // Ordered from lightest to heaviest; `value` is the saved upscaler index.
+    for choice in [
+        {value: 0, title: "Standard", hint: "The normal setting. Works well for everything."},
+        {value: 1, title: "Lightweight", hint: "Easier on older computers. Slightly softer."},
+        {value: 4, title: "Sharp", hint: "Crisper edges. Uses a bit more power."},
+        {value: 2, title: "AI detail", hint: "Rebuilds fine detail. Needs a decent graphics card."},
+        {value: 3, title: "AI detail (strong)", hint: "Most detail. Needs a powerful graphics card."}
+    ] : VerticalLayout {
+        spacing: 6px;
+        SettingsButton {
+            height: 32px; text: choice.title; kind: "chip";
+            selected: !root.values.anime4k_enabled && root.values.upscaler == choice.value;
+            label: "Enlarge with " + choice.title;
+            clicked => { root.number_changed("upscaler", choice.value); }
+        }
+        Text { text: choice.hint; font-family: PlaybackSettingsStyle.font; font-size: 12px; color: PlaybackSettingsStyle.dim; wrap: word-wrap; }
+    }
+    Anime4kSettings {
+        enabled: root.values.anime4k_enabled; mode: root.values.anime4k_mode; hq: root.values.anime4k_hq;
+        toggled(value) => { root.flag_changed("anime4k-enabled", value); }
+        mode_changed(value) => { root.number_changed("anime4k-mode", value); }
+        quality_changed(value) => { root.flag_changed("anime4k-hq", value); }
+    }
+    SettingsDivider { }
+    SettingsSectionHeading { text: "EXTRAS"; }
+    SettingsToggleRow { label: "Extra sharpening"; hint: "More fine detail. Can make grain more visible."; checked: root.values.refinement; toggled(value) => { root.flag_changed("refinement", value); } }
+    SettingsToggleRow { label: "Cleaner colours"; hint: "Stops colours bleeding past edges."; checked: root.values.chroma; toggled(value) => { root.flag_changed("chroma", value); } }
+    SettingsToggleRow { label: "Better shrinking"; hint: "Crisper when video is bigger than your screen."; checked: root.values.downscale; toggled(value) => { root.flag_changed("downscale", value); } }
+    if root.values.anime4k_status != "" : Text {
+        text: root.values.anime4k_status; color: root.values.anime4k_warning ? #fbbf24 : PlaybackSettingsStyle.dim;
+        font-family: PlaybackSettingsStyle.font; font-size: 12px; wrap: word-wrap;
+        accessible-role: text; accessible-label: self.text;
+    }
+}

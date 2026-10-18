@@ -305,6 +305,10 @@ fn build_media_controls(app: &AppWindow, engine: Arc<PlayerEngine>) -> SharedMed
 #[path = "anime4k_smoke.rs"]
 mod anime4k_smoke;
 
+#[cfg(test)]
+#[path = "enhancements_smoke.rs"]
+mod enhancements_smoke;
+
 fn register_renderer(app: &AppWindow, engine: Arc<PlayerEngine>, player_view: i32) {
     let weak = app.as_weak();
     let mut renderer: Option<PlayerRenderer> = None;

@@ -1,6 +1,7 @@
 mod anime4k;
 mod anime4k_assets;
 mod app;
+mod enhancements;
 mod gl;
 #[cfg(target_os = "linux")]
 mod linux_inhibitor;

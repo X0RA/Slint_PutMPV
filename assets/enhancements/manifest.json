@@ -1,0 +1,65 @@
+{
+  "files": [
+    {
+      "file": "FSRCNNX_x2_8-0-4-1.glsl",
+      "url": "https://github.com/igv/FSRCNN-TensorFlow/releases/download/1.1/FSRCNNX_x2_8-0-4-1.glsl",
+      "revision": "1.1",
+      "license": "LGPL-3.0-or-later",
+      "sha256": "e800dbc5c1c95185cc82216c597724533ff5f2880179f256eef600f03e8dc2ae"
+    },
+    {
+      "file": "FSRCNNX_x2_16-0-4-1.glsl",
+      "url": "https://github.com/igv/FSRCNN-TensorFlow/releases/download/1.1/FSRCNNX_x2_16-0-4-1.glsl",
+      "revision": "1.1",
+      "license": "LGPL-3.0-or-later",
+      "sha256": "d5a24a271e5d9a3f7f7a053b150c460a44c25b3cf7f770857d57cc3a2e1c9965"
+    },
+    {
+      "file": "SSimSuperRes.glsl",
+      "url": "https://gist.githubusercontent.com/igv/2364ffa6e81540f29cb7ab4c9bc05b6b/raw/a8feaac97835c211fa3ebcabf90db149a254187b/SSimSuperRes.glsl",
+      "revision": "a8feaac97835c211fa3ebcabf90db149a254187b",
+      "license": "LGPL-3.0-or-later",
+      "sha256": "a8b27115840c60045250411b375e0188000217258ad776eeb51724c97815460f",
+      "gist_revision": "15d93440d0a24fc4b8770070be6a9fa2af6f200b"
+    },
+    {
+      "file": "SSimDownscaler.glsl",
+      "url": "https://gist.githubusercontent.com/igv/36508af3ffc84410fe39761d6969be10/raw/e969b6a19cc9e4a92494421a7c29821607b9f91f/SSimDownscaler.glsl",
+      "revision": "e969b6a19cc9e4a92494421a7c29821607b9f91f",
+      "license": "LGPL-3.0-or-later",
+      "sha256": "f46f4710a162d17058b9d82ed8610588b0c04d7be07cef6bf2a8c4077828f804",
+      "gist_revision": "38992bce7f9ff844f800820df0908692b65bb74a"
+    },
+    {
+      "file": "CfL_Prediction_Lite.glsl",
+      "url": "https://raw.githubusercontent.com/Artoriuz/glsl-chroma-from-luma-prediction/066dff964b83aa34e893de25d590874bf8c8e94f/CfL_Prediction_Lite.glsl",
+      "revision": "066dff964b83aa34e893de25d590874bf8c8e94f",
+      "license": "MIT",
+      "sha256": "93ed75c4a816478217fca590f51738ade1a1bbbeb1432fe61c6cea5d8fbf7bd2",
+      "upstream_sha256": "159c1dad4daab10eddaae822a5d0fb0b94a38e85a2825fb7df9d7feb509ad4f7",
+      "upstream_file": "upstream/CfL_Prediction_Lite.glsl",
+      "adaptation": "GLSL 330 array constructors and upstream non-gather fallback"
+    },
+    {
+      "file": "CfL-LICENSE",
+      "url": "https://raw.githubusercontent.com/Artoriuz/glsl-chroma-from-luma-prediction/066dff964b83aa34e893de25d590874bf8c8e94f/LICENSE",
+      "revision": "066dff964b83aa34e893de25d590874bf8c8e94f",
+      "license": "MIT",
+      "sha256": "e305a68b1ba025b0438627e0fd183cb91c8ac95480ec36caeb2b926470f6cb41"
+    },
+    {
+      "file": "LGPL-3.0.txt",
+      "url": "https://www.gnu.org/licenses/lgpl-3.0.txt",
+      "revision": "3.0",
+      "license": "LGPL-3.0",
+      "sha256": "e3a994d82e644b03a792a930f574002658412f62407f5fee083f2555c5f23118"
+    },
+    {
+      "file": "GPL-3.0.txt",
+      "url": "https://www.gnu.org/licenses/gpl-3.0.txt",
+      "revision": "3.0",
+      "license": "GPL-3.0",
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    }
+  ]
+}

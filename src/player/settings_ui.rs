@@ -27,6 +27,7 @@ pub(crate) struct Controller {
     dirty: Cell<bool>,
     eq_installed: Cell<bool>,
     anime4k: Shaders,
+    enhancements: super::enhancements::Shaders,
     diagnostics_timer: Timer,
     anime4k_status: RefCell<String>,
     anime4k_warning: Cell<bool>,
@@ -43,6 +44,9 @@ impl Controller {
         let session = Session::from_saved(config.player_settings());
         let this = Rc::new(Self {
             anime4k: Shaders::new(config.path().parent().expect("config has a directory")),
+            enhancements: super::enhancements::Shaders::new(
+                config.path().parent().expect("config has a directory"),
+            ),
             app: app.as_weak(),
             engine,
             config,
@@ -86,11 +90,11 @@ impl Controller {
         app.on_player_settings_lock(move |section| c.toggle_lock(section));
         let c = this.clone();
         app.on_player_settings_reset(move |section| {
-            if !(0..3).contains(&section) {
+            if !(0..4).contains(&section) {
                 return;
             }
             c.session.borrow_mut().reset(section as usize);
-            if section == 0 {
+            if section == 3 {
                 c.anime4k_failure.borrow_mut().take();
                 c.anime4k_status.borrow_mut().clear();
                 c.anime4k_warning.set(false);
@@ -140,6 +144,10 @@ impl Controller {
             slint::Color::from_argb_u8((opacity / 100. * 255.).round() as u8, r, g, b)
         };
         app.set_player_settings_values(PlayerSettingsValues {
+            upscaler: v.enhancements.upscaler as i32,
+            refinement: v.enhancements.refinement,
+            chroma: v.enhancements.chroma,
+            downscale: v.enhancements.downscale,
             anime4k_enabled: v.anime4k.enabled,
             anime4k_mode: v.anime4k.mode as i32,
             anime4k_hq: v.anime4k.quality == Quality::Hq,
@@ -296,7 +304,8 @@ impl Controller {
 
     fn shader_failed(&self, message: &str) {
         if self.anime4k_failure.borrow().is_some()
-            || !self.applied.borrow().video.anime4k.enabled
+            || !(self.applied.borrow().video.anime4k.enabled
+                || self.applied.borrow().video.enhancements.has_shaders())
             || self.engine.as_ref().is_some_and(|e| e.anime4k_blocked())
         {
             return;
@@ -305,7 +314,8 @@ impl Controller {
         // mpv compilation messages do not reliably identify the responsible
         // shader. Never disable Anime4K or rewrite saved preferences on a guess.
         self.anime4k.invalidate();
-        let message = "A video shader failed. Check custom shaders or try another Anime4K preset.";
+        self.enhancements.invalidate();
+        let message = "A video effect failed to load. Try turning off an enhancement, or any custom shaders you have added.";
         *self.anime4k_failure.borrow_mut() = Some(message.into());
         *self.anime4k_status.borrow_mut() = message.into();
         self.anime4k_warning.set(true);
@@ -314,7 +324,8 @@ impl Controller {
 
     fn update_diagnostics(&self) {
         if self.anime4k_failure.borrow().is_some()
-            || !self.applied.borrow().video.anime4k.enabled
+            || !(self.applied.borrow().video.anime4k.enabled
+                || self.applied.borrow().video.enhancements.has_shaders())
             || self.engine.as_ref().is_some_and(|e| e.anime4k_blocked())
         {
             return;
@@ -325,7 +336,7 @@ impl Controller {
         let mpv = engine.mpv();
         let (message, warning) = if mpv.get_property::<i64>("video-params/w").unwrap_or(0) == 0 {
             self.dropped_frames.set(None);
-            ("Ready for video playback".into(), false)
+            ("Starts when a video plays".into(), false)
         } else {
             let drops = mpv.get_property::<i64>("frame-drop-count").ok();
             let previous = self.dropped_frames.replace(drops);
@@ -335,11 +346,12 @@ impl Controller {
                     .is_some_and(|(now, old)| now.saturating_sub(old) >= 3);
             if dropping {
                 (
-                    "Playback is dropping frames. Try Fast or turn Anime4K off.".into(),
+                    "Playback is stuttering. Try Lightweight or Standard, or turn off some extras."
+                        .into(),
                     true,
                 )
             } else {
-                ("Enabled".into(), false)
+                ("On".into(), false)
             }
         };
         if *self.anime4k_status.borrow() != message || self.anime4k_warning.get() != warning {
@@ -450,29 +462,44 @@ impl Controller {
         }
         // Last, so failures in unrelated settings cannot leave a newly selected
         // shader chain partially accepted. Reconcile again on every file load.
-        if old.is_none_or(|o| o.video.anime4k != next.video.anime4k) {
+        if old.is_none_or(|o| {
+            o.video.anime4k != next.video.anime4k || o.video.enhancements != v.enhancements
+        }) {
             // Keep requested/persisted settings separate from the effective
             // shader chain. A hardware restriction must not turn a remembered
             // preference off when an unrelated setting is saved.
             let mut effective = next.video.anime4k.clone();
-            let unavailable = effective.enabled && engine.anime4k_blocked();
+            let unavailable =
+                (effective.enabled || v.enhancements.has_shaders()) && engine.anime4k_blocked();
             effective.enabled &= !unavailable;
-            self.anime4k.apply(mpv, &effective)?;
+            let enhancements = if unavailable {
+                v.enhancements.without_shaders()
+            } else {
+                v.enhancements.clone()
+            };
+            self.enhancements
+                .apply(mpv, &self.anime4k, &effective, &enhancements)?;
             self.dropped_frames.set(None);
             // FileLoaded and rollback also call apply(None): neither should
             // erase a failure. Only an accepted Anime4K edit (or Reset) clears it.
-            if old.is_some_and(|o| o.video.anime4k != next.video.anime4k) {
+            if old.is_some_and(|o| {
+                o.video.anime4k != next.video.anime4k || o.video.enhancements != v.enhancements
+            }) {
                 self.anime4k_failure.borrow_mut().take();
             }
             let failure = if unavailable {
-                Some(anime4k::GLES_WARNING.into())
+                Some(if v.enhancements.has_shaders() {
+                    "AI detail, Anime4K and the extras can't run with your graphics driver right now, so normal scaling is used. Your choices are saved.".into()
+                } else {
+                    anime4k::GLES_WARNING.into()
+                })
             } else {
                 self.anime4k_failure.borrow().clone()
             };
             self.anime4k_warning.set(failure.is_some());
             *self.anime4k_status.borrow_mut() = failure.unwrap_or_else(|| {
-                if next.video.anime4k.enabled {
-                    "Waiting for video rendering…".into()
+                if next.video.anime4k.enabled || v.enhancements.has_shaders() {
+                    "Starts when a video plays".into()
                 } else {
                     String::new()
                 }
@@ -525,6 +552,10 @@ mod tests {
             super::super::mpv_nodes::strings(engine.mpv(), "glsl-shaders").unwrap(),
             chain
         );
+        app.invoke_player_settings_reset(0);
+        controller.flush().unwrap();
+        assert_eq!(app.get_player_settings_values().anime4k_status, warning);
+        assert!(app.get_player_settings_values().anime4k_enabled);
         app.invoke_player_setting_number("brightness".into(), 10.);
         controller.flush().unwrap();
         assert_eq!(app.get_player_settings_values().anime4k_status, warning);
@@ -601,7 +632,7 @@ mod tests {
                 .len()
                 > custom.len()
         );
-        app.invoke_player_settings_reset(0);
+        app.invoke_player_settings_reset(3);
         controller.flush().unwrap();
         assert!(!app.get_player_settings_values().anime4k_warning);
         assert!(!app.get_player_settings_values().anime4k_enabled);

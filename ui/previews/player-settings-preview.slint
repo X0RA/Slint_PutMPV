@@ -25,10 +25,11 @@ export component PlayerSettingsPreview inherits Window {
         MockPlayerSettings.values.sub_scale = 1.5;
         MockPlayerSettings.values.sub_background_enabled = true;
         MockPlayerSettings.values.sub_font = root.scenario == 4 ? "A very long subtitle font family name for layout testing" : "sans-serif";
+        if root.scenario >= 7 { root.section = 3; }
         if root.scenario == 2 { MockPlayerSettings.preset(1); MockPlayerSettings.number("eq-5", 3); }
         MockPlayerSettings.values.anime4k_enabled = root.scenario == 7 || root.scenario == 8 || root.scenario == 9 || root.scenario == 10;
         MockPlayerSettings.values.anime4k_warning = root.scenario == 8 || root.scenario == 10;
-        MockPlayerSettings.values.anime4k_status = root.scenario == 7 ? "Enabled" : root.scenario == 8 ? "A video shader failed. Check custom shaders or try another Anime4K preset." : root.scenario == 9 ? "Waiting for video rendering…" : root.scenario == 10 ? "Playback is dropping frames. Try Fast or turn Anime4K off." : "";
+        MockPlayerSettings.values.anime4k_status = root.scenario == 7 ? "On" : root.scenario == 8 ? "A video effect failed to load. Try turning off an enhancement, or any custom shaders you have added." : root.scenario == 9 ? "Starts when a video plays" : root.scenario == 10 ? "Playback is stuttering. Try Lightweight or Standard, or turn off some extras." : "";
     }
     init => { root.apply-scenario(); }
     changed scenario => { root.apply-scenario(); }

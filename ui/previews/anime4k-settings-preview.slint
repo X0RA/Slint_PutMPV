@@ -31,7 +31,7 @@ export component Anime4kSettingsPreview inherits Window {
         }
         Anime4kSettings {
             enabled: root.enabled; mode: root.mode; hq: root.hq;
-            status: root.scenario == 1 ? "Waiting for video rendering…" : root.scenario == 2 ? "Enabled" : root.scenario == 3 ? "Playback is dropping frames. Try Fast or turn Anime4K off." : root.scenario == 4 ? "A video shader failed. Check custom shaders or try another Anime4K preset." : root.scenario == 5 ? "Anime4K is unavailable with this NVIDIA graphics context. Restart with desktop OpenGL to use it." : "";
+            status: root.scenario == 1 ? "Starts when a video plays" : root.scenario == 2 ? "On" : root.scenario == 3 ? "Playback is stuttering. Try Lightweight or Standard, or turn off some extras." : root.scenario == 4 ? "A video effect failed to load. Try turning off an enhancement, or any custom shaders you have added." : root.scenario == 5 ? "Anime4K can't run with your graphics driver right now, so it is paused. Your choice is saved and will work again when the driver allows it." : "";
             warning: root.scenario >= 3;
             toggled(value) => { root.enabled = value; }
             mode_changed(value) => { root.mode = value; }

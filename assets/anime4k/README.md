@@ -18,7 +18,7 @@ still exist. Missing files trigger repair; a shader error invalidates the cache
 so the next application rechecks and repairs changed files. Old revision folders
 are retained for now, including for other running app instances.
 
-Playback settings → Video → Anime4K enables the feature. Defaults are Off, A,
+Playback settings → Enhance → Anime4K enables the feature. Defaults are Off, A,
 and Fast. The selection follows the Video section's session/remember behavior;
 Reset all returns it to Off. All files can use the effect without metadata.
 
@@ -46,9 +46,10 @@ mpv's shader errors do not reliably identify the failing shader. They therefore
 show one general video-shader warning per failure episode, ignoring repeated
 source-dump messages until a retry. This does not disable Anime4K or rewrite the
 saved selection. The warning survives file loads and unrelated settings edits;
-an accepted Anime4K change or Video Reset clears it.
+an accepted enhancement change or Enhance Reset clears it. Video Reset preserves
+the selection and its diagnostic.
 
-Production status is "Enabled", with a warning for newly dropped frames. There
+Production status is "On", with a warning for newly dropped frames. There
 is no GPU-time display or time-based slow-rendering heuristic: `vo-passes` is
 unavailable without advanced-control mode, which would require a different
 threading design. Previews reflect these actual states. The opt-in

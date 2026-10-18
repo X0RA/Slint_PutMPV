@@ -1,0 +1,30 @@
+import { PlayerSettingsPanel, PlayerSettingsDefaults } from "../components/player/player-settings-panel.slint";
+import { MockPlayerSettings } from "./player-settings-mock.slint";
+export component EnhancementSettingsPreview inherits Window {
+    title: "Video enhancements preview";
+    width: 430px; height: 850px;
+    background: #0B0C10;
+    in-out property <int> scenario: 0;
+    // Default, full selection, shader error, waiting, hardware fallback, Anime4K.
+    function apply-scenario() {
+        MockPlayerSettings.values = PlayerSettingsDefaults.values;
+        MockPlayerSettings.values.upscaler = root.scenario > 0 ? 2 : 0;
+        MockPlayerSettings.values.refinement = root.scenario > 0;
+        MockPlayerSettings.values.chroma = root.scenario > 0;
+        MockPlayerSettings.values.downscale = root.scenario > 0;
+        MockPlayerSettings.values.anime4k_enabled = root.scenario == 5;
+        if root.scenario == 5 { MockPlayerSettings.values.upscaler = 0; }
+        MockPlayerSettings.values.anime4k_warning = root.scenario == 2 || root.scenario == 4;
+        MockPlayerSettings.values.anime4k_status = root.scenario == 2 ? "A video effect failed to load. Try turning off an enhancement, or any custom shaders you have added." : root.scenario == 3 ? "Starts when a video plays" : root.scenario == 4 ? "AI detail, Anime4K and the extras can't run with your graphics driver right now, so normal scaling is used. Your choices are saved." : root.scenario > 0 ? "On" : "";
+    }
+    init => { root.apply-scenario(); }
+    changed scenario => { root.apply-scenario(); }
+    PlayerSettingsPanel {
+        x: 20px; y: 20px; width: parent.width - 40px; height: parent.height - 40px;
+        section: 3; values: MockPlayerSettings.values;
+        number_changed(key, value) => { MockPlayerSettings.number(key, value); }
+        flag_changed(key, value) => { MockPlayerSettings.flag(key, value); }
+        toggle_lock(section) => { MockPlayerSettings.lock(section); }
+        reset(section) => { MockPlayerSettings.reset(section); }
+    }
+}

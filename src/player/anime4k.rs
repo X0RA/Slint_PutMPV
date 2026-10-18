@@ -5,10 +5,13 @@ use std::{
 };
 
 use anyhow::{Context, Result};
+#[cfg(test)]
 use libmpv2::Mpv;
 use serde::{Deserialize, Serialize};
 
-use super::{anime4k_assets::FILES, mpv_nodes};
+use super::anime4k_assets::FILES;
+#[cfg(test)]
+use super::mpv_nodes;
 
 const REVISION: &str = "7684e9586f8dcc738af08a1cdceb024cc184f426";
 
@@ -125,6 +128,7 @@ impl Shaders {
     }
 
     /// Only our versioned directory is owned, never arbitrary Anime4K filenames.
+    #[cfg(test)]
     fn compose(&self, current: Vec<String>, selected: Vec<String>) -> Vec<String> {
         current
             .into_iter()
@@ -133,7 +137,21 @@ impl Shaders {
             .collect()
     }
 
+    #[cfg(test)]
     pub fn apply(&self, mpv: &Mpv, settings: &Settings) -> Result<()> {
+        let current = mpv_nodes::strings(mpv, "glsl-shaders")?;
+        let composed = self.compose(current.clone(), self.selected_paths(settings)?);
+        if current != composed {
+            mpv_nodes::set_strings(mpv, "glsl-shaders", &composed)?;
+        }
+        Ok(())
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn selected_paths(&self, settings: &Settings) -> Result<Vec<String>> {
         let selected = if settings.enabled {
             let dir = self.install()?;
             settings
@@ -149,14 +167,7 @@ impl Shaders {
         } else {
             Vec::new()
         };
-        let current = mpv_nodes::strings(mpv, "glsl-shaders")
-            .context("Cannot read the current video shaders")?;
-        let composed = self.compose(current.clone(), selected);
-        if current != composed {
-            mpv_nodes::set_strings(mpv, "glsl-shaders", &composed)
-                .context("Cannot apply Anime4K shaders")?;
-        }
-        Ok(())
+        Ok(selected)
     }
 }
 
@@ -169,7 +180,7 @@ pub fn shader_error(prefix: &str, level: &str, text: &str) -> bool {
             .any(|word| text.contains(word))
 }
 
-pub const GLES_WARNING: &str = "Anime4K is unavailable with this NVIDIA graphics context. Restart with desktop OpenGL to use it.";
+pub const GLES_WARNING: &str = "Anime4K can't run with your graphics driver right now, so it is paused. Your choice is saved and will work again when the driver allows it.";
 
 pub fn incompatible_context(version: &str, vendor: &str) -> bool {
     version.starts_with("OpenGL ES") && vendor.to_ascii_lowercase().contains("nvidia")

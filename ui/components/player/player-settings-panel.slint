@@ -1,10 +1,11 @@
 import { ScrollView } from "std-widgets.slint";
-import { Anime4kSettings } from "./anime4k-settings.slint";
+import { EnhancementSettings } from "./enhancement-settings.slint";
 import { PlayerSettingsValues } from "../../types.slint";
 import { PlaybackSettingsStyle, SettingsButton, SettingsSwitch, SettingsToggleRow, SettingsField, SettingsSlider, SettingsPictureRow, SettingsSectionHeading, SettingsDivider, SettingsSubtitlePreview } from "./player-settings-controls.slint";
 
 export global PlayerSettingsDefaults {
     out property <PlayerSettingsValues> values: {
+        upscaler: 0, refinement: false, chroma: false, downscale: false,
         anime4k_enabled: false, anime4k_mode: 0, anime4k_hq: false, anime4k_status: "", anime4k_warning: false,
         brightness: 0, contrast: 0, saturation: 0, gamma: 0, hue: 0, speed: 1, preserve_pitch: true,
         audio_delay: 0, eq_enabled: false, eq_preset: 0, bands: [0,0,0,0,0,0,0,0,0,0],
@@ -111,7 +112,7 @@ export component PlayerSettingsPanel inherits Rectangle {
     callback preset_changed(int);
     callback toggle_lock(int);
     callback reset(int);
-    private property <bool> locked: root.section == 0 ? root.values.video_locked : root.section == 1 ? root.values.audio_locked : root.values.subtitles_locked;
+    private property <bool> locked: (root.section == 0 || root.section == 3) ? root.values.video_locked : root.section == 1 ? root.values.audio_locked : root.values.subtitles_locked;
     private property <bool> picture-adjusted: root.values.brightness != 0 || root.values.contrast != 0 || root.values.saturation != 0 || root.values.gamma != 0 || root.values.hue != 0;
     function picture-number(key: string, text: string, scale: float) {
         if text.is-float() { root.number_changed(key, text.to-float() / scale); }
@@ -142,14 +143,14 @@ export component PlayerSettingsPanel inherits Rectangle {
                 accessible-label: "Settings sections";
                 HorizontalLayout {
                     padding: 3px; spacing: 2px;
-                    for title[index] in ["Video", "Audio", "Subtitles"] : SettingsButton {
+                    for title[index] in ["Video", "Audio", "Subtitles", "Enhance"] : SettingsButton {
                         preferred-width: 0px; horizontal-stretch: 1; height: 32px; text: title; text-size: 13px; kind: "tab"; selected: root.section == index;
                         request-focus: tabs.keyboard-navigation && root.section == index;
                         clicked => { tabs.keyboard-navigation = false; root.section = index; }
                         navigate(direction) => {
                             tabs.keyboard-navigation = true;
                             let next = root.section + direction;
-                            root.section = next < 0 ? 2 : next > 2 ? 0 : next;
+                            root.section = next < 0 ? 3 : next > 3 ? 0 : next;
                         }
                     }
                 }
@@ -159,9 +160,9 @@ export component PlayerSettingsPanel inherits Rectangle {
                 SettingsToggleRow {
                     horizontal-stretch: 1;
                     label: "Remember for next time";
-                    hint: root.locked ? "Saved automatically for every video" : "Applies to this session only";
+                    hint: root.section == 3 ? (root.locked ? "Saved with Video settings" : "Session only · shared with Video") : root.locked ? "Saved automatically for every video" : "Applies to this session only";
                     framed: false; switch-first: true; checked: root.locked;
-                    toggled(value) => { root.toggle_lock(root.section); }
+                    toggled(value) => { root.toggle_lock(root.section == 3 ? 0 : root.section); }
                 }
                 SettingsButton { height: 30px; text: "Reset all"; clicked => { root.reset(root.section); } }
             }
@@ -179,17 +180,6 @@ export component PlayerSettingsPanel inherits Rectangle {
             }
             if root.section == 0 : VerticalLayout {
                 spacing: 0px; alignment: start;
-                VerticalLayout {
-                    padding-top: 18px; padding-left: 20px; padding-right: 20px; padding-bottom: 18px;
-                    anime4k := Anime4kSettings {
-                        enabled: root.values.anime4k_enabled; mode: root.values.anime4k_mode; hq: root.values.anime4k_hq;
-                        status: root.values.anime4k_status; warning: root.values.anime4k_warning;
-                        toggled(value) => { root.flag_changed("anime4k-enabled", value); }
-                        mode_changed(value) => { root.number_changed("anime4k-mode", value); }
-                        quality_changed(value) => { root.flag_changed("anime4k-hq", value); }
-                    }
-                }
-                Rectangle { height: 1px; SettingsDivider { x: 20px; width: parent.width - 40px; } }
                 VerticalLayout {
                     padding-top: 18px; padding-left: 20px; padding-right: 20px; padding-bottom: 6px; spacing: 0px; alignment: start;
                     HorizontalLayout {
@@ -233,6 +223,14 @@ export component PlayerSettingsPanel inherits Rectangle {
                         Text { text: "4×"; font-family: PlaybackSettingsStyle.mono; color: PlaybackSettingsStyle.muted; font-size: 11px; vertical-alignment: center; }
                     }
                     SettingsToggleRow { label: "Preserve pitch"; hint: "Voices sound natural at any speed"; checked: root.values.preserve_pitch; toggled(value) => { root.flag_changed("preserve-pitch", value); } }
+                }
+            }
+            if root.section == 3 : VerticalLayout {
+                padding: 20px; spacing: 0px;
+                EnhancementSettings {
+                    values: root.values;
+                    number_changed(key, value) => { root.number_changed(key, value); }
+                    flag_changed(key, value) => { root.flag_changed(key, value); }
                 }
             }
             if root.section == 1 : VerticalLayout {

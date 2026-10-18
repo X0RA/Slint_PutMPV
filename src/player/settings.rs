@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 #[serde(default)]
 pub struct VideoSettings {
     pub anime4k: super::anime4k::Settings,
+    pub enhancements: super::enhancements::Settings,
     pub brightness: f64,
     pub contrast: f64,
     pub saturation: f64,
@@ -19,6 +20,7 @@ impl Default for VideoSettings {
     fn default() -> Self {
         Self {
             anime4k: super::anime4k::Settings::default(),
+            enhancements: super::enhancements::Settings::default(),
             brightness: 0.,
             contrast: 0.,
             saturation: 0.,
@@ -137,9 +139,19 @@ impl Session {
 
     pub fn reset(&mut self, section: usize) {
         match section {
-            0 => self.values.video = VideoSettings::default(),
+            0 => {
+                self.values.video = VideoSettings {
+                    anime4k: self.values.video.anime4k.clone(),
+                    enhancements: self.values.video.enhancements.clone(),
+                    ..Default::default()
+                };
+            }
             1 => self.values.audio = AudioSettings::default(),
             2 => self.values.subtitles = SubtitleSettings::default(),
+            3 => {
+                self.values.video.anime4k = Default::default();
+                self.values.video.enhancements = Default::default();
+            }
             _ => (),
         }
     }
@@ -172,6 +184,15 @@ impl Settings {
     pub fn number(&mut self, key: &str, value: f64) -> Result<()> {
         if !value.is_finite() {
             bail!("Enter a finite number.");
+        }
+        if key == "upscaler" {
+            self.video.enhancements.upscaler = super::enhancements::Upscaler::ALL
+                .get(value as usize)
+                .filter(|_| value >= 0. && value.fract() == 0.)
+                .copied()
+                .ok_or_else(|| anyhow::anyhow!("Choose an upscaler."))?;
+            self.video.anime4k.enabled = false;
+            return Ok(());
         }
         if key == "anime4k-mode" {
             let mode = super::anime4k::Mode::ALL
@@ -241,7 +262,15 @@ impl Settings {
 
     pub fn flag(&mut self, key: &str, value: bool) -> Result<()> {
         match key {
-            "anime4k-enabled" => self.video.anime4k.enabled = value,
+            "refinement" => self.video.enhancements.refinement = value,
+            "chroma" => self.video.enhancements.chroma = value,
+            "downscale" => self.video.enhancements.downscale = value,
+            "anime4k-enabled" => {
+                self.video.anime4k.enabled = value;
+                if value {
+                    self.video.enhancements.upscaler = super::enhancements::Upscaler::Standard;
+                }
+            }
             "anime4k-hq" => {
                 self.video.anime4k.quality = if value {
                     super::anime4k::Quality::Hq
@@ -259,6 +288,9 @@ impl Settings {
     }
 
     fn sanitize(&mut self) {
+        if self.video.anime4k.enabled {
+            self.video.enhancements.upscaler = super::enhancements::Upscaler::Standard;
+        }
         for v in [
             &mut self.video.brightness,
             &mut self.video.contrast,
@@ -315,6 +347,66 @@ mod tests {
     use super::*;
 
     #[test]
+    fn video_reset_preserves_enhancements_and_enhance_reset_preserves_video() {
+        let mut session = Session::default();
+        session.locked[0] = true;
+        session.values.flag("anime4k-enabled", true).unwrap();
+        session.values.flag("chroma", true).unwrap();
+        session.values.flag("refinement", true).unwrap();
+        session.values.number("brightness", 25.).unwrap();
+        session.values.number("speed", 1.5).unwrap();
+        let before = session.values.video.clone();
+        session.reset(0);
+        assert_eq!(session.values.video.brightness, 0.);
+        assert_eq!(session.values.video.speed, 1.);
+        assert_eq!(session.values.video.anime4k, before.anime4k);
+        assert_eq!(session.values.video.enhancements, before.enhancements);
+        assert!(session.locked[0]);
+        session.values.number("upscaler", 4.).unwrap();
+        session.values.number("brightness", 15.).unwrap();
+        session.reset(0);
+        assert_eq!(
+            session.values.video.enhancements.upscaler,
+            super::super::enhancements::Upscaler::EwaLanczosSharp
+        );
+        session.values.number("brightness", 12.).unwrap();
+        session.reset(3);
+        assert_eq!(session.values.video.brightness, 12.);
+        assert_eq!(session.values.video.enhancements, Default::default());
+    }
+
+    #[test]
+    fn enhancement_selection_is_exclusive_and_persists_with_video() {
+        use super::super::enhancements::Upscaler;
+        let mut session = Session::default();
+        session.values.flag("anime4k-enabled", true).unwrap();
+        session.values.number("upscaler", 3.).unwrap();
+        assert!(!session.values.video.anime4k.enabled);
+        session.values.flag("chroma", true).unwrap();
+        session.values.flag("refinement", true).unwrap();
+        session.values.flag("downscale", true).unwrap();
+        assert!(session.saved().is_empty());
+        session.locked[0] = true;
+        let restored = Session::from_saved(
+            serde_json::from_str(&serde_json::to_string(&session.saved()).unwrap()).unwrap(),
+        );
+        assert_eq!(restored.values.video, session.values.video);
+        for value in [-1., 5., 1.5] {
+            assert!(session.values.number("upscaler", value).is_err());
+        }
+        session.values.flag("anime4k-enabled", true).unwrap();
+        assert_eq!(
+            session.values.video.enhancements.upscaler,
+            Upscaler::Standard
+        );
+        session.values.video.brightness = 10.;
+        session.reset(3);
+        assert_eq!(session.values.video.brightness, 10.);
+        assert!(!session.values.video.anime4k.enabled);
+        assert!(!session.values.video.enhancements.has_shaders());
+    }
+
+    #[test]
     fn anime4k_defaults_persistence_and_reset_follow_video_settings() {
         use crate::player::anime4k::{Mode, Quality};
         let old: SavedSettings = serde_json::from_str(r#"{"video":{"speed":1.5}}"#).unwrap();
@@ -333,7 +425,7 @@ mod tests {
         for invalid in [-1., 0.5, 6., f64::NAN] {
             assert!(session.values.number("anime4k-mode", invalid).is_err());
         }
-        session.reset(0);
+        session.reset(3);
         assert!(!session.values.video.anime4k.enabled);
         assert_eq!(session.values.video.anime4k.mode, Mode::A);
         assert_eq!(session.values.video.anime4k.quality, Quality::Fast);
