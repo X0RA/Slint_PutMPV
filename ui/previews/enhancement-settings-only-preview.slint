@@ -1,0 +1,26 @@
+import { ScrollView } from "std-widgets.slint";
+import { EnhancementSettings } from "../components/player/enhancement-settings.slint";
+import { PlayerSettingsDefaults } from "../components/player/player-settings-panel.slint";
+import { MockPlayerSettings } from "./player-settings-mock.slint";
+
+// The enhancement section on its own, without the panel chrome, so every row is reachable.
+export component EnhancementSettingsOnlyPreview inherits Window {
+    title: "Enhancement settings preview";
+    preferred-width: 430px; preferred-height: 900px;
+    background: #0B0C10;
+    init => {
+        MockPlayerSettings.values = PlayerSettingsDefaults.values;
+        MockPlayerSettings.values.film_grain = 25;
+        MockPlayerSettings.values.refinement = true;
+    }
+    ScrollView {
+        VerticalLayout {
+            padding: 20px;
+            EnhancementSettings {
+                values: MockPlayerSettings.values;
+                number_changed(key, value) => { MockPlayerSettings.number(key, value); }
+                flag_changed(key, value) => { MockPlayerSettings.flag(key, value); }
+            }
+        }
+    }
+}

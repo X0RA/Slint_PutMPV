@@ -5,7 +5,8 @@ import { PlayerSettingsDefaults } from "../components/player/player-settings-pan
 export global MockPlayerSettings {
     in-out property <PlayerSettingsValues> values: PlayerSettingsDefaults.values;
     public function number(key: string, value: float) {
-        if key == "upscaler" { root.values.upscaler = round(value); root.values.anime4k_enabled = false; root.clear-shader-warning(); }
+        if key == "film-grain" { root.values.film_grain = round(max(0, min(100, value))); }
+        else if key == "upscaler" { root.values.upscaler = round(value); root.values.anime4k_enabled = false; root.clear-shader-warning(); }
         else if key == "anime4k-mode" { root.values.anime4k_mode = round(value); root.clear-shader-warning(); }
         else if key == "brightness" { root.values.brightness = value; }
         else if key == "contrast" { root.values.contrast = value; }
@@ -67,6 +68,7 @@ export global MockPlayerSettings {
     }
     public function reset(section: int) {
         if section == 3 {
+            root.values.film_grain = 0;
             root.values.upscaler = 0; root.values.refinement = false; root.values.chroma = false; root.values.downscale = false;
             root.values.anime4k_enabled = false; root.values.anime4k_mode = 0; root.values.anime4k_hq = false; root.clear-shader-warning();
         } else if section == 0 {

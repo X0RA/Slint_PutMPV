@@ -185,6 +185,10 @@ impl Settings {
         if !value.is_finite() {
             bail!("Enter a finite number.");
         }
+        if key == "film-grain" {
+            self.video.enhancements.grain = value.clamp(0., 100.).round() as u8;
+            return Ok(());
+        }
         if key == "upscaler" {
             self.video.enhancements.upscaler = super::enhancements::Upscaler::ALL
                 .get(value as usize)
@@ -288,6 +292,7 @@ impl Settings {
     }
 
     fn sanitize(&mut self) {
+        self.video.enhancements.grain = self.video.enhancements.grain.min(100);
         if self.video.anime4k.enabled {
             self.video.enhancements.upscaler = super::enhancements::Upscaler::Standard;
         }
@@ -345,6 +350,27 @@ pub fn eq_filter(audio: &AudioSettings) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grain_defaults_validation_persistence_and_reset() {
+        let old: SavedSettings = serde_json::from_str(r#"{"video":{"brightness":10}}"#).unwrap();
+        assert_eq!(Session::from_saved(old).values.video.enhancements.grain, 0);
+        let mut session = Session::default();
+        session.values.number("film-grain", 25.).unwrap();
+        assert!(session.saved().is_empty());
+        session.locked[0] = true;
+        let restarted = Session::from_saved(
+            serde_json::from_str(&serde_json::to_string(&session.saved()).unwrap()).unwrap(),
+        );
+        assert_eq!(restarted.values.video.enhancements.grain, 25);
+        session.reset(0);
+        assert_eq!(session.values.video.enhancements.grain, 25);
+        session.values.number("film-grain", 150.).unwrap();
+        assert_eq!(session.values.video.enhancements.grain, 100);
+        assert!(session.values.number("film-grain", f64::NAN).is_err());
+        session.reset(3);
+        assert_eq!(session.values.video.enhancements.grain, 0);
+    }
 
     #[test]
     fn video_reset_preserves_enhancements_and_enhance_reset_preserves_video() {

@@ -13,6 +13,15 @@ resets only enhancements; Video's Reset all resets picture/speed settings withou
 changing enhancements or their diagnostics.
 Existing saved Anime4K selections remain compatible. No scrape is required.
 
+Film grain defaults to Off. The 0–100 slider maps to mpv's built-in
+`deband-grain` range 0–256 and requires no additional shader assets. When enabling
+the deband pass solely for grain, zero debanding iterations avoid smoothing the
+picture. Existing debanding iterations are preserved if already enabled; turning
+grain off restores the original enabled state, iterations and grain amount.
+This is simple noise texture, not a film-stock simulation. It runs before
+upscaling, so restoration/sharpening can soften or emphasise it. Native grain
+remains available when bundled shaders are blocked on NVIDIA GLES.
+
 ## Sources and distribution
 
 `manifest.json` records exact upstream revisions/URLs and SHA-256 digests.

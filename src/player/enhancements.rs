@@ -37,11 +37,13 @@ pub struct Settings {
     pub refinement: bool,
     pub chroma: bool,
     pub downscale: bool,
+    pub grain: u8,
 }
 impl Settings {
     /// Keep built-in scaling choices when the context cannot run bundled shaders.
     pub fn without_shaders(&self) -> Self {
         Self {
+            grain: self.grain,
             upscaler: if self.upscaler.neural() {
                 Upscaler::Standard
             } else {
@@ -112,6 +114,7 @@ pub struct Shaders {
     installed: Cell<bool>,
     scale_original: RefCell<Option<String>>,
     downscale_original: RefCell<Option<(String, bool)>>,
+    grain_original: RefCell<Option<(bool, i64, f64)>>,
 }
 impl Shaders {
     pub fn new(config: &Path) -> Self {
@@ -120,6 +123,7 @@ impl Shaders {
             installed: Cell::new(false),
             scale_original: RefCell::new(None),
             downscale_original: RefCell::new(None),
+            grain_original: RefCell::new(None),
         }
     }
     pub fn invalidate(&self) {
@@ -150,6 +154,33 @@ impl Shaders {
         self.installed.set(true);
         Ok(dir)
     }
+    fn apply_grain(&self, mpv: &Mpv, amount: u8) -> Result<()> {
+        if amount > 0 {
+            if self.grain_original.borrow().is_none() {
+                *self.grain_original.borrow_mut() = Some((
+                    mpv.get_property("deband")?,
+                    mpv.get_property("deband-iterations")?,
+                    mpv.get_property("deband-grain")?,
+                ));
+            }
+            let (enabled, iterations, _) = self.grain_original.borrow().unwrap();
+            // Zero smoothing iterations when we enabled the deband pass solely
+            // for noise. Preserve any debanding the user already had enabled.
+            mpv.set_property("deband-iterations", if enabled { iterations } else { 0 })?;
+            mpv.set_property("deband-grain", f64::from(amount.min(100)) * 2.56)?;
+            mpv.set_property("deband", true)?;
+        } else {
+            let previous = *self.grain_original.borrow();
+            if let Some((enabled, iterations, grain)) = previous {
+                mpv.set_property("deband", enabled)?;
+                mpv.set_property("deband-iterations", iterations)?;
+                mpv.set_property("deband-grain", grain)?;
+                self.grain_original.borrow_mut().take();
+            }
+        }
+        Ok(())
+    }
+
     pub fn apply(
         &self,
         mpv: &Mpv,
@@ -224,6 +255,8 @@ impl Shaders {
                 self.scale_original.borrow_mut().take();
             }
         }
+        self.apply_grain(mpv, settings.grain)
+            .context("Cannot adjust film grain")?;
         Ok(())
     }
 }
@@ -232,6 +265,58 @@ impl Shaders {
 mod tests {
     use super::*;
     #[test]
+    fn grain_preserves_debanding_and_restores_original_options() {
+        let engine = crate::player::PlayerEngine::new().unwrap();
+        let mpv = engine.mpv();
+        let root = std::env::temp_dir().join("putmpv-grain-settings-test");
+        let shaders = Shaders::new(&root);
+        let anime = anime4k::Shaders::new(&root);
+        let anime_settings = anime4k::Settings::default();
+        for originally_enabled in [false, true] {
+            mpv.set_property("deband", originally_enabled).unwrap();
+            mpv.set_property("deband-iterations", 3i64).unwrap();
+            mpv.set_property("deband-grain", 12.5).unwrap();
+            shaders
+                .apply(mpv, &anime, &anime_settings, &Settings::default())
+                .unwrap();
+            assert_eq!(
+                mpv.get_property::<bool>("deband").unwrap(),
+                originally_enabled
+            );
+            for grain in [25, 100, 25] {
+                let settings = Settings {
+                    grain,
+                    ..Default::default()
+                };
+                for _ in 0..2 {
+                    shaders
+                        .apply(mpv, &anime, &anime_settings, &settings)
+                        .unwrap();
+                }
+                assert!(mpv.get_property::<bool>("deband").unwrap());
+                assert_eq!(
+                    mpv.get_property::<i64>("deband-iterations").unwrap(),
+                    if originally_enabled { 3 } else { 0 }
+                );
+                assert!(
+                    (mpv.get_property::<f64>("deband-grain").unwrap() - f64::from(grain) * 2.56)
+                        .abs()
+                        < 0.001
+                );
+            }
+            shaders
+                .apply(mpv, &anime, &anime_settings, &Settings::default())
+                .unwrap();
+            assert_eq!(
+                mpv.get_property::<bool>("deband").unwrap(),
+                originally_enabled
+            );
+            assert_eq!(mpv.get_property::<i64>("deband-iterations").unwrap(), 3);
+            assert_eq!(mpv.get_property::<f64>("deband-grain").unwrap(), 12.5);
+        }
+    }
+
+    #[test]
     fn blocked_context_retains_builtin_scalers_but_no_shader_flags() {
         for upscaler in Upscaler::ALL {
             let requested = Settings {
@@ -239,6 +324,7 @@ mod tests {
                 refinement: true,
                 chroma: true,
                 downscale: true,
+                grain: 35,
             };
             let effective = requested.without_shaders();
             assert!(!effective.has_shaders());
@@ -251,6 +337,7 @@ mod tests {
                 }
             );
             assert!(requested.refinement);
+            assert_eq!(effective.grain, 35);
         }
     }
 
@@ -312,6 +399,7 @@ mod tests {
             refinement: true,
             chroma: true,
             downscale: true,
+            grain: 0,
         };
         shaders
             .apply(mpv, &anime, &anime4k::Settings::default(), &settings)

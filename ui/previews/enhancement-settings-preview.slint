@@ -12,6 +12,7 @@ export component EnhancementSettingsPreview inherits Window {
         MockPlayerSettings.values.refinement = root.scenario > 0;
         MockPlayerSettings.values.chroma = root.scenario > 0;
         MockPlayerSettings.values.downscale = root.scenario > 0;
+        MockPlayerSettings.values.film_grain = root.scenario > 0 ? 25 : 0;
         MockPlayerSettings.values.anime4k_enabled = root.scenario == 5;
         if root.scenario == 5 { MockPlayerSettings.values.upscaler = 0; }
         MockPlayerSettings.values.anime4k_warning = root.scenario == 2 || root.scenario == 4;

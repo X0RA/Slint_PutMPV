@@ -1,6 +1,6 @@
 import { PlayerSettingsValues } from "../../types.slint";
 import { Anime4kSettings } from "./anime4k-settings.slint";
-import { PlaybackSettingsStyle, SettingsToggleRow, SettingsButton, SettingsSectionHeading, SettingsDivider } from "./player-settings-controls.slint";
+import { PlaybackSettingsStyle, SettingsToggleRow, SettingsButton, SettingsSectionHeading, SettingsDivider, SettingsSlider } from "./player-settings-controls.slint";
 
 export component EnhancementSettings inherits VerticalLayout {
     in property <PlayerSettingsValues> values;
@@ -38,6 +38,21 @@ export component EnhancementSettings inherits VerticalLayout {
     SettingsToggleRow { label: "Extra sharpening"; hint: "More fine detail. Can make grain more visible."; checked: root.values.refinement; toggled(value) => { root.flag_changed("refinement", value); } }
     SettingsToggleRow { label: "Cleaner colours"; hint: "Stops colours bleeding past edges."; checked: root.values.chroma; toggled(value) => { root.flag_changed("chroma", value); } }
     SettingsToggleRow { label: "Better shrinking"; hint: "Crisper when video is bigger than your screen."; checked: root.values.downscale; toggled(value) => { root.flag_changed("downscale", value); } }
+    VerticalLayout {
+        spacing: 8px;
+        HorizontalLayout {
+            height: 24px;
+            spacing: 12px;
+            Text { text: "Film grain"; font-family: PlaybackSettingsStyle.font; font-size: 13px; color: PlaybackSettingsStyle.label; vertical-alignment: center; horizontal-stretch: 1; }
+            Text { text: root.values.film_grain == 0 ? "Off" : root.values.film_grain + "%"; font-family: PlaybackSettingsStyle.mono; font-size: 12px; color: PlaybackSettingsStyle.dim; vertical-alignment: center; horizontal-alignment: right; min-width: 36px; }
+            if root.values.film_grain > 0 : SettingsButton { text: "Turn off"; label: "Turn off film grain"; kind: "link"; width: 56px; height: 24px; clicked => { root.number_changed("film-grain", 0); } }
+        }
+        grain-slider := SettingsSlider {
+            label: "Film grain amount"; value: root.values.film_grain; minimum: 0; maximum: 100; step: 1;
+            adjusted(value) => { root.number_changed("film-grain", value); }
+        }
+        Text { text: "Adds a fine noise texture. Start low for a subtle effect."; font-family: PlaybackSettingsStyle.font; font-size: 12px; color: PlaybackSettingsStyle.dim; wrap: word-wrap; }
+    }
     if root.values.anime4k_status != "" : Text {
         text: root.values.anime4k_status; color: root.values.anime4k_warning ? #fbbf24 : PlaybackSettingsStyle.dim;
         font-family: PlaybackSettingsStyle.font; font-size: 12px; wrap: word-wrap;

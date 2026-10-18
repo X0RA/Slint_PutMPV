@@ -148,6 +148,7 @@ impl Controller {
             refinement: v.enhancements.refinement,
             chroma: v.enhancements.chroma,
             downscale: v.enhancements.downscale,
+            film_grain: i32::from(v.enhancements.grain),
             anime4k_enabled: v.anime4k.enabled,
             anime4k_mode: v.anime4k.mode as i32,
             anime4k_hq: v.anime4k.quality == Quality::Hq,
