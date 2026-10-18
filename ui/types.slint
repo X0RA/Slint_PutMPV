@@ -62,6 +62,15 @@ export struct PlayerTrack {
     detail: string,
 }
 
+export struct PlayerSettingsValues {
+    brightness: float, contrast: float, saturation: float, gamma: float, hue: float,
+    speed: float, preserve_pitch: bool, audio_delay: float, eq_enabled: bool, eq_preset: int, bands: [float],
+    sub_scale: float, sub_font: string, sub_color_hex: string, sub_color: color,
+    sub_background_enabled: bool, sub_background_hex: string, sub_background: color,
+    sub_opacity: float, sub_position: float, sub_delay: float, sub_override: bool,
+    video_locked: bool, audio_locked: bool, subtitles_locked: bool,
+}
+
 export struct PlayerPlaylistItem {
     file_id: string,
     title: string,

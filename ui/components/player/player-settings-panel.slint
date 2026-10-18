@@ -1,0 +1,398 @@
+import { ScrollView } from "std-widgets.slint";
+import { PlayerSettingsValues } from "../../types.slint";
+import { PlaybackSettingsStyle, SettingsButton, SettingsSwitch, SettingsToggleRow, SettingsField, SettingsSlider, SettingsPictureRow, SettingsSectionHeading, SettingsDivider, SettingsSubtitlePreview } from "./player-settings-controls.slint";
+
+export global PlayerSettingsDefaults {
+    out property <PlayerSettingsValues> values: {
+        brightness: 0, contrast: 0, saturation: 0, gamma: 0, hue: 0, speed: 1, preserve_pitch: true,
+        audio_delay: 0, eq_enabled: false, eq_preset: 0, bands: [0,0,0,0,0,0,0,0,0,0],
+        sub_scale: 1, sub_font: "sans-serif", sub_color_hex: "#FFFFFF", sub_color: #ffffff,
+        sub_background_enabled: false, sub_background_hex: "#000000", sub_background: #000000bf,
+        sub_opacity: 75, sub_position: 100, sub_delay: 0, sub_override: false,
+        video_locked: false, audio_locked: false, subtitles_locked: false,
+    };
+}
+
+component ColorSwatches inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <bool> background-colors: false;
+    in property <bool> enabled: true;
+    callback selected(string);
+    height: 32px;
+    spacing: 8px;
+    vertical-stretch: 0;
+    for swatch in root.background-colors ? [
+        {hex: "#000000", color: #000000, name: "Black"},
+        {hex: "#2B2D33", color: #2B2D33, name: "Charcoal"},
+        {hex: "#FFFFFF", color: #FFFFFF, name: "White"},
+    ] : [
+        {hex: "#FFFFFF", color: #FFFFFF, name: "White"},
+        {hex: "#FFE14D", color: #FFE14D, name: "Yellow"},
+        {hex: "#6FE3FF", color: #6FE3FF, name: "Cyan"},
+        {hex: "#8CF08C", color: #8CF08C, name: "Green"},
+    ] : Rectangle {
+        width: 30px; height: 30px; border-radius: 15px;
+        border-width: 2px;
+        border-color: root.value == swatch.hex ? PlaybackSettingsStyle.accent : transparent;
+        accessible-role: button;
+        accessible-label: root.label + " " + swatch.name;
+        accessible-enabled: root.enabled;
+        accessible-action-default => { if root.enabled { root.selected(swatch.hex); } }
+        forward-focus: focus;
+        Rectangle { x: 5px; y: 5px; width: 20px; height: 20px; border-radius: 10px; background: swatch.color; border-width: 1px; border-color: #ffffff26; }
+        Rectangle { x: -1px; y: -1px; width: parent.width + 2px; height: parent.height + 2px; border-radius: 16px; border-width: 1px; border-color: PlaybackSettingsStyle.accent; visible: focus.has-focus; }
+        TouchArea { enabled: root.enabled; clicked => { focus.focus(); root.selected(swatch.hex); } }
+        focus := FocusScope {
+        x: 0px; width: 0px; focus-on-click: false;
+            enabled: root.enabled;
+            key-pressed(event) => {
+                if event.text == Key.Return || event.text == " " { root.selected(swatch.hex); return accept; }
+                reject
+            }
+        }
+    }
+    Rectangle { horizontal-stretch: 1; }
+    SettingsField {
+        width: 96px; height: 32px; mono: true; text-size: 12px; inset: 10px;
+        enabled: root.enabled; label: root.label + " hex"; model-text: root.value;
+        committed(text) => { root.selected(text); }
+    }
+}
+
+component DelayControl inherits HorizontalLayout {
+    in property <float> value;
+    in property <float> step;
+    in property <float> display-scale: 1;
+    in property <string> label;
+    in property <string> suffix;
+    callback adjusted(float);
+    callback entered(string);
+    height: 40px;
+    vertical-stretch: 0;
+    spacing: 8px;
+    SettingsButton { width: 40px; height: 40px; kind: "step"; text: "−"; text-size: 18px; label: root.label + " earlier"; clicked => { root.adjusted(root.value - root.step); } }
+    readout-frame := Rectangle {
+        horizontal-stretch: 1;
+        border-radius: 9px; background: #0E0F13; border-width: 1px;
+        border-color: readout.has-focus ? PlaybackSettingsStyle.accent : PlaybackSettingsStyle.border;
+        private property <string> display-value: root.display-scale == 1000 ? PlaybackSettingsStyle.signed(round(root.value * root.display-scale)) : (root.value > 0 ? "+" : "") + PlaybackSettingsStyle.decimal(root.value, 1);
+        metric := Text { visible: false; text: parent.display-value; font-family: PlaybackSettingsStyle.mono; font-size: root.display-scale == 1000 ? 17px : 16px; }
+        HorizontalLayout {
+            alignment: center; spacing: 4px;
+            readout := SettingsField {
+                width: max(12px, metric.preferred-width + 2px); height: 38px;
+                model-text: readout-frame.display-value;
+                label: root.label + " value";
+                mono: true; align-center: true; number-input: true; inset: 0px;
+                text-size: root.display-scale == 1000 ? 17px : 16px;
+                text-color: root.value == 0 ? PlaybackSettingsStyle.text : PlaybackSettingsStyle.accent;
+                field-background: transparent; border-width: 0px;
+                committed(text) => { root.entered(text); }
+            }
+            Text { text: root.suffix; color: PlaybackSettingsStyle.muted; font-family: PlaybackSettingsStyle.font; font-size: 12px; vertical-alignment: center; }
+        }
+    }
+    SettingsButton { width: 40px; height: 40px; kind: "step"; text: "+"; text-size: 18px; label: root.label + " later"; clicked => { root.adjusted(root.value + root.step); } }
+}
+
+export component PlayerSettingsPanel inherits Rectangle {
+    in property <PlayerSettingsValues> values: PlayerSettingsDefaults.values;
+    in property <string> error;
+    in property <bool> bitmap_subtitles: false;
+    in property <bool> app_subtitles: false;
+    in-out property <int> section: 0;
+    callback close();
+    callback number_changed(string, float);
+    callback text_changed(string, string);
+    callback flag_changed(string, bool);
+    callback preset_changed(int);
+    callback toggle_lock(int);
+    callback reset(int);
+    private property <bool> locked: root.section == 0 ? root.values.video_locked : root.section == 1 ? root.values.audio_locked : root.values.subtitles_locked;
+    private property <bool> picture-adjusted: root.values.brightness != 0 || root.values.contrast != 0 || root.values.saturation != 0 || root.values.gamma != 0 || root.values.hue != 0;
+    function picture-number(key: string, text: string, scale: float) {
+        if text.is-float() { root.number_changed(key, text.to-float() / scale); }
+        else { root.text_changed(key, text); }
+    }
+    preferred-width: 380px;
+    preferred-height: root.section == 0 ? 792px : root.section == 1 ? 772px : 1140px;
+    background: PlaybackSettingsStyle.panel;
+    border-radius: 16px;
+    border-width: 1px;
+    border-color: PlaybackSettingsStyle.border;
+    clip: true;
+    TouchArea { }
+    header := Rectangle {
+        x: 1px; y: 1px; width: parent.width - 2px; height: 168px;
+        VerticalLayout {
+            padding-top: 18px; padding-left: 20px; padding-right: 20px; padding-bottom: 14px;
+            spacing: 16px;
+            HorizontalLayout {
+                height: 32px;
+                Text { text: "Playback settings"; color: PlaybackSettingsStyle.text; font-family: PlaybackSettingsStyle.font; font-size: 17px; font-weight: 600; letter-spacing: -0.17px; horizontal-stretch: 1; vertical-alignment: center; }
+                SettingsButton { width: 32px; height: 32px; kind: "ghost"; icon: "close"; label: "Close player settings"; clicked => { root.close(); } }
+            }
+            tabs := Rectangle {
+                private property <bool> keyboard-navigation: false;
+                height: 38px; border-radius: 10px; background: #0B0C10;
+                accessible-role: tab-list;
+                accessible-label: "Settings sections";
+                HorizontalLayout {
+                    padding: 3px; spacing: 2px;
+                    for title[index] in ["Video", "Audio", "Subtitles"] : SettingsButton {
+                        preferred-width: 0px; horizontal-stretch: 1; height: 32px; text: title; text-size: 13px; kind: "tab"; selected: root.section == index;
+                        request-focus: tabs.keyboard-navigation && root.section == index;
+                        clicked => { tabs.keyboard-navigation = false; root.section = index; }
+                        navigate(direction) => {
+                            tabs.keyboard-navigation = true;
+                            let next = root.section + direction;
+                            root.section = next < 0 ? 2 : next > 2 ? 0 : next;
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                height: 34px; spacing: 12px;
+                SettingsToggleRow {
+                    horizontal-stretch: 1;
+                    label: "Remember for next time";
+                    hint: root.locked ? "Saved automatically for every video" : "Applies to this session only";
+                    framed: false; switch-first: true; checked: root.locked;
+                    toggled(value) => { root.toggle_lock(root.section); }
+                }
+                SettingsButton { height: 30px; text: "Reset all"; clicked => { root.reset(root.section); } }
+            }
+        }
+        SettingsDivider { y: parent.height - 1px; width: parent.width; }
+    }
+    body := ScrollView {
+        x: 1px; y: header.y + header.height; width: parent.width - 2px; height: max(0px, parent.height - self.y - 1px);
+        viewport-width: self.width;
+        VerticalLayout {
+            spacing: 0px; alignment: start;
+            if root.error != "" : Rectangle {
+                height: error-text.preferred-height + 24px;
+                error-text := Text { x: 20px; y: 12px; width: parent.width - 40px; text: root.error; color: #f87171; font-family: PlaybackSettingsStyle.font; font-size: 12px; wrap: word-wrap; }
+            }
+            if root.section == 0 : VerticalLayout {
+                spacing: 0px; alignment: start;
+                VerticalLayout {
+                    padding-top: 18px; padding-left: 20px; padding-right: 20px; padding-bottom: 6px; spacing: 0px; alignment: start;
+                    HorizontalLayout {
+                        height: 34px;
+                        SettingsSectionHeading { height: 24px; text: "PICTURE"; horizontal-stretch: 1; }
+                        SettingsButton {
+                            text: "Reset picture"; kind: "link"; visible: root.picture-adjusted;
+                            clicked => {
+                                root.number_changed("brightness", 0); root.number_changed("contrast", 0);
+                                root.number_changed("saturation", 0); root.number_changed("gamma", 0); root.number_changed("hue", 0);
+                            }
+                        }
+                    }
+                    SettingsPictureRow { label: "Brightness"; value: root.values.brightness; adjusted(value) => { root.number_changed("brightness", value); } entered(text) => { root.picture-number("brightness", text, 1); } }
+                    SettingsPictureRow { label: "Contrast"; value: root.values.contrast; adjusted(value) => { root.number_changed("contrast", value); } entered(text) => { root.picture-number("contrast", text, 1); } }
+                    SettingsPictureRow { label: "Saturation"; value: root.values.saturation; adjusted(value) => { root.number_changed("saturation", value); } entered(text) => { root.picture-number("saturation", text, 1); } }
+                    SettingsPictureRow { label: "Gamma"; value: root.values.gamma; adjusted(value) => { root.number_changed("gamma", value); } entered(text) => { root.picture-number("gamma", text, 1); } }
+                    SettingsPictureRow { label: "Hue"; value: root.values.hue; unit-scale: 1.8; suffix: "°"; adjusted(value) => { root.number_changed("hue", value); } entered(text) => { root.picture-number("hue", text, 1.8); } }
+                }
+                Rectangle { height: 21px; SettingsDivider { x: 20px; y: 10px; width: parent.width - 40px; } }
+                VerticalLayout {
+                    padding-top: 10px; padding-left: 20px; padding-right: 20px; padding-bottom: 24px; spacing: 12px; alignment: start;
+                    HorizontalLayout {
+                        height: 24px;
+                        SettingsSectionHeading { height: 24px; text: "PLAYBACK SPEED"; horizontal-stretch: 1; }
+                        Text { text: PlaybackSettingsStyle.decimal(root.values.speed, 2) + "×"; font-family: PlaybackSettingsStyle.mono; font-size: 20px; font-weight: 500; color: PlaybackSettingsStyle.text; vertical-alignment: center; }
+                    }
+                    speed-chips := HorizontalLayout {
+                        height: 32px; spacing: 4px;
+                        for speed in [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2] : SettingsButton {
+                            preferred-width: 0px; horizontal-stretch: 1; text: "" + speed; kind: "chip"; mono: true;
+                            selected: max(root.values.speed, speed) - min(root.values.speed, speed) < 0.001;
+                            label: "Playback speed " + speed + "×";
+                            clicked => { root.number_changed("speed", speed); }
+                        }
+                    }
+                    HorizontalLayout {
+                        height: 24px; spacing: 10px;
+                        Text { text: "0.25×"; font-family: PlaybackSettingsStyle.mono; color: PlaybackSettingsStyle.muted; font-size: 11px; vertical-alignment: center; }
+                        SettingsSlider { label: "Playback speed"; value: root.values.speed; minimum: 0.25; maximum: 4; step: 0.05; adjusted(value) => { root.number_changed("speed", value); } }
+                        Text { text: "4×"; font-family: PlaybackSettingsStyle.mono; color: PlaybackSettingsStyle.muted; font-size: 11px; vertical-alignment: center; }
+                    }
+                    SettingsToggleRow { label: "Preserve pitch"; hint: "Voices sound natural at any speed"; checked: root.values.preserve_pitch; toggled(value) => { root.flag_changed("preserve-pitch", value); } }
+                }
+            }
+            if root.section == 1 : VerticalLayout {
+                spacing: 0px; alignment: start;
+                VerticalLayout {
+                    padding-top: 18px; padding-left: 20px; padding-right: 20px; padding-bottom: 20px; spacing: 12px; alignment: start;
+                    SettingsSectionHeading { text: "AUDIO SYNC"; }
+                    DelayControl {
+                        label: "Audio delay"; value: root.values.audio_delay; step: 0.05; display-scale: 1000; suffix: "ms";
+                        adjusted(value) => { root.number_changed("audio-delay", value); }
+                        entered(text) => { if text.is-float() { root.number_changed("audio-delay", text.to-float() / 1000); } else { root.text_changed("audio-delay", text); } }
+                    }
+                    SettingsSlider { label: "Audio delay"; value: root.values.audio_delay * 1000; minimum: -2000; maximum: 2000; step: 10; centered: true; adjusted(value) => { root.number_changed("audio-delay", value / 1000); } }
+                    HorizontalLayout {
+                        height: 15px;
+                        Text { text: "← Audio earlier"; color: #8A8D98; font-family: PlaybackSettingsStyle.font; font-size: 12px; horizontal-stretch: 1; }
+                        SettingsButton { text: "Reset"; height: 15px; kind: "link"; visible: root.values.audio_delay != 0; label: "Reset audio delay"; clicked => { root.number_changed("audio-delay", 0); } }
+                        Text { text: "Audio later →"; color: #8A8D98; font-family: PlaybackSettingsStyle.font; font-size: 12px; horizontal-alignment: right; horizontal-stretch: 1; }
+                    }
+                }
+                Rectangle { height: 1px; SettingsDivider { x: 20px; width: parent.width - 40px; } }
+                VerticalLayout {
+                    padding-top: 18px; padding-left: 20px; padding-right: 20px; padding-bottom: 24px; spacing: 14px; alignment: start;
+                    HorizontalLayout {
+                        height: 24px; spacing: 8px;
+                        SettingsSectionHeading { height: 24px; text: "EQUALIZER"; horizontal-stretch: 1; }
+                        Text { text: root.values.eq_enabled ? "On" : "Off"; color: #C5C7CE; font-family: PlaybackSettingsStyle.font; font-size: 12px; vertical-alignment: center; }
+                        VerticalLayout { width: 32px; alignment: center; SettingsSwitch { label: "Enable equalizer"; checked: root.values.eq_enabled; toggled(value) => { root.flag_changed("eq-enabled", value); } } }
+                    }
+                    VerticalLayout {
+                        opacity: root.values.eq_enabled ? 1 : 0.4;
+                        spacing: 14px; alignment: start;
+                        VerticalLayout {
+                            spacing: 6px;
+                            HorizontalLayout {
+                                spacing: 6px; alignment: start;
+                                for preset in [{name: "Flat", id: 0}, {name: "Bass boost", id: 2}, {name: "Vocal", id: 1}, {name: "Treble", id: 3}, {name: "Night", id: 5}] : SettingsButton {
+                                    text: preset.name; kind: "pill"; height: 30px;
+                                    preferred-width: self.text == "Bass boost" ? 87px : self.text == "Treble" ? 59px : self.text == "Night" ? 55px : self.text == "Vocal" ? 56px : 46px;
+                                    selected: root.values.eq_preset == preset.id; enabled: root.values.eq_enabled;
+                                    label: "Equalizer preset " + preset.name;
+                                    clicked => { root.preset_changed(preset.id); }
+                                }
+                            }
+                            HorizontalLayout {
+                                alignment: start;
+                                SettingsButton { text: "Custom"; kind: "pill"; height: 30px; selected: root.values.eq_preset == 4; enabled: root.values.eq_enabled; label: "Equalizer preset Custom"; clicked => { root.preset_changed(4); } }
+                            }
+                        }
+                        eq-box := Rectangle {
+                            height: 200px; border-radius: 12px; background: #0E0F13; border-width: 1px; border-color: PlaybackSettingsStyle.border;
+                            HorizontalLayout {
+                                x: 10px; y: 101px; width: parent.width - 20px; height: 1px; spacing: 3px;
+                                for i in 40 : Rectangle { height: 1px; background: #2E313A; }
+                            }
+                            HorizontalLayout {
+                                padding-top: 14px; padding-left: 6px; padding-right: 6px; padding-bottom: 12px;
+                                spacing: 0px;
+                                for frequency[index] in ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"] : VerticalLayout {
+                                    spacing: 6px; alignment: start;
+                                    Text { height: 16px; text: PlaybackSettingsStyle.signed(root.values.bands[index]); font-family: PlaybackSettingsStyle.mono; font-size: 11px; color: root.values.bands[index] != 0 ? PlaybackSettingsStyle.accent : PlaybackSettingsStyle.muted; horizontal-alignment: center; }
+                                    HorizontalLayout {
+                                        alignment: center;
+                                        SettingsSlider { width: 24px; height: 132px; label: (index < 5 ? frequency + " Hz" : frequency + "Hz") + " band"; value: root.values.bands[index]; minimum: -12; maximum: 12; step: 1; centered: true; vertical: true; enabled: root.values.eq_enabled; adjusted(value) => { root.number_changed("eq-" + index, value); } }
+                                    }
+                                    Text { height: 14px; text: frequency; font-family: PlaybackSettingsStyle.mono; font-size: 10px; color: #8A8D98; horizontal-alignment: center; }
+                                }
+                            }
+                        }
+                        HorizontalLayout {
+                            Text { text: "Bass"; horizontal-stretch: 1; font-family: PlaybackSettingsStyle.mono; font-size: 11px; color: PlaybackSettingsStyle.muted; }
+                            Text { text: "±12 dB"; horizontal-stretch: 1; horizontal-alignment: center; font-family: PlaybackSettingsStyle.mono; font-size: 11px; color: PlaybackSettingsStyle.muted; }
+                            Text { text: "Treble"; horizontal-stretch: 1; horizontal-alignment: right; font-family: PlaybackSettingsStyle.mono; font-size: 11px; color: PlaybackSettingsStyle.muted; }
+                        }
+                        Text { text: "Boosts get extra headroom to avoid clipping. Turning the EQ off keeps your curve."; color: #8A8D98; font-family: PlaybackSettingsStyle.font; font-size: 12px; wrap: word-wrap; }
+                    }
+                }
+            }
+            if root.section == 2 : VerticalLayout {
+                spacing: 0px; alignment: start;
+                VerticalLayout {
+                    padding-top: 16px; padding-left: 20px; padding-right: 20px; padding-bottom: 4px;
+                    SettingsSubtitlePreview { values: root.values; }
+                }
+                if root.bitmap_subtitles : Rectangle {
+                    height: bitmap-hint.preferred-height + 20px;
+                    bitmap-hint := Text { x: 20px; y: 10px; width: parent.width - 40px; text: "Image subtitles keep their original fonts and colors. Use MPV rendering to display this track."; color: #fbbf24; font-family: PlaybackSettingsStyle.font; font-size: 12px; wrap: word-wrap; }
+                }
+                VerticalLayout {
+                    padding-top: 16px; padding-left: 20px; padding-right: 20px; padding-bottom: 8px; spacing: 14px; alignment: start;
+                    opacity: root.bitmap_subtitles ? 0.4 : 1;
+                    SettingsSectionHeading { text: "TEXT"; }
+                    VerticalLayout {
+                        spacing: 4px;
+                        HorizontalLayout { height: 16px; Text { text: "Size"; horizontal-stretch: 1; font-family: PlaybackSettingsStyle.font; color: PlaybackSettingsStyle.label; font-size: 13px; } Text { text: PlaybackSettingsStyle.decimal(root.values.sub_scale, 2) + "×"; font-family: PlaybackSettingsStyle.mono; font-size: 12px; color: PlaybackSettingsStyle.accent; } }
+                        SettingsSlider { label: "Subtitle scale"; value: root.values.sub_scale; minimum: 0.5; maximum: 3; step: 0.05; enabled: !root.bitmap_subtitles; adjusted(value) => { root.number_changed("sub-scale", value); } }
+                    }
+                    VerticalLayout {
+                        spacing: 6px;
+                        Text { text: "Font"; font-family: PlaybackSettingsStyle.font; color: PlaybackSettingsStyle.label; font-size: 13px; }
+                        font-box := Rectangle {
+                            height: 38px;
+                            SettingsField { width: parent.width; height: parent.height; model-text: root.values.sub_font; label: "Subtitle font"; enabled: !root.bitmap_subtitles; trailing-inset: 34px; committed(text) => { root.text_changed("sub-font", text); } }
+                            SettingsButton { x: parent.width - self.width - 3px; y: 3px; width: 28px; height: 32px; kind: "ghost"; text: "⌄"; text-size: 16px; label: "Subtitle font suggestions"; enabled: !root.bitmap_subtitles; clicked => { fonts.show(); } }
+                            fonts := PopupWindow {
+                                y: parent.height + 4px; width: parent.width; height: 202px;
+                                Rectangle {
+                                    border-radius: 8px; border-width: 1px; border-color: PlaybackSettingsStyle.track; background: PlaybackSettingsStyle.field;
+                                    VerticalLayout {
+                                        padding: 5px; spacing: 0px;
+                                        for family in ["sans-serif", "serif", "monospace", "Arial", "Georgia", "Verdana"] : SettingsButton {
+                                            text: family; kind: "ghost"; horizontal-stretch: 1; height: 32px;
+                                            clicked => { root.text_changed("sub-font", family); fonts.close(); }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Text { text: "Type any installed font, or pick a suggestion. Missing fonts fall back to the system default."; font-family: PlaybackSettingsStyle.font; font-size: 12px; color: #8A8D98; wrap: word-wrap; }
+                    }
+                    VerticalLayout {
+                        spacing: 8px;
+                        Text { text: "Color"; font-family: PlaybackSettingsStyle.font; color: PlaybackSettingsStyle.label; font-size: 13px; }
+                        ColorSwatches { label: "Text color"; value: root.values.sub_color_hex; enabled: !root.bitmap_subtitles; selected(text) => { root.text_changed("sub-color", text); } }
+                    }
+                }
+                Rectangle { height: 21px; SettingsDivider { x: 20px; y: 10px; width: parent.width - 40px; } }
+                VerticalLayout {
+                    padding-top: 8px; padding-left: 20px; padding-right: 20px; padding-bottom: 8px; spacing: 14px; alignment: start;
+                    opacity: root.bitmap_subtitles ? 0.4 : 1;
+                    HorizontalLayout {
+                        height: 24px;
+                        SettingsSectionHeading { height: 24px; text: "BACKGROUND"; horizontal-stretch: 1; }
+                        VerticalLayout { width: 32px; alignment: center; SettingsSwitch { label: "Show subtitle background"; checked: root.values.sub_background_enabled; enabled: !root.bitmap_subtitles; toggled(value) => { root.flag_changed("sub-background-enabled", value); } } }
+                    }
+                    if root.values.sub_background_enabled : VerticalLayout {
+                        spacing: 14px;
+                        ColorSwatches { label: "Background color"; background-colors: true; value: root.values.sub_background_hex; enabled: !root.bitmap_subtitles; selected(text) => { root.text_changed("sub-background", text); } }
+                        VerticalLayout {
+                            spacing: 4px;
+                            HorizontalLayout { height: 16px; Text { text: "Opacity"; horizontal-stretch: 1; font-family: PlaybackSettingsStyle.font; color: PlaybackSettingsStyle.label; font-size: 13px; } Text { text: round(root.values.sub_opacity) + "%"; font-family: PlaybackSettingsStyle.mono; font-size: 12px; color: PlaybackSettingsStyle.accent; } }
+                            SettingsSlider { label: "Background opacity"; value: root.values.sub_opacity; minimum: 0; maximum: 100; step: 5; enabled: !root.bitmap_subtitles; adjusted(value) => { root.number_changed("sub-opacity", value); } }
+                        }
+                    }
+                }
+                Rectangle { height: 21px; SettingsDivider { x: 20px; y: 10px; width: parent.width - 40px; } }
+                VerticalLayout {
+                    padding-top: 8px; padding-left: 20px; padding-right: 20px; padding-bottom: 8px; spacing: 14px; alignment: start;
+                    SettingsSectionHeading { text: "POSITION & TIMING"; }
+                    VerticalLayout {
+                        spacing: 4px;
+                        HorizontalLayout { height: 16px; Text { text: "Vertical position"; horizontal-stretch: 1; font-family: PlaybackSettingsStyle.font; color: PlaybackSettingsStyle.label; font-size: 13px; } Text { text: root.values.sub_position >= 98 ? "Default (bottom)" : root.values.sub_position <= 2 ? "Top" : round(root.values.sub_position) + "%"; font-family: PlaybackSettingsStyle.font; font-size: 12px; color: PlaybackSettingsStyle.dim; } }
+                        SettingsSlider { label: "Vertical position"; value: root.values.sub_position; minimum: 0; maximum: 100; adjusted(value) => { root.number_changed("sub-position", value); } }
+                        HorizontalLayout { Text { text: "Top"; font-family: PlaybackSettingsStyle.font; font-size: 11px; color: PlaybackSettingsStyle.muted; horizontal-stretch: 1; } Text { text: "Bottom"; font-family: PlaybackSettingsStyle.font; font-size: 11px; color: PlaybackSettingsStyle.muted; horizontal-alignment: right; horizontal-stretch: 1; } }
+                    }
+                    VerticalLayout {
+                        spacing: 6px;
+                        Text { text: "Delay"; font-family: PlaybackSettingsStyle.font; color: PlaybackSettingsStyle.label; font-size: 13px; }
+                        DelayControl { label: "Subtitle delay"; value: root.values.sub_delay; step: 0.1; suffix: "s"; adjusted(value) => { root.number_changed("sub-delay", round(value * 10) / 10); } entered(text) => { root.text_changed("sub-delay", text); } }
+                        Text { text: "− shows subtitles earlier · + shows them later"; font-family: PlaybackSettingsStyle.font; font-size: 12px; color: #8A8D98; wrap: word-wrap; }
+                    }
+                }
+                VerticalLayout {
+                    padding-top: 14px; padding-left: 20px; padding-right: 20px; padding-bottom: 24px;
+                    SettingsToggleRow {
+                        label: "Override styled subtitles";
+                        hint: root.app_subtitles ? "App rendering always uses your appearance settings." : "Apply these settings to ASS/SSA files too, instead of their built-in look";
+                        checked: root.values.sub_override;
+                        enabled: !root.bitmap_subtitles && !root.app_subtitles;
+                        toggled(value) => { root.flag_changed("sub-override", value); }
+                    }
+                }
+            }
+        }
+    }
+}

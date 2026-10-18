@@ -5,11 +5,14 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use super::{config_dir, read_json, write_atomic};
+use crate::player::settings::SavedSettings;
 
 pub const DEFAULT_PUT_CLIENT_ID: u32 = 8275;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigFile {
+    #[serde(default, skip_serializing_if = "SavedSettings::is_empty")]
+    pub player_settings: SavedSettings,
     #[serde(default = "default_client_id")]
     pub put_client_id: u32,
     #[serde(default, skip_serializing_if = "String::is_empty")]
@@ -51,6 +54,7 @@ fn default_show_episode_skip_buttons() -> bool {
 impl Default for ConfigFile {
     fn default() -> Self {
         Self {
+            player_settings: SavedSettings::default(),
             put_client_id: DEFAULT_PUT_CLIENT_ID,
             oauth_token: String::new(),
             tmdb_api_key: String::new(),
@@ -74,6 +78,19 @@ pub struct ConfigStore {
 }
 
 impl ConfigStore {
+    pub fn player_settings(&self) -> SavedSettings {
+        self.inner.lock().unwrap().player_settings.clone()
+    }
+
+    pub fn set_player_settings(&self, settings: SavedSettings) -> Result<()> {
+        let mut guard = self.inner.lock().unwrap();
+        let mut next = guard.clone();
+        next.player_settings = settings;
+        write_atomic(&self.path, &next)?;
+        *guard = next;
+        Ok(())
+    }
+
     pub fn load() -> Result<Self> {
         let path = config_dir()?.join("config.json");
         let cfg: ConfigFile = match read_json::<ConfigFile>(&path)? {
@@ -244,5 +261,79 @@ impl ConfigStore {
         write_atomic(&self.path, &updated)?;
         *guard = updated;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod player_settings_tests {
+    use super::*;
+    use crate::player::settings::{Session, VideoSettings};
+
+    #[test]
+    fn player_settings_round_trip_and_unlock_remove_saved_sections() {
+        let dir = std::env::temp_dir().join(format!(
+            "putmpv-settings-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        let store = ConfigStore {
+            path: path.clone(),
+            inner: Mutex::new(ConfigFile::default()),
+        };
+        let mut session = Session::default();
+        session.values.video.speed = 1.5;
+        session.values.audio.delay = 0.5;
+        session.locked[0] = true;
+        store.set_player_settings(session.saved()).unwrap();
+        let cfg: ConfigFile = read_json(&path).unwrap().unwrap();
+        assert_eq!(cfg.player_settings.video.unwrap().speed, 1.5);
+        assert!(cfg.player_settings.audio.is_none());
+        assert_eq!(session.values.audio.delay, 0.5);
+        session.reset(0);
+        store.set_player_settings(session.saved()).unwrap();
+        assert_eq!(
+            store.player_settings().video,
+            Some(VideoSettings::default())
+        );
+        session.locked[0] = false;
+        store.set_player_settings(session.saved()).unwrap();
+        let json = std::fs::read_to_string(&path).unwrap();
+        assert!(!json.contains("player_settings"));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn failed_player_settings_save_does_not_change_committed_config() {
+        let dir = std::env::temp_dir().join(format!(
+            "putmpv-settings-failure-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        // A directory at the destination makes atomic rename fail on every platform.
+        let store = ConfigStore {
+            path: dir.clone(),
+            inner: Mutex::new(ConfigFile::default()),
+        };
+        let saved = SavedSettings {
+            video: Some(VideoSettings::default()),
+            ..SavedSettings::default()
+        };
+        assert!(store.set_player_settings(saved).is_err());
+        assert!(store.player_settings().is_empty());
+        let tmp = dir.parent().unwrap().join(format!(
+            ".{}.tmp",
+            dir.file_name().unwrap().to_string_lossy()
+        ));
+        let _ = std::fs::remove_file(tmp);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }

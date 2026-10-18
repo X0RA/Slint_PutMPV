@@ -69,6 +69,7 @@ pub struct PlaybackQueueItem {
 #[derive(Clone)]
 pub struct EmbeddedPlayer {
     engine: Option<Arc<PlayerEngine>>,
+    settings: Rc<super::settings_ui::Controller>,
     playback_state: Arc<Mutex<PlayerPlaybackState>>,
     client: PutioClient,
     config: Arc<ConfigStore>,
@@ -99,6 +100,7 @@ impl EmbeddedPlayer {
                 None
             }
         };
+        let settings = super::settings_ui::Controller::install(app, engine.clone(), config.clone());
         let playback_state = Arc::new(Mutex::new(PlayerPlaybackState::default()));
 
         let media_controls = engine
@@ -139,6 +141,7 @@ impl EmbeddedPlayer {
 
         let player = Self {
             engine,
+            settings,
             playback_state,
             client,
             config,
@@ -151,6 +154,12 @@ impl EmbeddedPlayer {
         };
         player.register_close(app);
         player
+    }
+
+    pub fn flush_settings(&self) {
+        if let Err(error) = self.settings.flush() {
+            warn!("could not flush player settings: {error:#}");
+        }
     }
 
     pub fn play_queue(&self, app: &AppWindow, queue: Vec<PlaybackQueueItem>, file_id: u64) {
@@ -203,10 +212,12 @@ impl EmbeddedPlayer {
         let engine = self.engine.clone();
         let playback_state = self.playback_state.clone();
         let watch_sync = self.watch_sync.clone();
+        let settings = self.settings.clone();
         let previous_view = self.previous_view.clone();
         let media_controls = self.media_controls.clone();
         let sleep_inhibitor = self.sleep_inhibitor.clone();
         app.on_player_close(move || {
+            let _ = settings.flush();
             {
                 let mut state = playback_state.lock().unwrap();
                 state.subtitles.reset();
@@ -488,6 +499,7 @@ fn register_events(
                                 guard.update_hwnd(hwnd);
                                 guard.ensure_active(&title, dur, paused_now, position_now);
                             }
+                            app.invoke_player_settings_restore();
                             app.set_player_subtitle_search_available(true);
                             apply_tracks(&app, tracks);
                         });
@@ -519,7 +531,7 @@ fn register_events(
                                 &segments_service,
                             );
                         }
-                        if name == "track-list/count" {
+                        if name == "track-list/count" || name == "sid" {
                             let tracks = read_tracks(&event_client);
                             let _ = weak.upgrade_in_event_loop(move |app| {
                                 apply_tracks(&app, tracks);
@@ -959,6 +971,7 @@ fn adjacent_queue_item(
 }
 
 fn reset_player_state(app: &AppWindow) {
+    app.set_player_bitmap_subtitles(false);
     subtitles::reset_ui(app);
     segments::reset_ui(app);
     app.set_player_paused(false);
@@ -1005,6 +1018,7 @@ fn first_available_subtitle(app: &AppWindow) -> Option<SharedString> {
 struct PlayerTracks {
     subtitles: Vec<PlayerTrack>,
     selected_subtitle: SharedString,
+    bitmap_subtitles: bool,
     audio: Vec<PlayerTrack>,
     selected_audio: SharedString,
 }
@@ -1101,6 +1115,7 @@ fn apply_property_change(
 }
 
 fn apply_tracks(app: &AppWindow, tracks: PlayerTracks) {
+    app.set_player_bitmap_subtitles(tracks.bitmap_subtitles);
     app.set_player_subtitle_tracks(ModelRc::from(Rc::new(VecModel::from(tracks.subtitles))));
     app.set_player_selected_subtitle(tracks.selected_subtitle);
     app.set_player_audio_tracks(ModelRc::from(Rc::new(VecModel::from(tracks.audio))));
@@ -1116,6 +1131,7 @@ fn read_tracks(mpv: &Mpv) -> PlayerTracks {
     }];
     let mut audio = Vec::new();
     let mut selected_subtitle = SharedString::from("");
+    let mut bitmap_subtitles = false;
     let mut selected_audio = SharedString::from("");
 
     for index in 0..count {
@@ -1142,7 +1158,7 @@ fn read_tracks(mpv: &Mpv) -> PlayerTracks {
         if let Some(lang) = lang {
             detail_parts.push(lang.to_uppercase());
         }
-        if let Some(codec) = codec {
+        if let Some(codec) = &codec {
             detail_parts.push(codec.to_uppercase());
         }
         if default {
@@ -1160,6 +1176,10 @@ fn read_tracks(mpv: &Mpv) -> PlayerTracks {
             "sub" => {
                 if selected {
                     selected_subtitle = SharedString::from(id_string.as_str());
+                    bitmap_subtitles = matches!(
+                        codec.as_deref(),
+                        Some("hdmv_pgs_subtitle" | "dvd_subtitle" | "dvb_subtitle" | "xsub")
+                    );
                 }
                 subtitles.push(track);
             }
@@ -1176,6 +1196,7 @@ fn read_tracks(mpv: &Mpv) -> PlayerTracks {
     PlayerTracks {
         subtitles,
         selected_subtitle,
+        bitmap_subtitles,
         audio,
         selected_audio,
     }

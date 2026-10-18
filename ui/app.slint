@@ -1,3 +1,4 @@
+import { PlayerSettingsValues } from "./types.slint";
 import { Theme } from "./theme.slint";
 import { TopNavButton, ButtonChip } from "./components/primitives.slint";
 import { Icon } from "./components/icons.slint";
@@ -234,6 +235,17 @@ export component AppWindow inherits Window {
     callback sync_use_new();
     callback sync_now();
     callback sync_disable();
+    in-out property <PlayerSettingsValues> player_settings_values;
+    in-out property <string> player_settings_error;
+    in-out property <bool> player_bitmap_subtitles: false;
+    callback player_setting_number(string, float);
+    callback player_setting_text(string, string);
+    callback player_setting_flag(string, bool);
+    callback player_setting_preset(int);
+    callback player_settings_lock(int);
+    callback player_settings_reset(int);
+    callback player_settings_flush() -> bool;
+    callback player_settings_restore();
     callback player_close();
     callback player_toggle_play();
     callback player_seek(seconds: float);
@@ -578,6 +590,16 @@ export component AppWindow inherits Window {
     }
 
     if (root.view == 7) : player := PlayerPage {
+        settings_values: root.player_settings_values;
+        settings_error: root.player_settings_error;
+        bitmap_subtitles: root.player_bitmap_subtitles;
+        setting_number(key, value) => { root.player_setting_number(key, value); }
+        setting_text(key, value) => { root.player_setting_text(key, value); }
+        setting_flag(key, value) => { root.player_setting_flag(key, value); }
+        setting_preset(value) => { root.player_setting_preset(value); }
+        settings_lock(section) => { root.player_settings_lock(section); }
+        settings_reset(section) => { root.player_settings_reset(section); }
+        settings_flush => { root.player_settings_flush(); }
         x: 0px;
         y: 0px;
         width: parent.width;

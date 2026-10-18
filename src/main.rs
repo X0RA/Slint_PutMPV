@@ -123,6 +123,7 @@ fn main() -> Result<()> {
     app_ui::auth::run_startup(&app, &ctx.services, &ctx.state, &ctx.services.rt);
 
     app.run()?;
+    ctx.embedded_player.flush_settings();
     ctx.services.watch_sync.shutdown_blocking();
     drop(rt);
     Ok(())

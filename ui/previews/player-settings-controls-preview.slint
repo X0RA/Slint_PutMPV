@@ -1,0 +1,29 @@
+import { PlaybackSettingsStyle, SettingsButton, SettingsSwitch, SettingsToggleRow, SettingsField, SettingsSlider, SettingsPictureRow } from "../components/player/player-settings-controls.slint";
+
+export component PlayerSettingsControlsPreview inherits Window {
+    title: "Playback settings controls";
+    preferred-width: 650px; preferred-height: 620px;
+    background: PlaybackSettingsStyle.panel;
+    in-out property <float> value: 25;
+    in-out property <bool> checked: true;
+    in-out property <string> text: "Geist";
+    VerticalLayout {
+        padding: 24px; spacing: 18px; alignment: start;
+        SettingsPictureRow { label: "Brightness"; value: root.value; adjusted(value) => { root.value = value; } entered(text) => { if text.is-float() { root.value = max(-100, min(100, text.to-float())); } } }
+        HorizontalLayout {
+            SettingsButton { text: "Selected"; kind: "chip"; selected: true; }
+            SettingsButton { text: "Unselected"; kind: "chip"; }
+            SettingsButton { text: "Reset picture"; kind: "link"; clicked => { root.value = 0; } }
+            SettingsButton { icon: "close"; kind: "ghost"; width: 32px; label: "Close"; }
+        }
+        SettingsToggleRow { label: "Remember for next time"; hint: "Applies to this session only"; framed: false; switch-first: true; checked: root.checked; toggled(value) => { root.checked = value; } }
+        SettingsToggleRow { label: "Preserve pitch"; hint: "Voices sound natural at any speed"; checked: root.checked; toggled(value) => { root.checked = value; } }
+        SettingsField { model-text: root.text; label: "Font example"; committed(text) => { root.text = text; } }
+        HorizontalLayout {
+            spacing: 24px; alignment: start;
+            SettingsSlider { vertical: true; width: 24px; value: root.value / 10; minimum: -12; maximum: 12; centered: true; label: "Vertical EQ example"; adjusted(value) => { root.value = value * 10; } }
+            SettingsSlider { width: 300px; value: root.value; minimum: -100; maximum: 100; centered: true; label: "Disabled slider example"; enabled: false; }
+            SettingsSwitch { label: "Switch example"; checked: root.checked; toggled(value) => { root.checked = value; } }
+        }
+    }
+}

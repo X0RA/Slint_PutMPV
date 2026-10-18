@@ -1,0 +1,14 @@
+import { PlayerTopBar } from "../components/player/player_top_bar.slint";
+import { Theme } from "../theme.slint";
+export component PlayerTopBarPreview inherits Window {
+    preferred-width: 900px; preferred-height: 200px; background: #181822;
+    default-font-family: Theme.ui_font;
+    in-out property <string> status: "Click the settings wheel";
+    PlayerTopBar {
+        width: parent.width;
+        title: "Example Show · A long episode title to check the title bar layout";
+        settings_clicked => { root.status = "Settings requested"; }
+        close => { root.status = "Back requested"; }
+    }
+    Text { y: 100px; x: 24px; text: root.status; color: #ffffff; }
+}

@@ -1,3 +1,4 @@
+import { MockPlayerSettings } from "./player-settings-mock.slint";
 import { Theme } from "../theme.slint";
 import { PlayerPage } from "../pages/player.slint";
 import { PlayerTrack } from "../types.slint";
@@ -6,6 +7,7 @@ import { Switch } from "std-widgets.slint";
 export component PlayerPreview inherits Window {
     title: "Player preview";
     in-out property <float> playback_position: 120;
+    in-out property <bool> paused: true;
     in-out property <bool> show_skip_buttons: true;
     preferred-width: 900px;
     preferred-height: 600px;
@@ -27,7 +29,7 @@ export component PlayerPreview inherits Window {
     ];
     Text {
         x: 20px; y: 10px; width: parent.width - 250px; height: 24px;
-        text: "Selected track: " + (root.selected == "" ? "Off" : root.selected) + " · Renderer: " + (root.mode == 0 ? "MPV" : "App");
+        text: (root.paused ? "Paused" : "Playing") + " · Selected track: " + (root.selected == "" ? "Off" : root.selected) + " · Renderer: " + (root.mode == 0 ? "MPV" : "App");
         color: Theme.text_dim;
     }
     Switch {
@@ -41,17 +43,26 @@ export component PlayerPreview inherits Window {
         triggered => { root.searching = false; root.searched = true; }
     }
     PlayerPage {
+        settings_values: MockPlayerSettings.values;
+        settings_flush => { true }
+        setting_number(key, value) => { MockPlayerSettings.number(key, value); }
+        setting_text(key, value) => { MockPlayerSettings.text(key, value); }
+        setting_flag(key, value) => { MockPlayerSettings.flag(key, value); }
+        setting_preset(value) => { MockPlayerSettings.preset(value); }
+        settings_lock(section) => { MockPlayerSettings.lock(section); }
+        settings_reset(section) => { MockPlayerSettings.reset(section); }
         y: 42px; width: parent.width; height: parent.height - 42px;
         title: "Example Show · S01E07";
         show_skip_buttons: root.show_skip_buttons;
         duration: 2400; duration_label: "40:00";
-        position: root.playback_position; position_label: "Preview";
+        position: root.playback_position; position_label: "" + root.playback_position;
         skip_label: root.playback_position >= 120 && root.playback_position < 210 ? "Skip intro" : "";
         skip_next_available: root.playback_position >= 2300;
         skip_segment => { root.playback_position = 210; }
         skip_next => { root.playback_position = 0; }
         seek(seconds) => { root.playback_position = seconds; }
-        paused: true;
+        paused <=> root.paused;
+        toggle_play => { root.paused = !root.paused; }
         subtitle_tracks: root.loaded ? root.loaded_tracks : root.off_tracks;
         selected_subtitle <=> root.selected;
         subtitle_render_mode <=> root.mode;

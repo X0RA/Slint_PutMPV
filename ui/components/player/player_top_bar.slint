@@ -6,6 +6,7 @@ export component PlayerTopBar inherits Rectangle {
     in property <string> title;
     in property <bool> controls_visible: true;
     callback close();
+    callback settings_clicked();
 
     height: 64px;
     background: @linear-gradient(180deg, #000000cc 0%, #00000099 45%, #00000000 100%);
@@ -59,17 +60,20 @@ export component PlayerTopBar inherits Rectangle {
         color: #a0a0a0;
         font-size: 12px;
         font-weight: 400;
-        font-family: Theme.mono_font;
+        font-family: Theme.ui_font;
         horizontal-alignment: center;
         vertical-alignment: center;
         overflow: elide;
     }
 
-    PlayerIconButton {
+    settings-button := PlayerIconButton {
+        accessible-role: button;
+        accessible-label: "Playback settings";
+        accessible-action-default => { root.settings_clicked(); }
         x: parent.width - self.width - 16px;
         y: 10px;
         icon_name: "settings";
         tone: "subtle";
-        clicked => { }
+        clicked => { root.settings_clicked(); }
     }
 }

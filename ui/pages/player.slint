@@ -1,3 +1,5 @@
+import { PlayerSettingsPanel, PlayerSettingsDefaults } from "../components/player/player-settings-panel.slint";
+import { PlayerSettingsValues } from "../types.slint";
 import { PlayerSkipActions } from "../components/player/player_skip_actions.slint";
 import { PlayerPlaylistItem, PlayerTrack } from "../types.slint";
 import { PlayerTopBar } from "../components/player/player_top_bar.slint";
@@ -5,6 +7,18 @@ import { PlayerControlsBar } from "../components/player/player_controls_bar.slin
 import { PlayerPlaylistPanel } from "../components/player/player_playlist_panel.slint";
 
 export component PlayerPage inherits FocusScope {
+    in property <PlayerSettingsValues> settings_values: PlayerSettingsDefaults.values;
+    in property <string> settings_error;
+    in-out property <bool> settings_open: false;
+    private property <int> settings_section: 0;
+    callback setting_number(string, float);
+    callback setting_text(string, string);
+    callback setting_flag(string, bool);
+    callback setting_preset(int);
+    callback settings_lock(int);
+    callback settings_reset(int);
+    callback settings_flush() -> bool;
+    in property <bool> bitmap_subtitles: false;
     in property <image> texture;
     in property <string> title;
     in property <bool> show_skip_buttons: true;
@@ -57,7 +71,7 @@ export component PlayerPage inherits FocusScope {
 
     in-out property <bool> controls_visible: true;
     in-out property <bool> playlist_open: false;
-    property <bool> cursor_hidden: !root.controls_visible && !root.playlist_open;
+    property <bool> cursor_hidden: !root.controls_visible && !root.playlist_open && !root.settings_open;
 
     changed cursor_hidden => {
         root.cursor_hidden_changed(self.cursor_hidden);
@@ -71,6 +85,7 @@ export component PlayerPage inherits FocusScope {
     }
 
     key-pressed(event) => {
+        if root.settings_open { return reject; }
         if (event.text == Key.LeftArrow) {
             root.reveal_controls();
             root.seek(max(0, root.position - 5));
@@ -91,6 +106,23 @@ export component PlayerPage inherits FocusScope {
         reject
     }
 
+    function close_settings() {
+        if root.settings_flush() {
+            root.settings_open = false;
+            root.focus();
+            root.reveal_controls();
+        }
+    }
+
+    changed settings_open => {
+        if root.settings_open {
+            click-timer.stop();
+            root.playlist_open = false;
+            controls.close_menus();
+            root.reveal_controls();
+        }
+    }
+
     function reveal_controls() {
         root.controls_visible = true;
         hide-timer.restart();
@@ -98,14 +130,15 @@ export component PlayerPage inherits FocusScope {
 
     hide-timer := Timer {
         interval: 3000ms;
-        running: root.controls_visible && !root.playlist_open && !controls.menus_open;
+        running: root.controls_visible && !root.playlist_open && !controls.menus_open && !root.settings_open;
         triggered => {
-            if !controls.menus_open { root.controls_visible = false; }
+            if !controls.menus_open && !root.settings_open { root.controls_visible = false; }
         }
     }
 
     KeyBinding {
         keys: @keys(Space);
+        enabled: !root.settings_open;
         activated => {
             root.reveal_controls();
             root.toggle_play();
@@ -114,6 +147,7 @@ export component PlayerPage inherits FocusScope {
 
     KeyBinding {
         keys: @keys(C);
+        enabled: !root.settings_open;
         activated => {
             root.reveal_controls();
             root.toggle_captions();
@@ -122,6 +156,7 @@ export component PlayerPage inherits FocusScope {
 
     KeyBinding {
         keys: @keys(M);
+        enabled: !root.settings_open;
         activated => {
             root.reveal_controls();
             root.toggle_mute();
@@ -130,6 +165,7 @@ export component PlayerPage inherits FocusScope {
 
     KeyBinding {
         keys: @keys(F);
+        enabled: !root.settings_open;
         activated => {
             root.reveal_controls();
             root.toggle_fullscreen();
@@ -140,7 +176,9 @@ export component PlayerPage inherits FocusScope {
         keys: @keys(Escape);
         activated => {
             root.reveal_controls();
-            if (root.playlist_open) {
+            if (root.settings_open) {
+                root.close_settings();
+            } else if (root.playlist_open) {
                 root.playlist_open = false;
             } else {
                 root.exit_fullscreen();
@@ -203,27 +241,27 @@ export component PlayerPage inherits FocusScope {
     subtitle-box := Rectangle {
         visible: root.subtitle_render_mode == 1 && root.subtitle_text != "";
         x: max(24px, (parent.width - self.width) / 2);
-        y: parent.height - controls.height - self.height - 24px;
+        y: max(8px, (parent.height - self.height - 24px) * root.settings_values.sub_position / 100);
         width: min(subtitle-content.preferred-width + 32px, parent.width - 48px);
         height: subtitle-content.preferred-height + 16px;
         border-radius: 4px;
-        background: #000000bf;
+        background: root.settings_values.sub_background_enabled ? root.settings_values.sub_background : transparent;
 
         subtitle-content := Text {
             x: 16px;
             y: 8px;
             width: parent.width - 32px;
             text: root.subtitle_text;
-            color: #ffffff;
-            font-size: 22px;
-            font-family: "Noto Sans";
+            color: root.settings_values.sub_color;
+            font-size: 22px * root.settings_values.sub_scale;
+            font-family: root.settings_values.sub_font;
             horizontal-alignment: center;
             wrap: word-wrap;
         }
     }
 
     skip-actions := PlayerSkipActions {
-        visible: root.show_skip_buttons && !root.playlist_open && !controls.menus_open;
+        visible: root.show_skip_buttons && !root.playlist_open && !controls.menus_open && !root.settings_open;
         x: max(16px, parent.width - self.width - 32px);
         y: max(16px, subtitle-box.visible
             ? subtitle-box.y - self.height - 16px
@@ -240,7 +278,8 @@ export component PlayerPage inherits FocusScope {
         width: parent.width;
         title: root.title;
         controls_visible: root.controls_visible;
-        close => { root.close(); }
+        settings_clicked => { if root.settings_open { root.close_settings(); } else { root.settings_open = true; } }
+        close => { if root.settings_flush() { root.close(); } else { root.settings_open = true; } }
     }
 
     controls := PlayerControlsBar {
@@ -329,6 +368,31 @@ export component PlayerPage inherits FocusScope {
         current_id: root.playlist_current_id;
         play_item(file_id) => {
             root.playlist_play(file_id);
+        }
+    }
+
+    if root.settings_open : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        // Transparent backdrop dismisses the panel without affecting playback.
+        TouchArea { clicked => { root.close_settings(); } }
+        settings-panel := PlayerSettingsPanel {
+            x: max(0px, parent.width - self.width - 16px);
+            y: 56px;
+            width: min(380px, max(0px, parent.width - 32px));
+            height: max(0px, min(self.preferred-height, parent.height - self.y - 16px));
+            section <=> root.settings_section;
+            values: root.settings_values;
+            error: root.settings_error;
+            bitmap_subtitles: root.bitmap_subtitles;
+            app_subtitles: root.subtitle_render_mode == 1;
+            close => { root.close_settings(); }
+            number_changed(key, value) => { root.setting_number(key, value); }
+            text_changed(key, value) => { root.setting_text(key, value); }
+            flag_changed(key, value) => { root.setting_flag(key, value); }
+            preset_changed(value) => { root.setting_preset(value); }
+            toggle_lock(section) => { root.settings_lock(section); }
+            reset(section) => { root.settings_reset(section); }
         }
     }
 

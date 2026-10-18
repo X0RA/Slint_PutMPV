@@ -1,0 +1,79 @@
+import { PlayerSettingsValues } from "../types.slint";
+import { PlayerSettingsDefaults } from "../components/player/player-settings-panel.slint";
+
+// In-memory mock shared by standalone previews. No Rust or network services.
+export global MockPlayerSettings {
+    in-out property <PlayerSettingsValues> values: PlayerSettingsDefaults.values;
+    public function number(key: string, value: float) {
+        if key == "brightness" { root.values.brightness = value; }
+        else if key == "contrast" { root.values.contrast = value; }
+        else if key == "saturation" { root.values.saturation = value; }
+        else if key == "gamma" { root.values.gamma = value; }
+        else if key == "hue" { root.values.hue = value; }
+        else if key == "speed" { root.values.speed = value; }
+        else if key == "audio-delay" { root.values.audio_delay = value; }
+        else if key == "sub-scale" { root.values.sub_scale = value; }
+        else if key == "sub-position" { root.values.sub_position = value; }
+        else if key == "sub-delay" { root.values.sub_delay = value; }
+        else if key == "sub-opacity" { root.values.sub_opacity = value; root.update-background(); }
+        else if key == "eq-0" { root.values.bands[0] = value; root.values.eq_preset = 4; }
+        else if key == "eq-1" { root.values.bands[1] = value; root.values.eq_preset = 4; }
+        else if key == "eq-2" { root.values.bands[2] = value; root.values.eq_preset = 4; }
+        else if key == "eq-3" { root.values.bands[3] = value; root.values.eq_preset = 4; }
+        else if key == "eq-4" { root.values.bands[4] = value; root.values.eq_preset = 4; }
+        else if key == "eq-5" { root.values.bands[5] = value; root.values.eq_preset = 4; }
+        else if key == "eq-6" { root.values.bands[6] = value; root.values.eq_preset = 4; }
+        else if key == "eq-7" { root.values.bands[7] = value; root.values.eq_preset = 4; }
+        else if key == "eq-8" { root.values.bands[8] = value; root.values.eq_preset = 4; }
+        else if key == "eq-9" { root.values.bands[9] = value; root.values.eq_preset = 4; }
+    }
+    public function text(key: string, value: string) {
+        if key == "sub-font" { root.values.sub_font = value; }
+        else if key == "sub-color" {
+            root.values.sub_color_hex = value;
+            root.values.sub_color = value == "#FFE14D" ? #FFE14D : value == "#6FE3FF" ? #6FE3FF : value == "#8CF08C" ? #8CF08C : value == "#000000" ? #000000 : #FFFFFF;
+        }
+        else if key == "sub-background" {
+            root.values.sub_background_hex = value;
+            root.update-background();
+        }
+        else if value.is-float() { root.number(key, value.to-float()); }
+    }
+    public function update-background() {
+        let opacity = root.values.sub_opacity / 100;
+        root.values.sub_background = root.values.sub_background_hex == "#FFFFFF" ? Colors.rgba(255,255,255,opacity) : root.values.sub_background_hex == "#2B2D33" ? Colors.rgba(43,45,51,opacity) : Colors.rgba(0,0,0,opacity);
+    }
+    public function flag(key: string, value: bool) {
+        if key == "preserve-pitch" { root.values.preserve_pitch = value; }
+        else if key == "eq-enabled" { root.values.eq_enabled = value; }
+        else if key == "sub-background-enabled" { root.values.sub_background_enabled = value; }
+        else if key == "sub-override" { root.values.sub_override = value; }
+    }
+    public function lock(section: int) {
+        if section == 0 { root.values.video_locked = !root.values.video_locked; }
+        else if section == 1 { root.values.audio_locked = !root.values.audio_locked; }
+        else { root.values.subtitles_locked = !root.values.subtitles_locked; }
+    }
+    public function reset(section: int) {
+        if section == 0 {
+            root.values.brightness = 0; root.values.contrast = 0; root.values.saturation = 0;
+            root.values.gamma = 0; root.values.hue = 0; root.values.speed = 1; root.values.preserve_pitch = true;
+        } else if section == 1 {
+            root.values.audio_delay = 0; root.values.eq_enabled = false; root.preset(0);
+        } else {
+            root.values.sub_scale = 1; root.values.sub_font = "sans-serif";
+            root.values.sub_color_hex = "#FFFFFF"; root.values.sub_color = #ffffff;
+            root.values.sub_background_enabled = false; root.values.sub_background_hex = "#000000";
+            root.values.sub_background = #000000bf; root.values.sub_opacity = 75;
+            root.values.sub_position = 100; root.values.sub_delay = 0; root.values.sub_override = false;
+        }
+    }
+    public function preset(index: int) {
+        root.values.eq_preset = index;
+        if index == 0 { root.values.bands = [0,0,0,0,0,0,0,0,0,0]; }
+        else if index == 1 { root.values.bands = [-2,-1,0,1,2,3,3,2,0,-1]; }
+        else if index == 2 { root.values.bands = [6,5,4,2,0,0,0,0,0,0]; }
+        else if index == 3 { root.values.bands = [0,0,0,0,0,1,2,4,5,6]; }
+        else if index == 5 { root.values.bands = [-4,-3,-1,0,1,2,2,1,-1,-3]; }
+    }
+}

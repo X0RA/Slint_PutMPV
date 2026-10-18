@@ -1,0 +1,48 @@
+import { PlayerSettingsPanel, PlayerSettingsDefaults } from "../components/player/player-settings-panel.slint";
+import { MockPlayerSettings } from "./player-settings-mock.slint";
+import { PlaybackSettingsStyle } from "../components/player/player-settings-controls.slint";
+
+export component PlayerSettingsPreview inherits Window {
+    title: "Playback settings design preview";
+    preferred-width: 428px;
+    preferred-height: root.section == 2 ? 1200px : root.section == 1 ? 830px : 850px;
+    min-width: 360px;
+    min-height: 500px;
+    background: #0B0C10;
+    default-font-family: PlaybackSettingsStyle.font;
+    in-out property <int> scenario: 0;
+    in-out property <int> section: 0;
+    in-out property <bool> panel_open: true;
+    // 0 design defaults, 1 all remembered, 2 custom EQ, 3 bitmap subtitles,
+    // 4 long font, 5 save error, 6 app-rendered subtitles.
+    function apply-scenario() {
+        MockPlayerSettings.values = PlayerSettingsDefaults.values;
+        MockPlayerSettings.values.video_locked = root.scenario == 0 || root.scenario == 1;
+        MockPlayerSettings.values.audio_locked = root.scenario == 1;
+        MockPlayerSettings.values.subtitles_locked = root.scenario == 1;
+        MockPlayerSettings.values.eq_enabled = true;
+        MockPlayerSettings.values.sub_scale = 1.5;
+        MockPlayerSettings.values.sub_background_enabled = true;
+        MockPlayerSettings.values.sub_font = root.scenario == 4 ? "A very long subtitle font family name for layout testing" : "sans-serif";
+        if root.scenario == 2 { MockPlayerSettings.preset(1); MockPlayerSettings.number("eq-5", 3); }
+    }
+    init => { root.apply-scenario(); }
+    changed scenario => { root.apply-scenario(); }
+    if root.panel_open : PlayerSettingsPanel {
+        x: (parent.width - self.width) / 2; y: 24px;
+        width: min(380px, parent.width - 32px);
+        height: min(self.preferred-height, parent.height - 48px);
+        values: MockPlayerSettings.values;
+        section <=> root.section;
+        bitmap_subtitles: root.scenario == 3;
+        app_subtitles: root.scenario == 6;
+        error: root.scenario == 5 ? "Could not save player settings. Your changes are still active for this session." : "";
+        close => { root.panel_open = false; }
+        number_changed(key, value) => { MockPlayerSettings.number(key, value); }
+        text_changed(key, value) => { MockPlayerSettings.text(key, value); }
+        flag_changed(key, value) => { MockPlayerSettings.flag(key, value); }
+        preset_changed(index) => { MockPlayerSettings.preset(index); }
+        toggle_lock(section) => { MockPlayerSettings.lock(section); }
+        reset(section) => { MockPlayerSettings.reset(section); }
+    }
+}

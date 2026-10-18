@@ -1,0 +1,34 @@
+import { Theme } from "../theme.slint";
+
+export component ThemePreview inherits Window {
+    title: "Typography Preview";
+    preferred-width: 640px;
+    preferred-height: 480px;
+    background: Theme.bg;
+    default-font-family: Theme.ui_font;
+    default-font-size: 13px;
+
+    VerticalLayout {
+        padding: 32px;
+        spacing: 18px;
+
+        Text { text: "Your library"; font-size: 26px; font-weight: 600; color: Theme.text; }
+        Text { text: "Geist · Navigation, headings, filenames, and buttons"; color: Theme.text_dim; }
+        Text {
+            text: "Example Show · A long episode title to check how the player title reads";
+            color: Theme.text;
+            overflow: elide;
+        }
+        Text {
+            text: "A longer description wraps naturally across lines. Browse your library, adjust playback, and continue watching from where you left off.";
+            color: Theme.text_dim;
+            wrap: word-wrap;
+        }
+        Rectangle { height: 1px; background: Theme.border; }
+        Text { text: "Geist Mono · Timestamps, sizes, speeds, and codes"; color: Theme.text_dim; }
+        Text { text: "01:23:45 / 02:10:00"; font-family: Theme.mono_font; font-size: 18px; color: Theme.text; }
+        Text { text: "4.25 GB    12.8 MB/s    1.25×    +150 ms"; font-family: Theme.mono_font; color: Theme.text; }
+        Text { text: "ABCD-1234    0O 1Il    ±12 dB"; font-family: Theme.mono_font; color: Theme.accent_hi; }
+        Rectangle { vertical-stretch: 1; }
+    }
+}

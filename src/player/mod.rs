@@ -3,6 +3,8 @@ mod gl;
 #[cfg(target_os = "linux")]
 mod linux_inhibitor;
 mod media_controls;
+pub(crate) mod settings;
+mod settings_ui;
 mod sleep_inhibitor;
 
 pub(crate) use app::refresh_watch_state_views;

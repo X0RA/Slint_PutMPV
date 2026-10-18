@@ -1,0 +1,410 @@
+import { Theme } from "../../theme.slint";
+import { PlayerSettingsValues } from "../../types.slint";
+
+export global PlaybackSettingsStyle {
+    out property <color> panel: #121318;
+    out property <color> border: #23252D;
+    out property <color> track: #2A2D36;
+    out property <color> field: #1A1C22;
+    out property <color> text: #ECEDF0;
+    out property <color> label: #D8DAE0;
+    out property <color> dim: #9A9DA8;
+    out property <color> muted: #6E717C;
+    out property <color> accent: #5BC8FA;
+    out property <string> font: Theme.ui_font;
+    out property <string> mono: Theme.mono_font;
+    public pure function decimal(value: float, digits: int) -> string {
+        if digits == 2 {
+            let rounded = round(value * 100) / 100;
+            return "" + rounded + (round(value * 100) == round(value) * 100 ? ".00" : (round(value * 100) == round(value * 10) * 10 ? "0" : ""));
+        }
+        return "" + round(value * 10) / 10 + (round(value * 10) == round(value) * 10 ? ".0" : "");
+    }
+    public pure function signed(value: float) -> string {
+        return (value > 0 ? "+" : "") + round(value * 100) / 100;
+    }
+}
+
+export component SettingsButton inherits Rectangle {
+    in property <string> text;
+    in property <string> label: root.text;
+    in property <string> kind: "outline";
+    in property <string> icon;
+    in property <bool> selected: false;
+    in property <bool> enabled: true;
+    in property <bool> mono: false;
+    in property <bool> request-focus: false;
+    changed request-focus => { if root.request-focus { focus.focus(); } }
+    in property <length> text-size: 12px;
+    callback clicked();
+    callback navigate(int);
+    forward-focus: focus;
+    height: 32px;
+    preferred-width: root.kind == "link" ? caption.preferred-width : max(24px, caption.preferred-width + 22px);
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: root.kind == "pill" ? self.height / 2 : root.kind == "step" ? 9px : root.kind == "tab" || root.kind == "ghost" ? 8px : 7px;
+    border-width: focus.has-focus ? 2px : (root.kind == "outline" || root.kind == "chip" || root.kind == "pill" || root.kind == "step" ? 1px : 0px);
+    border-color: focus.has-focus || (root.selected && root.kind != "tab") ? PlaybackSettingsStyle.accent : PlaybackSettingsStyle.track;
+    background: root.selected ? (root.kind == "tab" ? #252831 : PlaybackSettingsStyle.accent) :
+        (touch.pressed ? #2A2D36 : touch.has-hover ? #23252D :
+        (root.kind == "chip" || root.kind == "pill" || root.kind == "step" ? PlaybackSettingsStyle.field : transparent));
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    caption := Text {
+        width: parent.width; height: parent.height;
+        text: root.text;
+        color: root.selected && root.kind != "tab" ? #06222F : root.kind == "link" ? PlaybackSettingsStyle.accent : root.kind == "tab" && !root.selected ? PlaybackSettingsStyle.dim : root.kind == "ghost" ? PlaybackSettingsStyle.dim : root.kind == "step" ? PlaybackSettingsStyle.text : #C5C7CE;
+        font-family: root.mono ? PlaybackSettingsStyle.mono : PlaybackSettingsStyle.font;
+        font-size: root.text-size;
+        font-weight: root.kind == "tab" && root.selected ? 500 : 400;
+        horizontal-alignment: center; vertical-alignment: center;
+        overflow: elide;
+    }
+    if root.icon != "" : Image {
+        x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2;
+        width: root.icon == "close" ? 16px : 13px; height: self.width;
+        source: root.icon == "close" ? @image-url("../../assets/icons/close.svg") : @image-url("../../assets/icons/player-settings-reset.svg");
+        colorize: PlaybackSettingsStyle.dim;
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => { focus.focus(); root.clicked(); }
+    }
+    focus := FocusScope {
+        x: 0px; width: 0px; focus-on-click: false;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if root.kind == "tab" && event.text == Key.LeftArrow { root.navigate(-1); return accept; }
+            if root.kind == "tab" && event.text == Key.RightArrow { root.navigate(1); return accept; }
+            if event.text == " " || event.text == Key.Return { root.clicked(); return accept; }
+            reject
+        }
+    }
+}
+
+export component SettingsSwitch inherits Rectangle {
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    in property <bool> interactive: true;
+    in property <string> label;
+    callback toggled(bool);
+    width: 32px; height: 18px;
+    horizontal-stretch: 0; vertical-stretch: 0;
+    border-radius: 9px;
+    background: root.checked ? PlaybackSettingsStyle.accent : #3A3D47;
+    border-width: focus.has-focus ? 2px : 0px;
+    border-color: #ECEDF0;
+    forward-focus: focus;
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled && root.interactive { root.toggled(!root.checked); } }
+    animate background { duration: 150ms; }
+    Rectangle {
+        x: root.checked ? 16px : 2px; y: 2px; width: 14px; height: 14px;
+        border-radius: 7px; background: #ffffff;
+        animate x { duration: 150ms; easing: ease-out; }
+    }
+    TouchArea { enabled: root.enabled && root.interactive; clicked => { focus.focus(); root.toggled(!root.checked); } }
+    focus := FocusScope {
+        x: 0px; width: 0px; focus-on-click: false;
+        enabled: root.enabled && root.interactive;
+        key-pressed(event) => {
+            if event.text == " " || event.text == Key.Return { root.toggled(!root.checked); return accept; }
+            reject
+        }
+    }
+}
+
+export component SettingsToggleRow inherits Rectangle {
+    in property <string> label;
+    in property <string> hint;
+    in property <bool> checked;
+    in property <bool> enabled: true;
+    in property <bool> framed: true;
+    in property <bool> switch-first: false;
+    callback toggled(bool);
+    forward-focus: focus;
+    height: max(root.framed ? 60px : 34px, words.preferred-height + (root.framed ? 24px : 0px));
+    vertical-stretch: 0;
+    border-radius: 10px;
+    border-width: focus.has-focus ? 2px : root.framed ? 1px : 0px;
+    border-color: focus.has-focus ? PlaybackSettingsStyle.accent : PlaybackSettingsStyle.border;
+    background: root.framed ? #16171D : transparent;
+    opacity: root.enabled ? 1 : 0.4;
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-enabled: root.enabled;
+    accessible-checkable: true;
+    accessible-checked: root.checked;
+    accessible-action-default => { if root.enabled { root.toggled(!root.checked); } }
+    HorizontalLayout {
+        padding-left: root.framed ? 14px : 0px;
+        padding-right: root.framed ? 14px : 0px;
+        padding-top: root.framed ? 12px : 0px;
+        padding-bottom: root.framed ? 12px : 0px;
+        spacing: root.switch-first ? 10px : 12px;
+        if root.switch-first : VerticalLayout {
+            width: 32px; alignment: center;
+            SettingsSwitch { checked: root.checked; interactive: false; accessible-role: none; }
+        }
+        words := VerticalLayout {
+            spacing: 2px; alignment: center;
+            horizontal-stretch: 1;
+            Text { text: root.label; color: PlaybackSettingsStyle.text; font-family: PlaybackSettingsStyle.font; font-size: 13px; font-weight: 500; wrap: word-wrap; }
+            if root.hint != "" : Text { text: root.hint; color: PlaybackSettingsStyle.dim; font-family: PlaybackSettingsStyle.font; font-size: 12px; wrap: word-wrap; }
+        }
+        if !root.switch-first : VerticalLayout {
+            width: 32px; alignment: center;
+            SettingsSwitch { checked: root.checked; interactive: false; accessible-role: none; }
+        }
+    }
+    TouchArea { enabled: root.enabled; clicked => { focus.focus(); root.toggled(!root.checked); } }
+    focus := FocusScope {
+        x: 0px; width: 0px; focus-on-click: false;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == Key.Return { root.toggled(!root.checked); return accept; }
+            reject
+        }
+    }
+}
+
+export component SettingsField inherits Rectangle {
+    in property <string> model-text;
+    in property <string> label;
+    in property <bool> enabled: true;
+    in property <bool> mono: false;
+    in property <bool> align-right: false;
+    in property <bool> align-center: false;
+    in property <bool> number-input: false;
+    in property <bool> live-number: false;
+    in property <color> text-color: PlaybackSettingsStyle.text;
+    in property <color> field-background: PlaybackSettingsStyle.field;
+    in property <length> text-size: 13px;
+    in property <length> inset: 12px;
+    in property <length> trailing-inset: root.inset;
+    callback committed(string);
+    out property <bool> has-focus: editor.has-focus;
+    private property <bool> dirty: false;
+    changed model-text => { editor.text = root.model-text; }
+    forward-focus: editor;
+    height: 38px;
+    vertical-stretch: 0;
+    border-radius: 8px;
+    border-width: 1px;
+    border-color: editor.has-focus ? PlaybackSettingsStyle.accent : PlaybackSettingsStyle.track;
+    background: root.field-background;
+    accessible-role: text-input;
+    accessible-label: root.label;
+    accessible-value: editor.text;
+    accessible-enabled: root.enabled;
+    accessible-action-set-value(value) => {
+        if root.enabled {
+            editor.text = value; root.dirty = true;
+            if root.live-number && value.is-float() { root.committed(value); }
+        }
+    }
+    viewport := Rectangle {
+        x: root.inset; y: 0px; width: max(0px, parent.width - root.inset - root.trailing-inset); height: parent.height;
+        clip: true;
+        editor := TextInput {
+            private property <length> offset: 0px;
+            x: min(0px, max(parent.width - self.width - self.text-cursor-width, self.offset));
+            width: max(parent.width, self.preferred-width); height: parent.height;
+            text: root.model-text;
+            enabled: root.enabled;
+            single-line: true;
+            font-family: root.mono ? PlaybackSettingsStyle.mono : PlaybackSettingsStyle.font;
+            font-size: root.text-size;
+            color: root.text-color;
+            selection-background-color: PlaybackSettingsStyle.accent;
+            selection-foreground-color: #06222F;
+            horizontal-alignment: root.align-right ? right : root.align-center ? center : left;
+            vertical-alignment: center;
+            accessible-role: none;
+            cursor-position-changed(position) => {
+                if position.x + self.offset < 0px { self.offset = -position.x; }
+                else if position.x + self.offset > viewport.width - self.text-cursor-width { self.offset = viewport.width - position.x - self.text-cursor-width; }
+            }
+            edited => {
+                root.dirty = true;
+                if root.live-number && self.text.is-float() { root.committed(self.text); }
+            }
+            accepted => { root.dirty = false; root.committed(self.text); }
+            changed has-focus => {
+                if !self.has-focus && root.dirty { root.dirty = false; root.committed(self.text); }
+            }
+        }
+    }
+}
+
+export component SettingsSlider inherits Rectangle {
+    in property <string> label;
+    in property <float> value;
+    in property <float> minimum: 0;
+    in property <float> maximum: 100;
+    in property <float> step: 1;
+    in property <bool> centered: false;
+    in property <bool> vertical: false;
+    in property <bool> enabled: true;
+    callback adjusted(float);
+    private property <float> fraction: max(0, min(1, (root.value - root.minimum) / max(0.00001, root.maximum - root.minimum)));
+    private property <float> base: root.centered ? max(0, min(1, (0 - root.minimum) / max(0.00001, root.maximum - root.minimum))) : 0;
+    public function set-value(value: float) {
+        root.adjusted(max(root.minimum, min(root.maximum, root.minimum + round((value - root.minimum) / root.step) * root.step)));
+    }
+    function from-pointer() {
+        let fraction = root.vertical ? 1 - (touch.mouse-y - 8px) / max(1px, root.height - 16px) : (touch.mouse-x - 8px) / max(1px, root.width - 16px);
+        root.set-value(root.minimum + max(0, min(1, fraction)) * (root.maximum - root.minimum));
+    }
+    height: root.vertical ? 132px : 24px;
+    preferred-width: root.vertical ? 24px : 200px;
+    horizontal-stretch: root.vertical ? 0 : 1;
+    vertical-stretch: 0;
+    forward-focus: focus;
+    accessible-role: slider;
+    accessible-label: root.label;
+    accessible-value: root.value;
+    accessible-enabled: root.enabled;
+    accessible-value-minimum: root.minimum;
+    accessible-value-maximum: root.maximum;
+    accessible-value-step: root.step;
+    accessible-action-set-value(value) => { if root.enabled && value.is-float() { root.set-value(value.to-float()); } }
+    accessible-action-increment => { if root.enabled { root.set-value(root.value + root.step); } }
+    accessible-action-decrement => { if root.enabled { root.set-value(root.value - root.step); } }
+    Rectangle {
+        x: root.vertical ? (parent.width - self.width) / 2 : 0px;
+        y: root.vertical ? 0px : (parent.height - self.height) / 2;
+        width: root.vertical ? 4px : parent.width;
+        height: root.vertical ? parent.height : 4px;
+        border-radius: 2px;
+        background: PlaybackSettingsStyle.track;
+        Rectangle {
+            x: root.vertical ? 0px : parent.width * min(root.base, root.fraction);
+            y: root.vertical ? parent.height * (1 - max(root.base, root.fraction)) : 0px;
+            width: root.vertical ? parent.width : parent.width * (max(root.base, root.fraction) - min(root.base, root.fraction));
+            height: root.vertical ? parent.height * (max(root.base, root.fraction) - min(root.base, root.fraction)) : parent.height;
+            border-radius: 2px; background: PlaybackSettingsStyle.accent;
+        }
+    }
+    knob := Rectangle {
+        x: root.vertical ? (parent.width - self.width) / 2 : (parent.width - self.width) * root.fraction;
+        y: root.vertical ? (parent.height - self.height) * (1 - root.fraction) : (parent.height - self.height) / 2;
+        width: 16px; height: 16px;
+        border-radius: 8px; background: #F4F5F7;
+        drop-shadow-color: #00000080; drop-shadow-blur: 3px; drop-shadow-offset-y: 1px;
+        Rectangle {
+            x: -5px; y: -5px; width: 26px; height: 26px;
+            border-radius: 13px; background: #5BC8FA40;
+            opacity: touch.has-hover || focus.has-focus ? 1 : 0;
+            animate opacity { duration: 150ms; }
+        }
+        Rectangle { width: parent.width; height: parent.height; border-radius: 8px; background: #F4F5F7; }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        pointer-event(event) => { if event.kind == PointerEventKind.down { focus.focus(); root.from-pointer(); } }
+        clicked => { root.from-pointer(); }
+        moved => { if self.pressed { root.from-pointer(); } }
+    }
+    focus := FocusScope {
+        x: 0px; width: 0px; focus-on-click: false;
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == Key.RightArrow || event.text == Key.UpArrow { root.set-value(root.value + root.step); return accept; }
+            if event.text == Key.LeftArrow || event.text == Key.DownArrow { root.set-value(root.value - root.step); return accept; }
+            if event.text == Key.Home { root.set-value(root.minimum); return accept; }
+            if event.text == Key.End { root.set-value(root.maximum); return accept; }
+            reject
+        }
+    }
+}
+
+export component SettingsPictureRow inherits VerticalLayout {
+    in property <string> label;
+    in property <float> value;
+    in property <float> unit-scale: 1;
+    in property <string> suffix;
+    callback adjusted(float);
+    callback entered(string);
+    spacing: 4px;
+    padding-top: 6px; padding-bottom: 6px;
+    vertical-stretch: 0;
+    height: 66px;
+    HorizontalLayout {
+        spacing: 4px;
+        Text { text: root.label; color: PlaybackSettingsStyle.label; font-family: PlaybackSettingsStyle.font; font-size: 13px; vertical-alignment: center; horizontal-stretch: 1; }
+        if root.value != 0 : SettingsButton { width: 24px; height: 24px; kind: "ghost"; icon: "reset"; label: "Reset " + root.label; clicked => { root.adjusted(0); } }
+        SettingsField {
+            width: 56px; height: 26px; inset: 8px;
+            label: root.label + " value"; mono: true; align-right: true; number-input: true; live-number: true;
+            model-text: "" + round(root.value * root.unit-scale);
+            text-size: 12px;
+            text-color: root.value != 0 ? PlaybackSettingsStyle.accent : PlaybackSettingsStyle.dim;
+            committed(text) => { root.entered(text); }
+        }
+        Text { width: 14px; text: root.suffix; font-family: PlaybackSettingsStyle.font; font-size: 12px; color: PlaybackSettingsStyle.muted; vertical-alignment: center; }
+    }
+    SettingsSlider {
+        label: root.label; value: root.value * root.unit-scale;
+        minimum: -100 * root.unit-scale; maximum: 100 * root.unit-scale; centered: true;
+        adjusted(value) => { root.adjusted(value / root.unit-scale); }
+    }
+}
+
+export component SettingsSectionHeading inherits Text {
+    color: PlaybackSettingsStyle.dim;
+    font-family: PlaybackSettingsStyle.font;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.48px;
+    vertical-alignment: center;
+    height: 15px;
+    vertical-stretch: 0;
+}
+
+export component SettingsDivider inherits Rectangle {
+    height: 1px; vertical-stretch: 0;
+    background: PlaybackSettingsStyle.border;
+}
+
+export component SettingsSubtitlePreview inherits Rectangle {
+    in property <PlayerSettingsValues> values;
+    height: 152px;
+    vertical-stretch: 0;
+    background: #1C1F27;
+    border-radius: 12px;
+    border-width: 1px;
+    border-color: PlaybackSettingsStyle.track;
+    clip: true;
+    accessible-role: image;
+    accessible-label: "Live subtitle preview";
+    Image { width: parent.width; height: parent.height; source: @image-url("../../assets/subtitle-settings-preview.svg"); image-fit: fill; }
+    Text { x: 10px; y: 8px; text: "PREVIEW"; color: PlaybackSettingsStyle.muted; font-family: PlaybackSettingsStyle.font; font-size: 10px; font-weight: 600; letter-spacing: 0.6px; }
+    sample := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 8px + max(0px, parent.height - self.height - 16px) * root.values.sub_position / 100;
+        width: min(parent.width * 0.92, words.preferred-width + 16px);
+        height: words.preferred-height + 4px;
+        border-radius: 3px;
+        background: root.values.sub_background_enabled ? root.values.sub_background : transparent;
+        if !root.values.sub_background_enabled || root.values.sub_opacity <= 40 : Text {
+            x: 8px; y: 3px; width: parent.width - 16px;
+            text: "We should get going before it's dark.";
+            color: #000000e6; font-family: root.values.sub_font; font-size: 11px * root.values.sub_scale;
+            horizontal-alignment: center; wrap: word-wrap;
+        }
+        words := Text {
+            x: 8px; y: 2px; width: parent.width - 16px;
+            text: "We should get going before it's dark.";
+            color: root.values.sub_color; font-family: root.values.sub_font; font-size: 11px * root.values.sub_scale;
+            horizontal-alignment: center; wrap: word-wrap;
+        }
+    }
+}
