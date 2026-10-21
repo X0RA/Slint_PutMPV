@@ -3,6 +3,7 @@ import { Theme } from "../theme.slint";
 import { ButtonChip } from "../components/primitives.slint";
 import { LoadingSpinner } from "../components/loading-spinner.slint";
 import { Icon } from "../components/icons.slint";
+import { RatingBadges } from "../components/rating-badges.slint";
 import { TvSeasonTab, TvEpisodeRow, TvCreatorChip, TvHeroBadge, TvEpisodeCredit, TvDetailItem } from "../types.slint";
 
 /// Genre/status pill in the hero — thin outline style.
@@ -132,7 +133,8 @@ export component TvShowPage inherits Rectangle {
     in property <string> play_label: "Play";
     in property <string> title;
     in property <string> tagline;
-    in property <string> rating_label;
+    in property <string> tmdb_rating;
+    in property <string> imdb_rating;
     in property <string> years_label;
     in property <string> overview;
     in property <string> stats_line;
@@ -287,29 +289,20 @@ export component TvShowPage inherits Rectangle {
                             font-family: Theme.ui_font;
                         }
 
-                        // Meta row: ⭐ rating · years · stats
+                        // Meta row: TMDB / IMDb ratings · years · stats
                         HorizontalLayout {
                             spacing: 6px;
                             alignment: start;
 
-                            Icon {
-                                name: "star";
-                                icon_size: 13px;
-                                tint: Theme.accent;
-                                y: (parent.height - self.height) / 2;
-                            }
-
-                            Text {
-                                text: root.rating_label;
-                                vertical-alignment: center;
-                                color: Theme.text;
-                                font-size: compact ? 13px : 14px;
-                                font-weight: 700;
-                                font-family: Theme.mono_font;
+                            if root.tmdb_rating != "" || root.imdb_rating != "" : hero-ratings := RatingBadges {
+                                tmdb: root.tmdb_rating;
+                                imdb: root.imdb_rating;
+                                font_size: compact ? 13px : 14px;
+                                value_weight: 700;
                             }
 
                             if years_label != "" : Text {
-                                text: "  ·  " + root.years_label;
+                                text: (root.tmdb_rating != "" || root.imdb_rating != "" ? "  ·  " : "") + root.years_label;
                                 vertical-alignment: center;
                                 color: Theme.text_dim;
                                 font-size: compact ? 13px : 14px;
@@ -318,7 +311,7 @@ export component TvShowPage inherits Rectangle {
                             }
 
                             if stats_line != "" : Text {
-                                text: "  ·  " + root.stats_line;
+                                text: (root.tmdb_rating != "" || root.imdb_rating != "" || root.years_label != "" ? "  ·  " : "") + root.stats_line;
                                 vertical-alignment: center;
                                 color: Theme.text_dim;
                                 font-size: compact ? 13px : 14px;
@@ -652,7 +645,7 @@ export component TvShowPage inherits Rectangle {
                                             text: ep.air_date;
                                         }
 
-                                        if ep.air_date != "" && (ep.duration_label != "" || ep.rating_label != "") : Text {
+                                        if ep.air_date != "" && (ep.duration_label != "" || ep.tmdb_rating_label != "" || ep.imdb_rating_label != "") : Text {
                                             color: Theme.text_mute;
                                             font-size: 11.5px;
                                             font-family: Theme.ui_font;
@@ -678,30 +671,19 @@ export component TvShowPage inherits Rectangle {
                                             }
                                         }
 
-                                        if ep.duration_label != "" && ep.rating_label != "" : Text {
+                                        if ep.duration_label != "" && (ep.tmdb_rating_label != "" || ep.imdb_rating_label != "") : Text {
                                             color: Theme.text_mute;
                                             font-size: 11.5px;
                                             font-family: Theme.ui_font;
                                             text: "·";
                                         }
 
-                                        if ep.rating_label != "" : HorizontalLayout {
-                                            spacing: 4px;
-                                            alignment: center;
-
-                                            Icon {
-                                                name: "star";
-                                                icon_size: 11px;
-                                                tint: Theme.accent;
-                                                y: (parent.height - self.height) / 2;
-                                            }
-
-                                            Text {
-                                                color: Theme.text_dim;
-                                                font-size: 11.5px;
-                                                font-family: Theme.mono_font;
-                                                text: ep.rating_label;
-                                            }
+                                        if ep.tmdb_rating_label != "" || ep.imdb_rating_label != "" : episode-ratings := RatingBadges {
+                                            tmdb: ep.tmdb_rating_label;
+                                            imdb: ep.imdb_rating_label;
+                                            font_size: 11.5px;
+                                            value_color: Theme.text_dim;
+                                            value_weight: 400;
                                         }
                                     }
 

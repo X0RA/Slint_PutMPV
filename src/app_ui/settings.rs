@@ -29,6 +29,7 @@ pub(crate) fn install(
     let matched_store = services.matched_store.clone();
     let tmdb_store = services.tmdb_store.clone();
     let tvmaze_store = services.tvmaze_store.clone();
+    let imdb_store = services.imdb_store.clone();
     let file_state = services.file_state.clone();
     let sync_profiles = state.sync_profiles.clone();
     let pending_local_clear = state.pending_local_clear.clone();
@@ -43,6 +44,7 @@ pub(crate) fn install(
         let matched_store = matched_store.clone();
         let tmdb_store = tmdb_store.clone();
         let tvmaze_store = tvmaze_store.clone();
+        let imdb_store = imdb_store.clone();
         let file_state = file_state.clone();
         let sync_profiles = sync_profiles.clone();
         move || {
@@ -91,6 +93,7 @@ pub(crate) fn install(
             let matched_path = matched_store.path();
             let tmdb_path = tmdb_store.path();
             let tvmaze_path = tvmaze_store.path();
+            let imdb_path = imdb_store.path();
             let rows = vec![
                 LocalDataRow {
                     name: "App configuration".into(),
@@ -126,6 +129,12 @@ pub(crate) fn install(
                     name: "TVMaze data".into(),
                     desc: "Cached TV show metadata from TVMaze.".into(),
                     path: path_label(&tvmaze_path).into(),
+                    enabled: true,
+                },
+                LocalDataRow {
+                    name: "IMDb ratings".into(),
+                    desc: "Cached IMDb ratings from the public Agregarr ratings API.".into(),
+                    path: path_label(&imdb_path).into(),
                     enabled: true,
                 },
             ];
@@ -468,6 +477,7 @@ pub(crate) fn install(
         let matched_store = matched_store.clone();
         let tmdb_store = tmdb_store.clone();
         let tvmaze_store = tvmaze_store.clone();
+        let imdb_store = imdb_store.clone();
         let tree = tree.clone();
         let current_folder = current_folder.clone();
         let path_stack = path_stack.clone();
@@ -529,6 +539,14 @@ pub(crate) fn install(
                     let message = match tvmaze_store.clear_cache() {
                         Ok(()) => "Cleared TVMaze metadata cache.".to_string(),
                         Err(e) => format!("Could not clear TVMaze cache: {e}"),
+                    };
+                    app.set_local_data_status(message.into());
+                    app.invoke_settings_refresh();
+                }
+                6 => {
+                    let message = match imdb_store.clear_cache() {
+                        Ok(()) => "Cleared IMDb ratings cache.".to_string(),
+                        Err(e) => format!("Could not clear IMDb ratings cache: {e}"),
                     };
                     app.set_local_data_status(message.into());
                     app.invoke_settings_refresh();

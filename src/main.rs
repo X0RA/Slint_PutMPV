@@ -12,6 +12,7 @@ use putio::PutioClient;
 use storage::config::ConfigStore;
 use storage::file_state::FileStateStore;
 use storage::files_store::FilesStore;
+use storage::imdb_store::ImdbStore;
 use storage::matched_store::MatchedStore;
 use storage::tmdb_store::TMDBStore;
 use storage::tvmaze_store::TVMazeStore;
@@ -41,12 +42,14 @@ fn main() -> Result<()> {
     let matched_store = Arc::new(MatchedStore::load()?);
     let tmdb_store = Arc::new(TMDBStore::load()?);
     let tvmaze_store = Arc::new(TVMazeStore::load()?);
+    let imdb_store = Arc::new(ImdbStore::load()?);
     let tmdb_api = Arc::new(metadata::TMDBAPI::new(config.clone(), tmdb_store.clone()));
     let tvmaze_api = Arc::new(metadata::TVMazeAPI::new(tvmaze_store.clone()));
     let metadata_api = Arc::new(metadata::MetadataAPI::new(
         matched_store.clone(),
         tmdb_api.clone(),
         tvmaze_api.clone(),
+        Arc::new(metadata::ImdbRatingsAPI::new(imdb_store.clone())),
     ));
     let file_state = Arc::new(RwLock::new(FileStateStore::load()?));
     let client = PutioClient::new();
@@ -90,6 +93,7 @@ fn main() -> Result<()> {
         matched_store,
         tmdb_store,
         tvmaze_store,
+        imdb_store,
         metadata_api,
         tmdb_api,
         tvmaze_api,

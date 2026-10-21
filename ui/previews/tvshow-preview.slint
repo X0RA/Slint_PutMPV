@@ -7,11 +7,27 @@ export component TvShowPreview inherits Window {
         width: 100%; height: 100%;
         title: "The Example Series";
         overview: "A group of friends finds a new mystery in every town they visit.";
-        rating_label: "8.5";
+        tmdb_rating: "7.8";
+        imdb_rating: "8.8";
         years_label: "2024–2026";
         stats_line: "2 seasons · 16 episodes";
-        seasons: [{ label: "Season 1", season_number: 1 }];
-        season_block_title: "Season 1";
-        season_block_meta: "No matched episodes yet";
+        series_details_visible: true;
+        detail_items: [
+            { label: "TMDB rating", value: "7.8 (1.2K)" }, { label: "Type", value: "Scripted" },
+            { label: "Status", value: "Ended" }, { label: "Avg. runtime", value: "38m" },
+            { label: "Seasons", value: "2" }, { label: "Episodes", value: "16" },
+            { label: "Spoken", value: "English" }, { label: "Origin", value: "US" },
+            { label: "Original", value: "" }, { label: "IMDb rating", value: "8.8 (382K)" },
+            { label: "Language", value: "English" }, { label: "Networks", value: "Apple TV+" },
+        ];
+        seasons: [{ label: "Season 1 (4)", season_number: 1 }, { label: "Season 2 (12)", season_number: 2 }];
+        season_block_title: "Season 2";
+        season_block_meta: "4 of 12 episodes in library";
+        episodes: [
+            { ep_num: 1, title: "Both ratings", air_date: "Jul 23, 2021", duration_label: "34m", overview: "TMDB and IMDb ratings with vote counts.", tmdb_rating_label: "7.4 (42)", imdb_rating_label: "7.6 (9.8K)", file_id: "1" },
+            { ep_num: 2, title: "TMDB only", air_date: "Jul 30, 2021", duration_label: "33m", overview: "IMDb has no rating, so only TMDB shows.", tmdb_rating_label: "7.6 (38)", imdb_rating_label: "", file_id: "2" },
+            { ep_num: 3, title: "IMDb only", air_date: "Aug 6, 2021", duration_label: "", overview: "TMDB has no votes yet and there is no runtime.", tmdb_rating_label: "", imdb_rating_label: "8.4 (9.8K)", file_id: "3" },
+            { ep_num: 4, title: "No ratings", air_date: "Aug 13, 2021", duration_label: "30m", overview: "Neither source has a rating, so the row shows no rating at all.", tmdb_rating_label: "", imdb_rating_label: "", file_id: "4" },
+        ];
     }
 }

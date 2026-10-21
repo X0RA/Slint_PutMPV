@@ -1,0 +1,78 @@
+import { Theme } from "../theme.slint";
+
+// One rating with its source tag in front, e.g. [IMDb] 7.6 (9.8K).
+component SourcedRating inherits HorizontalLayout {
+    in property <string> source;
+    in property <string> value;
+    in property <color> tag_bg;
+    in property <color> tag_fg;
+    in property <length> font_size;
+    in property <color> value_color;
+    in property <int> value_weight;
+    in property <string> value_font;
+    spacing: 5px;
+    alignment: start;
+
+    VerticalLayout {
+        alignment: center;
+
+        Rectangle {
+            width: tag.preferred-width + 8px;
+            height: tag.preferred-height + 2px;
+            border-radius: 4px;
+            background: root.tag_bg;
+
+            tag := Text {
+                text: root.source;
+                color: root.tag_fg;
+                font-size: root.font_size * 0.78;
+                font-weight: 800;
+                font-family: Theme.ui_font;
+            }
+        }
+    }
+
+    Text {
+        text: root.value;
+        vertical-alignment: center;
+        color: root.value_color;
+        font-size: root.font_size;
+        font-weight: root.value_weight;
+        font-family: root.value_font;
+    }
+}
+
+// TMDB and IMDb ratings side by side, each labelled with its source.
+// A rating with an empty value is hidden.
+export component RatingBadges inherits HorizontalLayout {
+    in property <string> tmdb;
+    in property <string> imdb;
+    in property <length> font_size: 12px;
+    in property <color> value_color: Theme.text;
+    in property <int> value_weight: 600;
+    in property <string> value_font: Theme.mono_font;
+    spacing: 10px;
+    alignment: start;
+
+    if root.tmdb != "" : tmdb-rating := SourcedRating {
+        source: "TMDB";
+        value: root.tmdb;
+        tag_bg: #01b4e4;
+        tag_fg: #0d253f;
+        font_size: root.font_size;
+        value_color: root.value_color;
+        value_weight: root.value_weight;
+        value_font: root.value_font;
+    }
+
+    if root.imdb != "" : imdb-rating := SourcedRating {
+        source: "IMDb";
+        value: root.imdb;
+        tag_bg: #f5c518;
+        tag_fg: #000000;
+        font_size: root.font_size;
+        value_color: root.value_color;
+        value_weight: root.value_weight;
+        value_font: root.value_font;
+    }
+}

@@ -19,6 +19,7 @@ use super::media::{
     load_cached_poster,
 };
 use super::models::UiModels;
+use super::ratings::{episode_imdb_id, imdb_label, show_imdb_id, tmdb_label};
 use super::state::UiState;
 use super::util::truncate_id;
 use super::{Services, VIEW_MEDIA};
@@ -103,17 +104,6 @@ fn format_us_long_date(iso: &str) -> String {
         return iso.to_string();
     }
     format!("{} {}, {}", MONTHS[mi - 1], di, y)
-}
-
-fn episode_display_rating(vote: f64, vote_count: i32) -> String {
-    if vote <= 0.0 {
-        return String::new();
-    }
-    if vote_count > 0 {
-        format!("{:.1}/10 ({})", vote, vote_count)
-    } else {
-        format!("{:.1}/10", vote)
-    }
 }
 
 fn matched_episodes_in_season(
@@ -238,6 +228,7 @@ pub(crate) fn refresh_tv_show_ui(
     matched_store: &Arc<MatchedStore>,
     tmdb_store: &Arc<TMDBStore>,
     tvmaze_store: &Arc<crate::storage::tvmaze_store::TVMazeStore>,
+    imdb_store: &Arc<crate::storage::imdb_store::ImdbStore>,
     file_state: &Arc<RwLock<FileStateStore>>,
     tv_seasons_model: &Rc<VecModel<TvSeasonTab>>,
     tv_episodes_model: &Rc<VecModel<TvEpisodeRow>>,
@@ -349,11 +340,8 @@ pub(crate) fn refresh_tv_show_ui(
     };
     app.set_tv_show_season_idx(idx as i32);
 
-    let rating_label = if details.vote_average > 0.0 {
-        format!("{:.1}", details.vote_average)
-    } else {
-        "—".to_string()
-    };
+    let imdb_cache = imdb_store.get_cache_snapshot().unwrap_or_default();
+    let show_imdb = show_imdb_id(sub);
     let y1 = details.first_air_date.get(..4).unwrap_or("");
     let y2 = details.last_air_date.get(..4).unwrap_or("");
     let years_label = if y1.is_empty() {
@@ -427,7 +415,12 @@ pub(crate) fn refresh_tv_show_ui(
     let missing_profiles: Vec<String> = Vec::new();
     app.set_tv_show_title(details.name.as_str().into());
     app.set_tv_show_tagline(details.tagline.as_str().into());
-    app.set_tv_show_rating_label(rating_label.as_str().into());
+    app.set_tv_show_tmdb_rating(
+        tmdb_label(details.vote_average, details.vote_count, false)
+            .as_str()
+            .into(),
+    );
+    app.set_tv_show_imdb_rating(imdb_label(&imdb_cache, &show_imdb, false).as_str().into());
     app.set_tv_show_years_label(years_label.as_str().into());
     app.set_tv_show_overview(details.overview.as_str().into());
     app.set_tv_show_stats_line(stats_line.as_str().into());
@@ -463,16 +456,8 @@ pub(crate) fn refresh_tv_show_ui(
         }
     };
 
-    // Row 1: Rating · Type · Status · Avg. runtime · Seasons · Episodes
-    let rating_val = if details.vote_average > 0.0 {
-        let mut r = format!("{:.1}/10", details.vote_average);
-        if details.vote_count > 0 {
-            r.push_str(&format!(" ({})", details.vote_count));
-        }
-        r
-    } else {
-        String::new()
-    };
+    // Row 1: TMDB rating · Type · Status · Avg. runtime · Seasons · Episodes
+    let rating_val = tmdb_label(details.vote_average, details.vote_count, true);
 
     let type_s = if !details.series_type.trim().is_empty() {
         details.series_type.trim().to_string()
@@ -506,7 +491,7 @@ pub(crate) fn refresh_tv_show_ui(
         String::new()
     };
 
-    // Row 2: Spoken · Origin · Original · Popularity · Language · Networks
+    // Row 2: Spoken · Origin · Original · IMDb rating · Language · Networks
     let locale_spoken = tv_spoken_names(&details, 3);
     let locale_origin = details.origin_country.join(", ");
     let original_title = {
@@ -518,11 +503,7 @@ pub(crate) fn refresh_tv_show_ui(
             String::new()
         }
     };
-    let popularity_val = if details.popularity > 0.0 {
-        format!("{:.1}", details.popularity)
-    } else {
-        String::new()
-    };
+    let imdb_val = imdb_label(&imdb_cache, &show_imdb, true);
     let lang_disp = tv_original_language_display(&details);
     let nets_label: String = details
         .networks
@@ -534,7 +515,7 @@ pub(crate) fn refresh_tv_show_ui(
         .join(", ");
 
     let detail_items = vec![
-        slot("Rating", rating_val),
+        slot("TMDB rating", rating_val),
         slot("Type", type_s),
         slot("Status", tv_status_detail_label(&details.status)),
         slot("Avg. runtime", runtime_val),
@@ -543,7 +524,7 @@ pub(crate) fn refresh_tv_show_ui(
         slot("Spoken", locale_spoken),
         slot("Origin", locale_origin),
         slot("Original", original_title),
-        slot("Popularity", popularity_val),
+        slot("IMDb rating", imdb_val),
         slot("Language", lang_disp),
         slot("Networks", nets_label),
     ];
@@ -617,7 +598,12 @@ pub(crate) fn refresh_tv_show_ui(
             } else {
                 String::new()
             };
-            let rating_label = episode_display_rating(ep.vote_average, ep.vote_count);
+            let tmdb_rating_label = tmdb_label(ep.vote_average, ep.vote_count, true);
+            let imdb_rating_label = imdb_label(
+                &imdb_cache,
+                &episode_imdb_id(sub, sd.season_number, ep.episode_number),
+                true,
+            );
             let credits_vec = build_episode_credits(ep, &mut missing_credit_profiles);
             let credits_m = std::rc::Rc::new(slint::VecModel::from(credits_vec));
             let progress = file_state_entries
@@ -635,7 +621,8 @@ pub(crate) fn refresh_tv_show_ui(
                 air_date: air_fmt.as_str().into(),
                 duration_label: duration_label.as_str().into(),
                 overview: ep.overview.as_str().into(),
-                rating_label: rating_label.as_str().into(),
+                tmdb_rating_label: tmdb_rating_label.as_str().into(),
+                imdb_rating_label: imdb_rating_label.as_str().into(),
                 still,
                 file_id: file_id.as_str().into(),
                 credits: slint::ModelRc::from(credits_m.clone()),
@@ -700,6 +687,7 @@ pub(crate) fn install(
     let matched_store = services.matched_store.clone();
     let tmdb_store = services.tmdb_store.clone();
     let tvmaze_store = services.tvmaze_store.clone();
+    let imdb_store = services.imdb_store.clone();
     let file_state = services.file_state.clone();
     let watch_sync = services.watch_sync.clone();
     let embedded_player = embedded_player.clone();
@@ -719,6 +707,7 @@ pub(crate) fn install(
         let matched_store = matched_store.clone();
         let tmdb_store = tmdb_store.clone();
         let tvmaze_store = tvmaze_store.clone();
+        let imdb_store = imdb_store.clone();
         let file_state = file_state.clone();
         let tv_show_seasons_model = models.tv_seasons.clone();
         let tv_show_episodes_model = models.tv_episodes.clone();
@@ -741,6 +730,7 @@ pub(crate) fn install(
                 &matched_store,
                 &tmdb_store,
                 &tvmaze_store,
+                &imdb_store,
                 &file_state,
                 &tv_show_seasons_model,
                 &tv_show_episodes_model,
@@ -816,6 +806,7 @@ pub(crate) fn install(
         let matched_store = matched_store.clone();
         let tmdb_store = tmdb_store.clone();
         let tvmaze_store = tvmaze_store.clone();
+        let imdb_store = imdb_store.clone();
         let tv_show_seasons_model = models.tv_seasons.clone();
         let tv_show_episodes_model = models.tv_episodes.clone();
         let tv_show_hero_badges_model = models.tv_hero_badges.clone();
@@ -848,6 +839,7 @@ pub(crate) fn install(
                 &matched_store,
                 &tmdb_store,
                 &tvmaze_store,
+                &imdb_store,
                 &file_state,
                 &tv_show_seasons_model,
                 &tv_show_episodes_model,

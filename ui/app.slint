@@ -172,7 +172,8 @@ export component AppWindow inherits Window {
 
     in-out property <string> tv_show_title: "";
     in-out property <string> tv_show_tagline: "";
-    in-out property <string> tv_show_rating_label: "";
+    in-out property <string> tv_show_tmdb_rating: "";
+    in-out property <string> tv_show_imdb_rating: "";
     in-out property <string> tv_show_years_label: "";
     in-out property <string> tv_show_overview: "";
     in-out property <string> tv_show_stats_line: "";
@@ -565,7 +566,8 @@ export component AppWindow inherits Window {
         height: parent.height - Theme.title_bar_height;
         title: root.tv_show_title;
         tagline: root.tv_show_tagline;
-        rating_label: root.tv_show_rating_label;
+        tmdb_rating: root.tv_show_tmdb_rating;
+        imdb_rating: root.tv_show_imdb_rating;
         years_label: root.tv_show_years_label;
         overview: root.tv_show_overview;
         stats_line: root.tv_show_stats_line;

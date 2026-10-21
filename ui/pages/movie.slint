@@ -36,7 +36,8 @@ export component MoviePage inherits Rectangle {
         movie_mode: true;
         title: root.item.title;
         tagline: root.tagline;
-        rating_label: root.item.rating;
+        tmdb_rating: root.item.rating;
+        imdb_rating: root.item.imdb_rating;
         years_label: root.item.year_label;
         stats_line: root.item.stats_label;
         overview: root.item.overview == "" ? "No synopsis available for this movie." : root.item.overview;

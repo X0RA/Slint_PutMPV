@@ -494,14 +494,17 @@ pub(crate) async fn match_show_metadata(
 
                     if !tvmaze_resolved.is_empty() {
                         let matches = episode_match_items(&tvmaze_resolved, "tvmaze");
-                        if let Err(e) = tvmaze_api.get_show_details(tvmaze_show_id).await {
-                            outcome
+                        match tvmaze_api.get_show_details(tvmaze_show_id).await {
+                            Err(e) => outcome
                                 .errors
-                                .push(format!("{title}: TVMaze show details failed: {e}"));
-                        } else {
-                            match metadata_api.bulk_store_matches_by_file_id(&matches) {
-                                Ok(()) => outcome.matched_episodes += matches.len(),
-                                Err(e) => outcome.errors.push(format!("{title}: {e}")),
+                                .push(format!("{title}: TVMaze show details failed: {e}")),
+                            Ok(show) => {
+                                let ids = show.externals.imdb.into_iter().collect::<Vec<_>>();
+                                metadata_api.refresh_imdb_ratings(&ids).await;
+                                match metadata_api.bulk_store_matches_by_file_id(&matches) {
+                                    Ok(()) => outcome.matched_episodes += matches.len(),
+                                    Err(e) => outcome.errors.push(format!("{title}: {e}")),
+                                }
                             }
                         }
                     }
@@ -521,6 +524,11 @@ pub(crate) async fn match_show_metadata(
     if let Some(series_id) = tmdb_series_id {
         let final_seasons = seasons.iter().copied().collect::<Vec<_>>();
         let _ = metadata_api.seed_tv(series_id, &final_seasons).await;
+        if !tmdb_resolved.is_empty() {
+            metadata_api
+                .refresh_imdb_tv_ratings(series_id, &final_seasons)
+                .await;
+        }
     }
 
     outcome.missed = outcome.matched_episodes == 0;
@@ -565,6 +573,7 @@ pub(crate) async fn fetch_metadata_candidates(
                                 tmdb_id: result.id,
                                 source: "tmdb".to_string(),
                             };
+                            metadata_api.refresh_imdb_movie_ratings(&[result.id]).await;
                             match metadata_api.bulk_store_matches_by_file_id(&[item]) {
                                 Ok(()) => summary.matched_movies += 1,
                                 Err(e) => summary.errors.push(format!("{title}: {e}")),

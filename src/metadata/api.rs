@@ -6,6 +6,7 @@ use std::sync::Arc;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 
+use crate::metadata::imdb::ImdbRatingsAPI;
 use crate::metadata::tmdb::{Season, TMDBAPI};
 use crate::metadata::tvmaze::TVMazeAPI;
 use crate::storage::matched_store::{MatchedData, MatchedStore};
@@ -15,14 +16,76 @@ pub struct MetadataAPI {
     matched: Arc<MatchedStore>,
     tmdb: Arc<TMDBAPI>,
     tvmaze: Arc<TVMazeAPI>,
+    imdb: Arc<ImdbRatingsAPI>,
 }
 
 impl MetadataAPI {
-    pub fn new(matched: Arc<MatchedStore>, tmdb: Arc<TMDBAPI>, tvmaze: Arc<TVMazeAPI>) -> Self {
+    pub fn new(
+        matched: Arc<MatchedStore>,
+        tmdb: Arc<TMDBAPI>,
+        tvmaze: Arc<TVMazeAPI>,
+        imdb: Arc<ImdbRatingsAPI>,
+    ) -> Self {
         Self {
             matched,
             tmdb,
             tvmaze,
+            imdb,
+        }
+    }
+
+    /// Optional IMDb ratings for movies. Failures are logged and otherwise ignored.
+    /// Returns true when a stored rating changed.
+    pub async fn refresh_imdb_movie_ratings(&self, movie_ids: &[i32]) -> bool {
+        let mut ids = Vec::new();
+        for id in movie_ids.iter().copied().filter(|id| *id > 0) {
+            if let Ok(details) = self.tmdb.get_movie_details(id).await {
+                ids.push(details.imdb_id);
+            }
+        }
+        self.refresh_imdb_ratings(&ids).await
+    }
+
+    /// Optional IMDb ratings for a show and every episode in `seasons`.
+    /// Failures are logged and otherwise ignored. Returns true when a stored rating changed.
+    pub async fn refresh_imdb_tv_ratings(&self, series_id: i32, seasons: &[i32]) -> bool {
+        if series_id <= 0 {
+            return false;
+        }
+        let mut ids = Vec::new();
+        if let Ok(show) = self.tmdb.get_tv_external_ids(series_id).await {
+            ids.extend(show.imdb_id);
+        }
+        let uniq = seasons
+            .iter()
+            .copied()
+            .filter(|s| *s >= 0)
+            .collect::<BTreeSet<_>>();
+        for season in uniq {
+            let Ok(details) = self.tmdb.get_tv_season_details(series_id, season).await else {
+                continue;
+            };
+            for ep in &details.episodes {
+                if let Ok(ext) = self
+                    .tmdb
+                    .get_tv_episode_external_ids(series_id, season, ep.episode_number)
+                    .await
+                {
+                    ids.extend(ext.imdb_id);
+                }
+            }
+        }
+        self.refresh_imdb_ratings(&ids).await
+    }
+
+    /// Optional IMDb ratings for known IMDb IDs. Returns true when a stored rating changed.
+    pub async fn refresh_imdb_ratings(&self, ids: &[String]) -> bool {
+        match self.imdb.refresh(ids).await {
+            Ok(changed) => changed,
+            Err(e) => {
+                tracing::debug!("IMDb ratings unavailable: {e}");
+                false
+            }
         }
     }
 

@@ -130,6 +130,23 @@ impl TMDBAPI {
         .await
     }
 
+    /// Episode IMDb IDs never change, so they stay cached like other TMDB data.
+    pub async fn get_tv_episode_external_ids(
+        &self,
+        series_id: i32,
+        season_number: i32,
+        episode_number: i32,
+    ) -> Result<crate::segments::ExternalIds> {
+        self.cached_request(
+            &episode_external_ids_key(series_id, season_number, episode_number),
+            &format!(
+                "/tv/{series_id}/season/{season_number}/episode/{episode_number}/external_ids"
+            ),
+            &[],
+        )
+        .await
+    }
+
     pub async fn get_tv_season_details(
         &self,
         series_id: i32,
@@ -219,6 +236,18 @@ impl TMDBAPI {
     }
 }
 
+fn episode_external_ids_key(series_id: i32, season_number: i32, episode_number: i32) -> String {
+    format!(
+        "tv_{series_id}_{}",
+        episode_external_ids_subkey(season_number, episode_number)
+    )
+}
+
+/// Key of an episode's external IDs within its show's cache entries.
+pub fn episode_external_ids_subkey(season_number: i32, episode_number: i32) -> String {
+    format!("episode_external_ids_{season_number}_{episode_number}")
+}
+
 fn clean_query_with_year(query: &str) -> (String, Option<String>) {
     // Only a separate trailing year is a filter. Preserve titles such as
     // "1917", "2001 A Space Odyssey".
@@ -287,6 +316,8 @@ pub struct MovieDetails {
     pub production_countries: Vec<MovieNamedEntity>,
     #[serde(default)]
     pub belongs_to_collection: Option<MovieNamedEntity>,
+    #[serde(default, deserialize_with = "null_string")]
+    pub imdb_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -668,6 +699,24 @@ mod tests {
         assert_eq!(result.title, "Your Name.");
         assert_eq!(result.original_title, "");
         assert_eq!(result.release_date, "");
+    }
+
+    #[test]
+    fn movie_details_read_optional_imdb_id() {
+        let with_id: MovieDetails =
+            serde_json::from_value(json!({"id": 1, "imdb_id": "tt0111161"})).unwrap();
+        let null_id: MovieDetails =
+            serde_json::from_value(json!({"id": 2, "imdb_id": null})).unwrap();
+        assert_eq!(with_id.imdb_id, "tt0111161");
+        assert_eq!(null_id.imdb_id, "");
+    }
+
+    #[test]
+    fn episode_external_ids_key_nests_under_show_cache() {
+        assert_eq!(
+            episode_external_ids_key(97546, 2, 1),
+            format!("tv_97546_{}", episode_external_ids_subkey(2, 1))
+        );
     }
 
     #[test]

@@ -130,6 +130,7 @@ pub(crate) fn install(app: &AppWindow, services: &Services) {
     let matched = services.matched_store.clone();
     let cache = services.tmdb_store.clone();
     let api = services.tmdb_api.clone();
+    let metadata_api = services.metadata_api.clone();
     let rt = services.rt.clone();
     let generation = Arc::new(AtomicU64::new(0));
     app.on_movie_details_refresh(move || {
@@ -169,6 +170,14 @@ pub(crate) fn install(app: &AppWindow, services: &Services) {
             true,
         );
         app.set_movie_credits_busy(cached_credits.is_none());
+        // Optional IMDb rating; the media refresh also updates the open movie item.
+        let imdb_weak = weak.clone();
+        let metadata_api = metadata_api.clone();
+        rt.spawn(async move {
+            if metadata_api.refresh_imdb_movie_ratings(&[movie_id]).await {
+                let _ = imdb_weak.upgrade_in_event_loop(|app| app.invoke_media_refresh());
+            }
+        });
         let weak = weak.clone();
         let api = api.clone();
         let generation = generation.clone();

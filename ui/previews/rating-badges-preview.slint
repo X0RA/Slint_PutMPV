@@ -1,0 +1,23 @@
+import { Theme } from "../theme.slint";
+import { RatingBadges } from "../components/rating-badges.slint";
+
+export component RatingBadgesPreview inherits Window {
+    title: "Rating badges preview";
+    preferred-width: 520px;
+    preferred-height: 300px;
+    background: Theme.bg;
+    default-font-family: Theme.ui_font;
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 18px;
+        alignment: start;
+
+        both := RatingBadges { tmdb: "7.4"; imdb: "7.6"; font_size: 14px; value_weight: 700; }
+        both-votes := RatingBadges { tmdb: "7.4 (42)"; imdb: "7.6 (9.8K)"; font_size: 11.5px; value_color: Theme.text_dim; value_weight: 400; }
+        tmdb-only := RatingBadges { tmdb: "8.1 (1.2K)"; imdb: ""; }
+        imdb-only := RatingBadges { tmdb: ""; imdb: "9.5 (510K)"; }
+        none := RatingBadges { tmdb: ""; imdb: ""; }
+        Text { text: "↑ empty: no ratings render"; color: Theme.text_mute; font-size: 11px; }
+    }
+}

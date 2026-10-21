@@ -66,6 +66,14 @@ pub(crate) fn merge_tvmaze(cache: &mut TMDBCache, matched: &mut MatchedData, maz
             ..Default::default()
         };
         let sub = cache.tv.entry((-show.id).to_string()).or_default();
+        if let Some(imdb_id) = show.externals.imdb.filter(|id| !id.is_empty()) {
+            sub.insert(
+                "external_ids".into(),
+                CacheEntry {
+                    data: serde_json::json!({ "imdb_id": imdb_id }),
+                },
+            );
+        }
         for season in seasons {
             let episodes: Vec<TVMazeEpisode> = maze
                 .data
@@ -212,5 +220,30 @@ mod tests {
             serde_json::from_value(cache.tv["-42"]["season_1_en-US"].data.clone()).unwrap();
         assert_eq!(season.episodes[0].id, -7);
         assert_eq!(season.episodes[0].name, "Pilot");
+    }
+
+    #[test]
+    fn tvmaze_show_imdb_id_is_exposed_for_ratings() {
+        let mut cache = TMDBCache::default();
+        let mut matches = MatchedData::default();
+        let mut maze = TVMazeCache::default();
+        for (key, data) in [
+            (
+                "show_5_details",
+                json!({"id":5,"name":"Rated","externals":{"imdb":"tt0903747"}}),
+            ),
+            (
+                "show_6_details",
+                json!({"id":6,"name":"Unrated","externals":null}),
+            ),
+        ] {
+            maze.data.insert(key.into(), CacheEntry { data });
+        }
+        merge_tvmaze(&mut cache, &mut matches, &maze);
+        assert_eq!(
+            super::super::ratings::show_imdb_id(&cache.tv["-5"]),
+            "tt0903747"
+        );
+        assert_eq!(super::super::ratings::show_imdb_id(&cache.tv["-6"]), "");
     }
 }

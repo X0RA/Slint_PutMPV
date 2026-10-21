@@ -4,7 +4,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, RwLock};
 
-use slint::{ComponentHandle, VecModel};
+use slint::{ComponentHandle, Model, VecModel};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use tokio::runtime::Runtime;
 use tracing::warn;
@@ -20,6 +20,7 @@ use crate::{AppWindow, MediaHeroBadge, MediaHeroItem, MediaItem, MediaResumeItem
 
 use super::metadata_ui::{build_unmatched_candidates_from_tree, fetch_metadata_candidates};
 use super::models::UiModels;
+use super::ratings::{imdb_label, show_imdb_id, tmdb_label};
 use super::state::UiState;
 use super::toast::{self, ToastKind};
 use super::util::{format_runtime, make_initials};
@@ -270,6 +271,7 @@ fn hero_from_item(item: &MediaItem) -> MediaHeroItem {
     MediaHeroItem {
         title: item.title.clone(),
         rating: item.rating.clone(),
+        imdb_rating: item.imdb_rating.clone(),
         years: item.year_label.clone(),
         stats_line: item.stats_label.clone(),
         overview: item.overview.clone(),
@@ -474,6 +476,7 @@ pub(crate) fn refresh_media_ui(
     matched_store: &Arc<MatchedStore>,
     tmdb_store: &Arc<TMDBStore>,
     tvmaze_store: &Arc<crate::storage::tvmaze_store::TVMazeStore>,
+    imdb_store: &Arc<crate::storage::imdb_store::ImdbStore>,
     file_state: &Arc<RwLock<FileStateStore>>,
 ) -> Vec<String> {
     let mut matched = matched_store.get_matched_snapshot().unwrap_or_default();
@@ -483,6 +486,7 @@ pub(crate) fn refresh_media_ui(
         &mut matched,
         &tvmaze_store.get_cache_snapshot().unwrap_or_default(),
     );
+    let imdb_cache = imdb_store.get_cache_snapshot().unwrap_or_default();
     let file_state_entries = file_state.read().unwrap().entries().clone();
 
     let mut existing_file_ids = HashSet::<String>::new();
@@ -571,11 +575,8 @@ pub(crate) fn refresh_media_ui(
                 (false, true) => year.clone(),
                 (false, false) => format!("{year} · {rt}"),
             };
-            let rating = if d.vote_average > 0.0 {
-                format!("{:.1}", d.vote_average)
-            } else {
-                String::new()
-            };
+            let rating = tmdb_label(d.vote_average, d.vote_count, false);
+            let imdb_rating = imdb_label(&imdb_cache, &d.imdb_id, false);
             let progress = file_state_entries
                 .get(&file_id)
                 .map(|e| e.progress_ratio())
@@ -602,6 +603,7 @@ pub(crate) fn refresh_media_ui(
                 title: d.title.as_str().into(),
                 meta: meta.as_str().into(),
                 rating: rating.as_str().into(),
+                imdb_rating: imdb_rating.as_str().into(),
                 poster_loading: poster.size().width == 0
                     && cache.artwork.lock().unwrap().is_loading(&d.poster_path),
                 poster,
@@ -690,11 +692,12 @@ pub(crate) fn refresh_media_ui(
                     format!(" · {year}")
                 }
             );
-            let rating = if d.vote_average > 0.0 {
-                format!("{:.1}", d.vote_average)
-            } else {
-                String::new()
-            };
+            let rating = tmdb_label(d.vote_average, d.vote_count, false);
+            let imdb_rating = tmdb_cache
+                .tv
+                .get(&series_id.to_string())
+                .map(|sub| imdb_label(&imdb_cache, &show_imdb_id(sub), false))
+                .unwrap_or_default();
             let poster = if d.poster_path.is_empty() {
                 Default::default()
             } else if let Some(img) = load_cached_poster(&d.poster_path) {
@@ -737,6 +740,7 @@ pub(crate) fn refresh_media_ui(
                 title: d.name.as_str().into(),
                 meta: meta.as_str().into(),
                 rating: rating.as_str().into(),
+                imdb_rating: imdb_rating.as_str().into(),
                 poster_loading: poster.size().width == 0
                     && cache.artwork.lock().unwrap().is_loading(&d.poster_path),
                 poster,
@@ -906,6 +910,47 @@ pub(crate) fn refresh_media_ui(
     missing_posters
 }
 
+/// Optional background refresh of a show's IMDb ratings; re-renders only on change.
+fn refresh_show_imdb_ratings(
+    app: &AppWindow,
+    series_id: i32,
+    seasons: Vec<i32>,
+    metadata_api: &Arc<crate::metadata::MetadataAPI>,
+    tvmaze_store: &Arc<crate::storage::tvmaze_store::TVMazeStore>,
+    rt: &Arc<Runtime>,
+) {
+    // Negative IDs are TVMaze shows, which only carry a show level IMDb ID.
+    let tvmaze_imdb_ids = (series_id < 0)
+        .then(|| {
+            tvmaze_store
+                .get_cached_data(&format!("show_{}_details", -series_id))
+                .and_then(|data| {
+                    serde_json::from_value::<crate::metadata::tvmaze::TVMazeShow>(data).ok()
+                })
+                .and_then(|show| show.externals.imdb)
+        })
+        .flatten()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let api = metadata_api.clone();
+    let weak = app.as_weak();
+    rt.spawn(async move {
+        let changed = if series_id > 0 {
+            api.refresh_imdb_tv_ratings(series_id, &seasons).await
+        } else {
+            api.refresh_imdb_ratings(&tvmaze_imdb_ids).await
+        };
+        if changed {
+            let _ = weak.upgrade_in_event_loop(move |app| {
+                if app.get_tv_show_series_id() == series_id {
+                    app.invoke_tv_show_season_changed(app.get_tv_show_season_idx());
+                }
+                app.invoke_media_refresh();
+            });
+        }
+    });
+}
+
 pub(crate) fn install(
     app: &AppWindow,
     media_refresh: std::rc::Rc<dyn Fn()>,
@@ -920,6 +965,7 @@ pub(crate) fn install(
     let matched_store = services.matched_store.clone();
     let tmdb_store = services.tmdb_store.clone();
     let tvmaze_store = services.tvmaze_store.clone();
+    let imdb_store = services.imdb_store.clone();
     let metadata_api = services.metadata_api.clone();
     let tmdb_api = services.tmdb_api.clone();
     let tvmaze_api = services.tvmaze_api.clone();
@@ -1003,6 +1049,8 @@ pub(crate) fn install(
         let matched_store = matched_store.clone();
         let tmdb_store = tmdb_store.clone();
         let tvmaze_store = tvmaze_store.clone();
+        let imdb_store = imdb_store.clone();
+        let metadata_api = metadata_api.clone();
         let file_state = services.file_state.clone();
         let tv_show_seasons_model = models.tv_seasons.clone();
         let tv_show_episodes_model = models.tv_episodes.clone();
@@ -1029,6 +1077,7 @@ pub(crate) fn install(
                         &matched_store,
                         &tmdb_store,
                         &tvmaze_store,
+                        &imdb_store,
                         &file_state,
                         &tv_show_seasons_model,
                         &tv_show_episodes_model,
@@ -1037,6 +1086,18 @@ pub(crate) fn install(
                         &rt,
                     );
                     app.set_view(VIEW_TV_SHOW);
+                    let seasons = tv_show_seasons_model
+                        .iter()
+                        .map(|tab| tab.season_number)
+                        .collect::<Vec<_>>();
+                    refresh_show_imdb_ratings(
+                        &app,
+                        sid,
+                        seasons,
+                        &metadata_api,
+                        &tvmaze_store,
+                        &rt,
+                    );
                     return;
                 }
             }
@@ -1221,6 +1282,7 @@ mod tests {
             title: "Test Movie".into(),
             meta: "".into(),
             rating: "".into(),
+            imdb_rating: "".into(),
             poster_loading: false,
             poster: Default::default(),
             backdrop: Default::default(),
@@ -1242,6 +1304,7 @@ mod tests {
             title: "Test Show".into(),
             meta: "".into(),
             rating: "".into(),
+            imdb_rating: "".into(),
             poster_loading: false,
             poster: Default::default(),
             backdrop: Default::default(),

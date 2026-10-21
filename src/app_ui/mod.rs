@@ -10,6 +10,7 @@ mod media_library;
 pub(crate) mod metadata_ui;
 pub(crate) mod models;
 mod movie;
+mod ratings;
 pub(crate) mod settings;
 pub(crate) mod state;
 pub(crate) mod toast;
@@ -30,6 +31,7 @@ use crate::putio::PutioClient;
 use crate::storage::config::ConfigStore;
 use crate::storage::file_state::FileStateStore;
 use crate::storage::files_store::FilesStore;
+use crate::storage::imdb_store::ImdbStore;
 use crate::storage::matched_store::MatchedStore;
 use crate::storage::tmdb_store::TMDBStore;
 use crate::storage::tvmaze_store::TVMazeStore;
@@ -55,6 +57,7 @@ pub(crate) struct Services {
     pub matched_store: Arc<MatchedStore>,
     pub tmdb_store: Arc<TMDBStore>,
     pub tvmaze_store: Arc<TVMazeStore>,
+    pub imdb_store: Arc<ImdbStore>,
     pub metadata_api: Arc<meta_api::MetadataAPI>,
     pub tmdb_api: Arc<meta_api::TMDBAPI>,
     pub tvmaze_api: Arc<meta_api::TVMazeAPI>,
@@ -118,6 +121,7 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
         let matched_store = ctx.services.matched_store.clone();
         let tmdb_store = ctx.services.tmdb_store.clone();
         let tvmaze_store = ctx.services.tvmaze_store.clone();
+        let imdb_store = ctx.services.imdb_store.clone();
         let file_state = ctx.services.file_state.clone();
         let rt = ctx.services.rt.clone();
         move || {
@@ -146,6 +150,7 @@ pub(crate) fn install(app: &AppWindow, ctx: &UiCtx) {
                 &matched_store,
                 &tmdb_store,
                 &tvmaze_store,
+                &imdb_store,
                 &file_state,
             );
             let queued: Vec<_> = {

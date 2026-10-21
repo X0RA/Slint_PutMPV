@@ -7,6 +7,7 @@ use serde::{de::DeserializeOwned, Serialize};
 pub mod config;
 pub mod file_state;
 pub mod files_store;
+pub mod imdb_store;
 pub mod matched_store;
 pub mod tmdb_store;
 pub mod tvmaze_store;

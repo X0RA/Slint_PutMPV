@@ -3,11 +3,13 @@ import { Theme } from "../theme.slint";
 import { ButtonChip, IconButton, SearchField } from "../components/primitives.slint";
 import { LoadingSpinner } from "../components/loading-spinner.slint";
 import { Icon } from "../components/icons.slint";
+import { RatingBadges } from "../components/rating-badges.slint";
 
 export struct MediaItem {
     title: string,
     meta: string,
     rating: string,
+    imdb_rating: string,
     poster: image,
     poster_loading: bool,
     backdrop: image,
@@ -26,6 +28,7 @@ export struct MediaItem {
 export struct MediaHeroItem {
     title: string,
     rating: string,
+    imdb_rating: string,
     years: string,
     stats_line: string,
     overview: string,
@@ -128,32 +131,6 @@ component PosterCard inherits Rectangle {
             initials: root.data.initials;
             art: root.data.poster;
             loading: root.data.poster_loading;
-        }
-
-        if root.data.rating != "" : Rectangle {
-            x: 8px;
-            y: parent.height - self.height - 8px;
-            height: 25px;
-            width: rate-t.preferred-width + 30px;
-            border-radius: 8px;
-            background: #0a0a10cc;
-
-            HorizontalLayout {
-                width: parent.width;
-                height: parent.height;
-                spacing: 4px;
-                alignment: center;
-
-                Icon { name: "star"; icon_size: 11px; tint: Theme.accent_hi; y: (parent.height - self.height) / 2; }
-                rate-t := Text {
-                    text: root.data.rating;
-                    color: Theme.text;
-                    font-size: 11.5px;
-                    font-weight: 700;
-                    font-family: Theme.mono_font;
-                    vertical-alignment: center;
-                }
-            }
         }
 
         if root.data.progress >= 0.9 : Rectangle {
@@ -635,10 +612,11 @@ component HeroSpotlight inherits Rectangle {
             spacing: 12px;
             alignment: start;
 
-            if root.item.rating != "" : HorizontalLayout {
-                spacing: 5px;
-                Icon { name: "star"; icon_size: 14px; tint: Theme.accent_hi; y: 2px; }
-                Text { text: root.item.rating; color: Theme.text; font-size: 14px; font-weight: 700; font-family: Theme.mono_font; }
+            if root.item.rating != "" || root.item.imdb_rating != "" : hero-ratings := RatingBadges {
+                tmdb: root.item.rating;
+                imdb: root.item.imdb_rating;
+                font_size: 14px;
+                value_weight: 700;
             }
 
             if root.item.years != "" : Text { text: root.item.years; color: Theme.text_dim; font-size: 14px; font-family: Theme.ui_font; }

@@ -44,6 +44,7 @@ export component MoviePreview inherits Window {
                 title: root.state == 3 ? "A very long movie title that wraps across multiple lines in the hero" : "The Example Movie",
                 overview: root.state == 2 ? "" : "A traveller follows an old map across a forgotten landscape, discovering that the journey has changed the meaning of home.",
                 rating: root.state == 2 ? "" : "8.2",
+                imdb_rating: root.state == 2 || root.state == 3 ? "" : "8.4",
                 year_label: "2026",
                 stats_label: "2h 10m",
                 genre_line: "Adventure · Drama",
