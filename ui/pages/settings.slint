@@ -1,4 +1,4 @@
-import { ScrollView, Switch } from "std-widgets.slint";
+import { ScrollView, Switch, TextEdit } from "std-widgets.slint";
 import { Theme } from "../theme.slint";
 import { SidebarSectionButton, ButtonChip, TextFieldBox, RadioRow, Dropdown } from "../components/primitives.slint";
 import { MetadataSettingsPanel } from "../components/settings/metadata.slint";
@@ -127,6 +127,12 @@ export component SettingsPage inherits Rectangle {
     in-out property <int> section: 0;
     in property <bool> show_episode_skip_buttons: true;
     callback show_episode_skip_buttons_changed(bool);
+    in-out property <bool> mpv_config_dirty: false;
+    in-out property <int> mpv_config_mode: 0;
+    in-out property <string> mpv_config_path;
+    in-out property <string> mpv_config_text;
+    in-out property <string> mpv_config_status;
+    callback mpv_config_save();
 
     in-out property <string> tmdb_local_key;
     in-out property <string> tmdb_putio_key;
@@ -286,6 +292,61 @@ export component SettingsPage inherits Rectangle {
                         width: parent.width;
                         spacing: 0px;
                         CardHeader { title: "Playback"; }
+                        SettingsRow {
+                            label: "Use an mpv.conf file";
+                            hint: "Load the default mpv config location or specify your own file.";
+                            Switch {
+                                accessible-label: "Use an mpv.conf file";
+                                checked: root.mpv_config_mode == 1;
+                                toggled => { root.mpv_config_mode = self.checked ? 1 : 0; root.mpv_config_dirty = true; root.mpv_config_status = "Unsaved changes"; }
+                            }
+                        }
+                        if (root.mpv_config_mode == 1) : VerticalLayout {
+                            padding: 22px;
+                            spacing: 8px;
+                            Text { text: "mpv.conf location"; color: Theme.text_dim; font-size: 12px; }
+                            TextFieldBox {
+                                text <=> root.mpv_config_path;
+                                monospace: true;
+                                placeholder: "Path to mpv.conf";
+                                edited => { root.mpv_config_dirty = true; root.mpv_config_status = "Unsaved changes"; }
+                            }
+                        }
+                        SettingsRow {
+                            label: "Enter mpv configuration directly";
+                            hint: "Use pasted configuration instead of the file above.";
+                            Switch {
+                                accessible-label: "Enter mpv configuration directly";
+                                checked: root.mpv_config_mode == 2;
+                                toggled => { root.mpv_config_mode = self.checked ? 2 : 0; root.mpv_config_dirty = true; root.mpv_config_status = "Unsaved changes"; }
+                            }
+                        }
+                        if (root.mpv_config_mode == 2) : VerticalLayout {
+                            padding: 22px;
+                            spacing: 8px;
+                            Text { text: "Paste mpv.conf contents: option=value, without leading --. Comments and profiles are supported."; color: Theme.text_dim; font-size: 12px; wrap: word-wrap; }
+                            TextEdit {
+                                height: 240px;
+                                font-family: Theme.mono_font;
+                                font-size: 12px;
+                                accessible-label: "mpv configuration contents";
+                                placeholder-text: "# mpv.conf\nspeed=1.0\nhwdec=auto-safe";
+                                text <=> root.mpv_config_text;
+                                wrap: no-wrap;
+                                edited => { root.mpv_config_dirty = true; root.mpv_config_status = "Unsaved changes"; }
+                            }
+                        }
+                        VerticalLayout {
+                            padding: 22px;
+                            spacing: 10px;
+                            Text { text: "Save, then restart PutMPV to apply. Locked player settings and adjustments made during playback take precedence. PutMPV manages video output."; color: Theme.text_mute; font-size: 12px; wrap: word-wrap; }
+                            HorizontalLayout {
+                                ButtonChip { label: "Save mpv configuration"; clicked => { root.mpv_config_save(); } }
+                                Rectangle { horizontal-stretch: 1; }
+                            }
+                            if (root.mpv_config_status != "") : Text { text: root.mpv_config_status; color: Theme.text_dim; font-size: 12px; wrap: word-wrap; }
+                        }
+
                         SettingsRow {
                             label: "Show episode skip buttons";
                             hint: "Show Skip intro, Skip recap and Next episode for TV episodes played from Media. Each action requires a click.";

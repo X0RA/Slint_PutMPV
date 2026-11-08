@@ -37,6 +37,40 @@ pub(crate) fn install(
     let current_folder = state.current_folder.clone();
     let path_stack = state.path_stack.clone();
 
+    app.on_mpv_config_save({
+        let weak = weak.clone();
+        let config = config.clone();
+        move || {
+            use crate::player::configuration::{create_mpv, ConfigMode, MpvConfig};
+            let Some(app) = weak.upgrade() else {
+                return;
+            };
+            let settings = MpvConfig {
+                mode: match app.get_mpv_config_mode() {
+                    1 => ConfigMode::File,
+                    2 => ConfigMode::Text,
+                    _ => ConfigMode::Disabled,
+                },
+                path: app.get_mpv_config_path().to_string(),
+                text: app.get_mpv_config_text().to_string(),
+            };
+            // Validate with the same native parser used at startup before saving.
+            let result = if settings.mode == ConfigMode::Disabled {
+                Ok(())
+            } else {
+                create_mpv(&settings).map(drop)
+            }
+            .and_then(|()| config.set_mpv_config(settings));
+            app.set_mpv_config_status(match result {
+                Ok(()) => {
+                    app.set_mpv_config_dirty(false);
+                    "Saved. Restart PutMPV to apply this configuration.".into()
+                }
+                Err(error) => format!("Could not save mpv configuration: {error:#}").into(),
+            });
+        }
+    });
+
     app.on_settings_refresh({
         let weak = weak.clone();
         let config = config.clone();
@@ -60,6 +94,16 @@ pub(crate) fn install(
             app.set_tmdb_source(tmdb_source);
             app.set_auto_metadata_fetch_enabled(config.auto_metadata_fetch());
             app.set_show_episode_skip_buttons(config.show_episode_skip_buttons());
+            if !app.get_mpv_config_dirty() {
+                let mpv = config.mpv_config();
+                app.set_mpv_config_mode(match mpv.mode {
+                    crate::player::configuration::ConfigMode::Disabled => 0,
+                    crate::player::configuration::ConfigMode::File => 1,
+                    crate::player::configuration::ConfigMode::Text => 2,
+                });
+                app.set_mpv_config_path(mpv.path.into());
+                app.set_mpv_config_text(mpv.text.into());
+            }
 
             let profiles = sync_profiles.read().unwrap();
             let labels = profiles
@@ -586,7 +630,15 @@ pub(crate) fn install(
                 return;
             }
             let message = match cfg.reset_to_defaults() {
-                Ok(()) => "App configuration reset.".to_string(),
+                Ok(()) => {
+                    if let Some(app) = weak.upgrade() {
+                        app.set_mpv_config_dirty(false);
+                        app.set_mpv_config_status(
+                            "Restart PutMPV to apply the reset player configuration.".into(),
+                        );
+                    }
+                    "App configuration reset.".to_string()
+                }
                 Err(e) => format!("Could not reset app configuration: {e}"),
             };
             *pending.borrow_mut() = None;

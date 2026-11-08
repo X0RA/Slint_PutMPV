@@ -195,10 +195,10 @@ pub(super) fn register(
         let Some(index) = playback.current_index else {
             return;
         };
-        if !playback
+        if playback
             .queue
             .get(index + 1)
-            .is_some_and(|i| i.episode.is_some())
+            .is_none_or(|i| i.episode.is_none())
         {
             return;
         }

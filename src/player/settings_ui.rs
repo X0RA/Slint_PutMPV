@@ -16,12 +16,56 @@ use super::{
 };
 use crate::{storage::config::ConfigStore, AppWindow, PlayerSettingsValues};
 
+// Reflect supported config values in unlocked controls without translating or
+// rewriting arbitrary mpv settings (e.g. ASS styles, filters or shader chains).
+fn read_config_defaults(mpv: &libmpv2::Mpv, session: &mut Session) {
+    let v = &mut session.values.video;
+    if !session.locked[0] {
+        for (key, value) in [
+            ("brightness", &mut v.brightness),
+            ("contrast", &mut v.contrast),
+            ("saturation", &mut v.saturation),
+            ("gamma", &mut v.gamma),
+            ("hue", &mut v.hue),
+            ("speed", &mut v.speed),
+        ] {
+            if let Ok(number) = mpv.get_property::<f64>(key) {
+                *value = number;
+            }
+        }
+        if let Ok(value) = mpv.get_property("audio-pitch-correction") {
+            v.preserve_pitch = value;
+        }
+    }
+    if !session.locked[1] {
+        if let Ok(value) = mpv.get_property("audio-delay") {
+            session.values.audio.delay = value;
+        }
+    }
+    if !session.locked[2] {
+        let s = &mut session.values.subtitles;
+        for (key, value) in [
+            ("sub-scale", &mut s.scale),
+            ("sub-pos", &mut s.position),
+            ("sub-delay", &mut s.delay),
+        ] {
+            if let Ok(number) = mpv.get_property::<f64>(key) {
+                *value = number;
+            }
+        }
+        if let Ok(value) = mpv.get_property("sub-font") {
+            s.font = value;
+        }
+    }
+}
+
 pub(crate) struct Controller {
     app: slint::Weak<AppWindow>,
     engine: Option<Arc<PlayerEngine>>,
     config: Arc<ConfigStore>,
     session: RefCell<Session>,
     applied: RefCell<Settings>,
+    config_baseline: Option<Settings>,
     apply_timer: Timer,
     save_timer: Timer,
     dirty: Cell<bool>,
@@ -41,7 +85,11 @@ impl Controller {
         engine: Option<Arc<PlayerEngine>>,
         config: Arc<ConfigStore>,
     ) -> Rc<Self> {
-        let session = Session::from_saved(config.player_settings());
+        let mut session = Session::from_saved(config.player_settings());
+        let config_baseline = engine.as_ref().filter(|e| e.custom_config).map(|engine| {
+            read_config_defaults(engine.mpv(), &mut session);
+            session.values.clone()
+        });
         let this = Rc::new(Self {
             anime4k: Shaders::new(config.path().parent().expect("config has a directory")),
             enhancements: super::enhancements::Shaders::new(
@@ -50,7 +98,8 @@ impl Controller {
             app: app.as_weak(),
             engine,
             config,
-            applied: RefCell::new(Settings::default()),
+            applied: RefCell::new(session.values.clone()),
+            config_baseline,
             session: RefCell::new(session),
             apply_timer: Timer::default(),
             save_timer: Timer::default(),
@@ -297,7 +346,7 @@ impl Controller {
 
     fn restore(&self) {
         let next = self.session.borrow().values.clone();
-        if self.report(self.apply(&next, None)) {
+        if self.report(self.apply_inner(&next, None, true)) {
             *self.applied.borrow_mut() = next;
         }
         self.publish();
@@ -363,6 +412,10 @@ impl Controller {
     }
 
     fn apply(&self, next: &Settings, old: Option<&Settings>) -> Result<()> {
+        self.apply_inner(next, old, false)
+    }
+
+    fn apply_inner(&self, next: &Settings, old: Option<&Settings>, restoring: bool) -> Result<()> {
         let engine = self
             .engine
             .as_ref()
@@ -377,7 +430,20 @@ impl Controller {
                 .with_context(|| format!("Cannot adjust {key}"))
         };
         let v = &next.video;
-        let ov = old.map(|s| &s.video);
+        // An external config supplies the defaults. Reapply only explicit app
+        // overrides on file load, unless the user has locked an entire section.
+        let locked = self.session.borrow().locked;
+        let previous = |section: usize| {
+            old.or_else(|| {
+                self.config_baseline
+                    .as_ref()
+                    .filter(|_| restoring && !locked[section])
+            })
+        };
+        let video_old = previous(0);
+        let audio_old = previous(1);
+        let sub_old = previous(2);
+        let ov = video_old.map(|s| &s.video);
         for (key, value, previous) in [
             ("brightness", v.brightness, ov.map(|s| s.brightness)),
             ("contrast", v.contrast, ov.map(|s| s.contrast)),
@@ -385,45 +451,49 @@ impl Controller {
             ("gamma", v.gamma, ov.map(|s| s.gamma)),
             ("hue", v.hue, ov.map(|s| s.hue)),
             ("speed", v.speed, ov.map(|s| s.speed)),
-            ("audio-delay", next.audio.delay, old.map(|s| s.audio.delay)),
+            (
+                "audio-delay",
+                next.audio.delay,
+                audio_old.map(|s| s.audio.delay),
+            ),
             (
                 "sub-scale",
                 next.subtitles.scale,
-                old.map(|s| s.subtitles.scale),
+                sub_old.map(|s| s.subtitles.scale),
             ),
             (
                 "sub-pos",
                 next.subtitles.position,
-                old.map(|s| s.subtitles.position),
+                sub_old.map(|s| s.subtitles.position),
             ),
             (
                 "sub-delay",
                 next.subtitles.delay,
-                old.map(|s| s.subtitles.delay),
+                sub_old.map(|s| s.subtitles.delay),
             ),
         ] {
             if previous != Some(value) {
                 set_number(key, value)?;
             }
         }
-        if old.is_none_or(|o| o.video.preserve_pitch != v.preserve_pitch) {
+        if video_old.is_none_or(|o| o.video.preserve_pitch != v.preserve_pitch) {
             mpv.set_property("audio-pitch-correction", v.preserve_pitch)
                 .context("Cannot adjust pitch preservation")?;
         }
         let s = &next.subtitles;
-        if old.is_none_or(|o| o.subtitles.font != s.font) {
+        if sub_old.is_none_or(|o| o.subtitles.font != s.font) {
             set_text("sub-font", &s.font)?;
         }
-        if old.is_none_or(|o| o.subtitles.color != s.color) {
+        if sub_old.is_none_or(|o| o.subtitles.color != s.color) {
             set_text("sub-color", &settings::mpv_color(&s.color, 100.)?)?;
         }
-        if old.is_none_or(|o| o.subtitles.override_style != s.override_style) {
+        if sub_old.is_none_or(|o| o.subtitles.override_style != s.override_style) {
             set_text(
                 "sub-ass-override",
                 if s.override_style { "force" } else { "scale" },
             )?;
         }
-        if old.is_none_or(|o| {
+        if sub_old.is_none_or(|o| {
             o.subtitles.background_enabled != s.background_enabled
                 || o.subtitles.background_color != s.background_color
                 || o.subtitles.background_opacity != s.background_opacity
@@ -448,7 +518,7 @@ impl Controller {
                 )?,
             )?;
         }
-        if old.is_none_or(|o| {
+        if audio_old.is_none_or(|o| {
             o.audio.eq_enabled != next.audio.eq_enabled || o.audio.bands != next.audio.bands
         }) {
             if next.audio.eq_enabled {
@@ -463,7 +533,7 @@ impl Controller {
         }
         // Last, so failures in unrelated settings cannot leave a newly selected
         // shader chain partially accepted. Reconcile again on every file load.
-        if old.is_none_or(|o| {
+        if video_old.is_none_or(|o| {
             o.video.anime4k != next.video.anime4k || o.video.enhancements != v.enhancements
         }) {
             // Keep requested/persisted settings separate from the effective
@@ -513,6 +583,29 @@ impl Controller {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_defaults_populate_unlocked_controls_only() {
+        use super::super::configuration::{create_mpv, ConfigMode, MpvConfig};
+        let mpv = create_mpv(&MpvConfig {
+            mode: ConfigMode::Text,
+            text: "speed=1.5\nbrightness=12\naudio-delay=0.25\nsub-font=Example\n".into(),
+            ..Default::default()
+        })
+        .unwrap();
+        let mut session = Session::default();
+        read_config_defaults(&mpv, &mut session);
+        assert_eq!(session.values.video.speed, 1.5);
+        assert_eq!(session.values.video.brightness, 12.);
+        assert_eq!(session.values.audio.delay, 0.25);
+        assert_eq!(session.values.subtitles.font, "Example");
+        let mut locked = Session {
+            locked: [true; 3],
+            ..Default::default()
+        };
+        read_config_defaults(&mpv, &mut locked);
+        assert_eq!(locked.values, Settings::default());
+    }
 
     #[test]
     #[ignore = "requires a desktop for the Slint settings controller"]

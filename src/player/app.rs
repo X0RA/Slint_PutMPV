@@ -93,10 +93,11 @@ impl EmbeddedPlayer {
         player_view: i32,
         files_view: i32,
     ) -> Self {
-        let engine = match PlayerEngine::new() {
+        let engine = match PlayerEngine::with_config(&config.mpv_config()) {
             Ok(engine) => Some(Arc::new(engine)),
             Err(e) => {
                 warn!("embedded mpv player unavailable: {e}");
+                app.set_mpv_config_status(format!("Could not start mpv: {e:#}").into());
                 None
             }
         };

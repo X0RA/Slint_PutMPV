@@ -11,6 +11,8 @@ pub const DEFAULT_PUT_CLIENT_ID: u32 = 8275;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigFile {
+    #[serde(default)]
+    pub mpv_config: crate::player::configuration::MpvConfig,
     #[serde(default, skip_serializing_if = "SavedSettings::is_empty")]
     pub player_settings: SavedSettings,
     #[serde(default = "default_client_id")]
@@ -54,6 +56,7 @@ fn default_show_episode_skip_buttons() -> bool {
 impl Default for ConfigFile {
     fn default() -> Self {
         Self {
+            mpv_config: Default::default(),
             player_settings: SavedSettings::default(),
             put_client_id: DEFAULT_PUT_CLIENT_ID,
             oauth_token: String::new(),
@@ -84,6 +87,19 @@ impl ConfigStore {
             path,
             inner: Mutex::new(ConfigFile::default()),
         }
+    }
+
+    pub fn mpv_config(&self) -> crate::player::configuration::MpvConfig {
+        self.inner.lock().unwrap().mpv_config.clone()
+    }
+
+    pub fn set_mpv_config(&self, settings: crate::player::configuration::MpvConfig) -> Result<()> {
+        let mut guard = self.inner.lock().unwrap();
+        let mut next = guard.clone();
+        next.mpv_config = settings;
+        write_atomic(&self.path, &next)?;
+        *guard = next;
+        Ok(())
     }
 
     pub fn player_settings(&self) -> SavedSettings {
@@ -276,6 +292,36 @@ impl ConfigStore {
 mod player_settings_tests {
     use super::*;
     use crate::player::settings::{Session, VideoSettings};
+
+    #[test]
+    fn mpv_configuration_persists_both_sources_and_failed_save_keeps_committed_settings() {
+        use crate::player::configuration::{ConfigMode, MpvConfig};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let store = ConfigStore::for_test(path.clone());
+        let settings = MpvConfig {
+            mode: ConfigMode::Text,
+            path: "/custom/mpv.conf".into(),
+            text: "# keep comments\nspeed=1.25\n".into(),
+        };
+        store.set_mpv_config(settings.clone()).unwrap();
+        let disk: ConfigFile = read_json(&path).unwrap().unwrap();
+        assert_eq!(disk.mpv_config, settings);
+        let disabled = MpvConfig {
+            mode: ConfigMode::Disabled,
+            ..settings.clone()
+        };
+        store.set_mpv_config(disabled.clone()).unwrap();
+        assert_eq!(store.mpv_config(), disabled);
+        assert_eq!(
+            read_json::<ConfigFile>(&path).unwrap().unwrap().mpv_config,
+            disabled
+        );
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert!(store.set_mpv_config(settings).is_err());
+        assert_eq!(store.mpv_config(), disabled);
+    }
 
     #[test]
     fn player_settings_round_trip_and_unlock_remove_saved_sections() {

@@ -1,6 +1,7 @@
 mod anime4k;
 mod anime4k_assets;
 mod app;
+pub(crate) mod configuration;
 mod enhancements;
 mod gl;
 #[cfg(target_os = "linux")]
@@ -61,20 +62,21 @@ fn get_proc_address(ctx: &SlintGlProcAddress, name: &str) -> *mut c_void {
 pub struct PlayerEngine {
     mpv: &'static Mpv,
     anime4k_blocked: AtomicBool,
+    custom_config: bool,
 }
 
 impl PlayerEngine {
+    #[cfg(test)]
     pub fn new() -> Result<Self> {
-        let mpv = Mpv::with_initializer(|init| {
-            init.set_option("vo", "libmpv")?;
-            init.set_option("terminal", "no")?;
-            Ok(())
-        })
-        .map_err(|e| anyhow!("{e}"))?;
+        Self::with_config(&configuration::MpvConfig::default())
+    }
 
+    pub fn with_config(config: &configuration::MpvConfig) -> Result<Self> {
+        let mpv = configuration::create_mpv(config)?;
         Ok(Self {
             mpv: Box::leak(Box::new(mpv)),
             anime4k_blocked: AtomicBool::new(false),
+            custom_config: config.mode != configuration::ConfigMode::Disabled,
         })
     }
 

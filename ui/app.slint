@@ -226,6 +226,13 @@ export component AppWindow inherits Window {
     callback request_refresh();
     callback settings_refresh();
     callback show_episode_skip_buttons_changed(bool);
+    in-out property <bool> mpv_config_dirty: false;
+    in-out property <int> mpv_config_mode: 0;
+    in-out property <string> mpv_config_path;
+    in-out property <string> mpv_config_text;
+    in-out property <string> mpv_config_status;
+    callback mpv_config_save();
+
     callback tmdb_source_changed(source: int);
     callback tmdb_save_local();
     callback tmdb_replace_putio();
@@ -659,6 +666,13 @@ export component AppWindow inherits Window {
     }
 
     if (root.view == 6) : settings := SettingsPage {
+        mpv_config_dirty <=> root.mpv_config_dirty;
+        mpv_config_mode <=> root.mpv_config_mode;
+        mpv_config_path <=> root.mpv_config_path;
+        mpv_config_text <=> root.mpv_config_text;
+        mpv_config_status <=> root.mpv_config_status;
+        mpv_config_save => { root.mpv_config_save(); }
+
         x: 0px;
         y: Theme.title_bar_height;
         width: parent.width;
